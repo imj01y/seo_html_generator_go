@@ -24,7 +24,7 @@ dist/
 # 运行时文件
 logs/
 *.log
-cache/
+/cache/
 html_cache/
 
 # 敏感信息
