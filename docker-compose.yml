@@ -107,10 +107,10 @@ services:
     networks:
       - seo-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pmysql_6yh7uJ"]
-      interval: 10s
+      test: ["CMD", "mysql", "-h", "localhost", "-u", "root", "-pmysql_6yh7uJ", "-e", "SELECT 1"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
       start_period: 30s
 
   # ========================================
