@@ -1144,7 +1144,7 @@ async def test_project_task(project_id: int, max_items: int = 0):
             await queue.clear()
             _log("DEBUG", "已清除测试队列缓存")
 
-        runner, row = await _load_project_and_runner(project_id, _log, is_test=True, max_items=max_items)
+        runner, row = await _load_project_and_runner(project_id, _log, is_test=True, max_items=max_items, include_concurrency=True)
         if not runner:
             return
 

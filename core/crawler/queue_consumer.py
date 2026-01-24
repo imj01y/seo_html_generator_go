@@ -135,6 +135,8 @@ class QueueConsumer:
             request = next(self.start_requests_iter)
             if callable(request.callback):
                 request.callback = request.callback.__name__
+            # start_requests 产出的请求跳过去重，确保列表页每次都能抓取
+            request.dont_filter = True
             await self.queue.push(request)
             logger.info(f"Fed request from start_requests: {request.url[:80]}")
             return True
