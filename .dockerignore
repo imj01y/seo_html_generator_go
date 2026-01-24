@@ -24,9 +24,9 @@ ENV/
 logs/
 seo_generator.log
 
-# Cache
-cache/
-.cache/
+# Cache (只排除根目录的cache)
+/cache/
+/.cache/
 
 # Git
 .git/
