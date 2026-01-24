@@ -29,30 +29,30 @@ export default defineConfig({
     proxy: {
       // WebSocket 代理需要单独配置
       '/api/crawl/test-spider-code-ws': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8009',
         changeOrigin: true,
         ws: true,
       },
       // 数据源执行日志 WebSocket
       '/api/crawl/sources': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8009',
         changeOrigin: true,
         ws: true,
       },
       // 爬虫项目执行日志 WebSocket
       '/api/spider-projects': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8009',
         changeOrigin: true,
         ws: true,
       },
       // 系统日志 WebSocket
       '/api/logs/ws': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8009',
         changeOrigin: true,
         ws: true,
       },
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'http://localhost:8009',
         changeOrigin: true,
       },
     },

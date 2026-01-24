@@ -96,8 +96,8 @@ docker-compose up -d --build
 
 | 服务 | 端口 | 说明 |
 |------|------|------|
-| nginx | 80/443 | 反向代理（网站访问） |
-| nginx | 8080 | 管理后台 |
+| nginx | 8009 | 反向代理（页面服务 + API） |
+| nginx | 8008 | 管理后台 |
 | mysql | 3306 | MySQL 8.0 数据库 |
 | redis | 6379 | Redis 缓存 |
 
@@ -105,10 +105,10 @@ docker-compose up -d --build
 
 | 功能 | 地址 |
 |------|------|
-| Admin 管理后台 | http://localhost:8080 |
-| API 健康检查 | http://localhost/api/health |
-| API 文档 | http://localhost/docs |
-| 页面服务 | http://localhost/page?ua=Baiduspider&path=/test.html&domain=example.com |
+| Admin 管理后台 | http://localhost:8008 |
+| API 健康检查 | http://localhost:8009/api/health |
+| API 文档 | http://localhost:8009/docs |
+| 页面服务 | http://localhost:8009/page?ua=Baiduspider&path=/test.html&domain=example.com |
 
 ### 默认账号密码
 
@@ -592,7 +592,7 @@ seo_html_generator/
 
 ## API 概览
 
-完整 API 文档请访问 http://localhost/docs
+完整 API 文档请访问 http://localhost:8009/docs
 
 ### 认证
 
@@ -1021,8 +1021,8 @@ python scripts/import_images.py --file images.txt --group-id 1
 
 ```bash
 # 只开放必要端口
-ufw allow 80/tcp
-ufw allow 443/tcp
+ufw allow 8008/tcp  # 管理后台
+ufw allow 8009/tcp  # 页面服务和API
 # 不要对外开放 3306、6379
 ```
 
@@ -1062,7 +1062,7 @@ server {
 
     # API 和动态页面
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8009;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1084,7 +1084,7 @@ ENV_FOR_DYNACONF=production docker-compose up -d
 production:
   server:
     host: "0.0.0.0"
-    port: 8000
+    port: 8009
     workers: 4              # 根据 CPU 核数调整
     debug: false
 
@@ -1134,7 +1134,7 @@ tail -f logs/spider/spider_name.log
 
 ```bash
 # 应用健康检查
-curl http://localhost/api/health
+curl http://localhost:8009/api/health
 # 返回: {"status": "ok"}
 ```
 

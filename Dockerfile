@@ -52,12 +52,12 @@ ENV PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai
 
 # Expose port
-EXPOSE 8000
+EXPOSE 8009
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8009/api/health')" || exit 1
 
 # Start application (copy frontend to shared volume first)
 CMD cp -r /app/admin-panel/dist-build/* /app/admin-panel/dist/ 2>/dev/null || true && \
-    uvicorn main:app --host 0.0.0.0 --port 8000
+    uvicorn main:app --host 0.0.0.0 --port 8009
