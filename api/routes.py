@@ -18,6 +18,7 @@ FastAPI路由模块
 import time
 import asyncio
 import threading
+import re
 from typing import Optional, List
 from datetime import datetime
 
@@ -659,9 +660,20 @@ async def serve_page(
             except Exception as e:
                 logger.warning(f"Failed to preload content from pool: {e}")
 
+        # 模板统计日志
+        tpl_content = template_data['content']
+        tpl_size = len(tpl_content)
+        kw_calls = len(re.findall(r'\{\{\s*random_keyword\s*\(\s*\)\s*\}\}', tpl_content))
+        img_calls = len(re.findall(r'\{\{\s*random_image\s*\(\s*\)\s*\}\}', tpl_content))
+        encode_calls = len(re.findall(r'\{\{\s*encode\s*\(', tpl_content))
+        logger.info(
+            f"[PERF-TPL] size={tpl_size} kw_calls={kw_calls} "
+            f"img_calls={img_calls} encode_calls={encode_calls} tpl={template_name}"
+        )
+
         # 使用模板内容渲染页面
         html = seo.render_template_content(
-            template_content=template_data['content'],
+            template_content=tpl_content,
             template_name=template_name,
             site_config=site_config,
             article_content=article_content

@@ -25,6 +25,7 @@ from datetime import datetime
 import random
 import asyncio
 import hashlib
+import time as time_module
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
 from markupsafe import Markup
@@ -514,19 +515,37 @@ class SEOCore:
         Returns:
             渲染后的HTML字符串
         """
+        # 准备上下文计时
+        t_ctx_start = time_module.perf_counter()
         context = self._prepare_render_context(
             keywords, site_config, preserve_preloaded=True, **extra_context
         )
+        t_ctx_end = time_module.perf_counter()
 
         try:
-            # 使用模板内容 hash 作为缓存 key，避免重复编译
+            # 模板编译计时
+            t_compile_start = time_module.perf_counter()
             cache_key = hashlib.md5(template_content.encode()).hexdigest()
+            compile_needed = cache_key not in self._compiled_templates
 
-            if cache_key not in self._compiled_templates:
+            if compile_needed:
                 self._compiled_templates[cache_key] = self.jinja_env.from_string(template_content)
 
             template = self._compiled_templates[cache_key]
+            t_compile_end = time_module.perf_counter()
+
+            # Jinja2 渲染计时
+            t_render_start = time_module.perf_counter()
             html = template.render(**context)
+            t_render_end = time_module.perf_counter()
+
+            # 详细渲染耗时日志
+            logger.info(
+                f"[PERF-CORE] ctx={t_ctx_end-t_ctx_start:.3f}s "
+                f"compile={t_compile_end-t_compile_start:.3f}s "
+                f"jinja_render={t_render_end-t_render_start:.3f}s "
+                f"compile_needed={compile_needed} tpl={template_name}"
+            )
 
             logger.debug(
                 f"Page rendered from content: {template_name}, "
