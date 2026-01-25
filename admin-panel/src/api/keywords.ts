@@ -159,6 +159,17 @@ export const batchMoveKeywords = async (ids: number[], groupId: number): Promise
   return { moved: res.moved }
 }
 
+// 删除全部关键词
+export const deleteAllKeywords = async (groupId?: number): Promise<{ deleted: number }> => {
+  const res: { success: boolean; deleted: number; message?: string } = await request.delete('/keywords/delete-all', {
+    data: { group_id: groupId, confirm: true }
+  })
+  if (!res.success) {
+    throw new Error(res.message || '删除失败')
+  }
+  return { deleted: res.deleted }
+}
+
 // 上传 TXT 文件批量添加关键词
 export const uploadKeywordsFile = async (file: File, groupId: number): Promise<{
   success: boolean

@@ -15,6 +15,17 @@
           <el-icon><Document /></el-icon>
           上传文件
         </el-button>
+        <el-dropdown @command="handleDeleteAll" trigger="click">
+          <el-button type="danger">
+            删除全部 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="group">删除当前词库数据</el-dropdown-item>
+              <el-dropdown-item command="all" divided>删除所有词库数据</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
@@ -292,7 +303,7 @@
     </el-dialog>
 
     <!-- 上传文件弹窗 -->
-    <el-dialog v-model="uploadDialogVisible" title="上传关键词文件" width="500px">
+    <el-dialog v-model="uploadDialogVisible" title="上传关键词文件" width="500px" @close="resetUploadDialog">
       <el-form label-width="80px">
         <el-form-item label="所属词库" required>
           <el-select v-model="uploadGroupId" style="width: 100%">
@@ -308,7 +319,7 @@
           <el-upload
             ref="uploadRef"
             :auto-upload="false"
-            :limit="1"
+            multiple
             accept=".txt"
             :on-change="handleFileChange"
             :on-remove="handleFileRemove"
@@ -318,16 +329,27 @@
             </template>
             <template #tip>
               <div class="el-upload__tip">
-                仅支持 .txt 文件，每行一个关键词，最多 500000 个
+                支持同时选择多个 .txt 文件，每行一个关键词
               </div>
             </template>
           </el-upload>
         </el-form-item>
+        <!-- 已选文件统计 -->
+        <el-form-item v-if="uploadFiles.length > 0" label="已选文件">
+          <el-tag type="info">{{ uploadFiles.length }} 个文件</el-tag>
+        </el-form-item>
+        <!-- 上传进度 -->
+        <el-form-item v-if="uploadProgress.total > 0" label="上传进度">
+          <el-progress
+            :percentage="Math.round((uploadProgress.current / uploadProgress.total) * 100)"
+            :format="() => `${uploadProgress.current}/${uploadProgress.total}`"
+          />
+        </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="uploadDialogVisible = false">取消</el-button>
+        <el-button @click="uploadDialogVisible = false" :disabled="uploadLoading">取消</el-button>
         <el-button type="primary" :loading="uploadLoading" @click="handleUpload">
-          上传
+          {{ uploadLoading ? `上传中 (${uploadProgress.current}/${uploadProgress.total})` : '上传' }}
         </el-button>
       </template>
     </el-dialog>
@@ -352,7 +374,8 @@ import {
   batchDeleteKeywords,
   batchUpdateKeywordStatus,
   batchMoveKeywords,
-  uploadKeywordsFile
+  uploadKeywordsFile,
+  deleteAllKeywords
 } from '@/api/keywords'
 import type { KeywordGroup, Keyword } from '@/types'
 
@@ -375,8 +398,12 @@ const uploadRef = ref<UploadInstance>()
 // 上传相关
 const uploadDialogVisible = ref(false)
 const uploadGroupId = ref(1)
-const uploadFile = ref<File | null>(null)
+const uploadFiles = ref<File[]>([])
 const uploadLoading = ref(false)
+const uploadProgress = reactive({
+  current: 0,
+  total: 0
+})
 
 const groups = ref<KeywordGroup[]>([])
 const activeGroupId = ref<number>(0)
@@ -742,6 +769,45 @@ const handleBatchMove = async (targetGroupId: number) => {
   }
 }
 
+// 删除全部
+const handleDeleteAll = async (command: 'group' | 'all') => {
+  const currentGroup = groups.value.find(g => g.id === activeGroupId.value)
+
+  try {
+    if (command === 'group') {
+      // 删除当前分组 - 单次确认
+      await ElMessageBox.confirm(
+        `确定要删除 "${currentGroup?.name}" 中的所有关键词吗？此操作不可恢复！`,
+        '警告',
+        { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' }
+      )
+      const res = await deleteAllKeywords(activeGroupId.value)
+      ElMessage.success(`成功删除 ${res.deleted} 个关键词`)
+    } else {
+      // 删除全部 - 输入确认文字
+      await ElMessageBox.prompt(
+        '此操作将删除所有词库中的全部关键词！请输入 "确认删除" 以继续',
+        '危险操作',
+        {
+          confirmButtonText: '确定删除',
+          cancelButtonText: '取消',
+          type: 'error',
+          inputPattern: /^确认删除$/,
+          inputErrorMessage: '请输入正确的确认文字'
+        }
+      )
+      const res = await deleteAllKeywords()
+      ElMessage.success(`成功删除 ${res.deleted} 个关键词`)
+    }
+    loadKeywords()
+  } catch (e) {
+    // 用户取消或输入错误，不做处理
+    if ((e as Error).message && !(e as any).toString().includes('cancel')) {
+      ElMessage.error((e as Error).message || '删除失败')
+    }
+  }
+}
+
 const handleReload = async () => {
   reloadLoading.value = true
   try {
@@ -755,34 +821,73 @@ const handleReload = async () => {
 // 打开上传对话框
 const openUploadDialog = () => {
   uploadGroupId.value = activeGroupId.value || 1
-  uploadFile.value = null
+  uploadFiles.value = []
+  uploadProgress.current = 0
+  uploadProgress.total = 0
   uploadDialogVisible.value = true
 }
 
-// 文件选择变化
-const handleFileChange = (file: any) => {
-  uploadFile.value = file.raw
+// 重置上传对话框
+const resetUploadDialog = () => {
+  uploadFiles.value = []
+  uploadProgress.current = 0
+  uploadProgress.total = 0
+  uploadRef.value?.clearFiles()
+}
+
+// 文件选择变化（支持多文件）
+const handleFileChange = (file: any, fileList: any[]) => {
+  // 从 fileList 提取所有文件
+  uploadFiles.value = fileList.map(f => f.raw).filter(Boolean)
 }
 
 // 文件移除
-const handleFileRemove = () => {
-  uploadFile.value = null
+const handleFileRemove = (file: any, fileList: any[]) => {
+  uploadFiles.value = fileList.map(f => f.raw).filter(Boolean)
 }
 
-// 执行上传
+// 执行上传（支持多文件逐个上传）
 const handleUpload = async () => {
-  if (!uploadFile.value) {
+  if (uploadFiles.value.length === 0) {
     ElMessage.warning('请选择文件')
     return
   }
 
   uploadLoading.value = true
+  uploadProgress.current = 0
+  uploadProgress.total = uploadFiles.value.length
+
+  let totalAdded = 0
+  let totalSkipped = 0
+  let successCount = 0
+  let failedFiles: string[] = []
+
   try {
-    const res = await uploadKeywordsFile(uploadFile.value, uploadGroupId.value)
-    ElMessage.success(res.message)
+    for (const file of uploadFiles.value) {
+      uploadProgress.current++
+      try {
+        const res = await uploadKeywordsFile(file, uploadGroupId.value)
+        totalAdded += res.added
+        totalSkipped += res.skipped
+        successCount++
+      } catch (error: any) {
+        failedFiles.push(file.name)
+      }
+    }
+
+    // 显示汇总结果
+    if (failedFiles.length === 0) {
+      ElMessage.success(
+        `全部上传成功！共 ${successCount} 个文件，添加 ${totalAdded} 个关键词，跳过 ${totalSkipped} 个重复`
+      )
+    } else {
+      ElMessage.warning(
+        `${successCount} 个文件成功，${failedFiles.length} 个失败。添加 ${totalAdded} 个关键词，跳过 ${totalSkipped} 个重复`
+      )
+    }
+
     uploadDialogVisible.value = false
-    uploadFile.value = null
-    uploadRef.value?.clearFiles()
+    resetUploadDialog()
 
     // 刷新列表
     if (uploadGroupId.value === activeGroupId.value) {

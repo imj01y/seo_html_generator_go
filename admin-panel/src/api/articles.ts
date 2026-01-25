@@ -147,3 +147,14 @@ export const batchMoveArticles = async (ids: number[], groupId: number): Promise
   return { moved: res.moved }
 }
 
+// 删除全部文章
+export const deleteAllArticles = async (groupId?: number): Promise<{ deleted: number }> => {
+  const res: { success: boolean; deleted: number; message?: string } = await request.delete('/articles/delete-all', {
+    data: { group_id: groupId, confirm: true }
+  })
+  if (!res.success) {
+    throw new Error(res.message || '删除失败')
+  }
+  return { deleted: res.deleted }
+}
+

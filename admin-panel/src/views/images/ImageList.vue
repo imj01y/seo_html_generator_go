@@ -11,6 +11,17 @@
           <el-icon><Upload /></el-icon>
           批量添加
         </el-button>
+        <el-dropdown @command="handleDeleteAll" trigger="click">
+          <el-button type="danger">
+            删除全部 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="group">删除当前图库数据</el-dropdown-item>
+              <el-dropdown-item command="all" divided>删除所有图库数据</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
     </div>
 
@@ -329,7 +340,8 @@ import {
   reloadImageGroup,
   batchDeleteImages,
   batchUpdateImageStatus,
-  batchMoveImages
+  batchMoveImages,
+  deleteAllImages
 } from '@/api/images'
 import type { ImageGroup, ImageUrl } from '@/types'
 
@@ -727,6 +739,45 @@ const handleReload = async () => {
     ElMessage.success(`刷新成功，共 ${res.total} 个图片URL`)
   } finally {
     reloadLoading.value = false
+  }
+}
+
+// 删除全部
+const handleDeleteAll = async (command: 'group' | 'all') => {
+  const currentGroup = groups.value.find(g => g.id === activeGroupId.value)
+
+  try {
+    if (command === 'group') {
+      // 删除当前分组 - 单次确认
+      await ElMessageBox.confirm(
+        `确定要删除 "${currentGroup?.name}" 中的所有图片URL吗？此操作不可恢复！`,
+        '警告',
+        { confirmButtonText: '确定删除', cancelButtonText: '取消', type: 'warning' }
+      )
+      const res = await deleteAllImages(activeGroupId.value)
+      ElMessage.success(`成功删除 ${res.deleted} 个图片URL`)
+    } else {
+      // 删除全部 - 输入确认文字
+      await ElMessageBox.prompt(
+        '此操作将删除所有图库中的全部图片URL！请输入 "确认删除" 以继续',
+        '危险操作',
+        {
+          confirmButtonText: '确定删除',
+          cancelButtonText: '取消',
+          type: 'error',
+          inputPattern: /^确认删除$/,
+          inputErrorMessage: '请输入正确的确认文字'
+        }
+      )
+      const res = await deleteAllImages()
+      ElMessage.success(`成功删除 ${res.deleted} 个图片URL`)
+    }
+    loadImages()
+  } catch (e) {
+    // 用户取消或输入错误，不做处理
+    if ((e as Error).message && !(e as any).toString().includes('cancel')) {
+      ElMessage.error((e as Error).message || '删除失败')
+    }
   }
 }
 

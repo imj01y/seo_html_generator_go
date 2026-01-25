@@ -32,7 +32,7 @@ from core.keyword_group_manager import get_keyword_group, AsyncKeywordGroupManag
 from core.image_group_manager import get_image_group, AsyncImageGroupManager
 from core.title_manager import get_title_manager, get_random_titles
 from core.content_manager import get_content_manager, get_random_content
-from core.content_pool_manager import get_content_pool_manager
+from core.content_pool_manager import get_content_pool_manager, get_or_create_content_pool_manager
 from core.auth import (
     authenticate_admin, create_access_token, verify_token as verify_jwt_token,
     update_admin_password, get_admin_by_username
@@ -211,6 +211,7 @@ class PasswordChangeRequest(BaseModel):
 
 class TemplateCreate(BaseModel):
     """创建模板"""
+    site_group_id: int = 1  # 所属站群ID
     name: str  # 模板标识名（唯一）
     display_name: str  # 显示名称
     description: Optional[str] = None
@@ -219,6 +220,7 @@ class TemplateCreate(BaseModel):
 
 class TemplateUpdate(BaseModel):
     """更新模板"""
+    site_group_id: Optional[int] = None  # 所属站群ID
     display_name: Optional[str] = None
     description: Optional[str] = None
     content: Optional[str] = None
@@ -240,6 +242,12 @@ class BatchMoveGroup(BaseModel):
     """批量移动分组"""
     ids: List[int]
     group_id: int
+
+
+class DeleteAllRequest(BaseModel):
+    """删除全部请求"""
+    group_id: Optional[int] = None  # 为空表示删除所有分组
+    confirm: bool = False  # 必须为True才执行
 
 
 # ============================================
@@ -489,27 +497,42 @@ async def serve_page(
             logger.warning(f"Domain not registered: {domain}")
             raise HTTPException(status_code=403, detail="Domain not registered")
 
-        # 从数据库获取模板内容
+        # 从数据库获取模板内容（按站群隔离）
         template_name = site_config.get('template', 'download_site')
+        site_group_id = site_config.get('site_group_id', 1)
+
+        # 优先从当前站群获取模板
         template_data = await fetch_one(
-            "SELECT name, content FROM templates WHERE name = %s AND status = 1",
-            (template_name,)
+            "SELECT name, content FROM templates WHERE name = %s AND site_group_id = %s AND status = 1",
+            (template_name, site_group_id)
         )
 
+        # 如果站群内找不到，回退到默认站群（兼容旧数据）
+        if not template_data:
+            template_data = await fetch_one(
+                "SELECT name, content FROM templates WHERE name = %s AND site_group_id = 1 AND status = 1",
+                (template_name,)
+            )
+
         if not template_data or not template_data.get('content'):
-            logger.error(f"Template not found or empty: {template_name}")
+            logger.error(f"Template not found or empty: {template_name} (site_group_id={site_group_id})")
             raise HTTPException(status_code=500, detail=f"Template '{template_name}' not found")
 
-        # 获取随机标题（4个）和随机正文（已含拼音标注）
-        random_titles = await get_random_titles(4)
-        random_content = await get_random_content()
+        # 获取站点配置中的 article_group_id（用于标题和正文分组隔离）
+        article_group_id = site_config.get('article_group_id') or 1
+
+        # 获取随机标题（4个）和随机正文（已含拼音标注）- 按分组过滤
+        random_titles = await get_random_titles(4, group_id=article_group_id)
+        random_content = await get_random_content(group_id=article_group_id)
 
         # 组装 article_content
         article_content = _build_article_content(random_titles, random_content)
 
         # 预加载内容供模板中的 content_with_pinyin() 使用
-        # 优先从 ContentPoolManager 获取（一次性消费模式）
-        content_pool = get_content_pool_manager()
+        # 优先从 ContentPoolManager 获取（一次性消费模式）- 按分组过滤（支持懒加载）
+        content_pool = get_content_pool_manager(group_id=article_group_id)
+        if not content_pool:
+            content_pool = await get_or_create_content_pool_manager(group_id=article_group_id)
         if content_pool:
             try:
                 preloaded_content = await content_pool.get_content()
@@ -1314,19 +1337,32 @@ async def list_templates(
 
 
 @router.get("/api/templates/options")
-async def get_template_options(_: dict = Depends(verify_token)):
+async def get_template_options(
+    site_group_id: Optional[int] = Query(None, description="按站群ID过滤"),
+    _: dict = Depends(verify_token)
+):
     """
     获取模板下拉选项（用于站点绑定）
 
-    只返回启用状态的模板
+    只返回启用状态的模板，可按站群过滤
     """
     try:
-        items = await fetch_all(
-            """SELECT id, name, display_name
-               FROM templates
-               WHERE status = 1
-               ORDER BY name"""
-        )
+        if site_group_id:
+            # 优先返回当前站群的模板，再返回默认站群的模板（兼容旧数据）
+            items = await fetch_all(
+                """SELECT id, name, display_name
+                   FROM templates
+                   WHERE status = 1 AND (site_group_id = %s OR site_group_id = 1)
+                   ORDER BY site_group_id DESC, name""",
+                (site_group_id,)
+            )
+        else:
+            items = await fetch_all(
+                """SELECT id, name, display_name
+                   FROM templates
+                   WHERE status = 1
+                   ORDER BY name"""
+            )
         return {"options": items or []}
     except Exception as e:
         logger.error(f"Failed to get template options: {e}")
@@ -1342,7 +1378,7 @@ async def get_template(template_id: int, _: dict = Depends(verify_token)):
     """
     try:
         template = await fetch_one(
-            """SELECT id, name, display_name, description, content, status,
+            """SELECT id, site_group_id, name, display_name, description, content, status,
                       version, created_at, updated_at
                FROM templates WHERE id = %s""",
             (template_id,)
@@ -1397,6 +1433,7 @@ async def create_template(
     """
     try:
         template_id = await insert('templates', {
+            'site_group_id': data.site_group_id,
             'name': data.name,
             'display_name': data.display_name,
             'description': data.description,
@@ -1407,7 +1444,7 @@ async def create_template(
         return {"success": True, "id": template_id}
     except Exception as e:
         if "Duplicate" in str(e):
-            return {"success": False, "message": "模板标识名已存在"}
+            return {"success": False, "message": "该站群内模板标识名已存在"}
         logger.error(f"Failed to create template: {e}")
         return {"success": False, "message": str(e)}
 
@@ -1436,6 +1473,9 @@ async def update_template(
         update_fields = []
         update_values = []
 
+        if data.site_group_id is not None:
+            update_fields.append("site_group_id = %s")
+            update_values.append(data.site_group_id)
         if data.display_name is not None:
             update_fields.append("display_name = %s")
             update_values.append(data.display_name)
@@ -1743,6 +1783,29 @@ async def batch_delete_keywords(data: BatchIds, _: bool = Depends(verify_token))
         return {"success": False, "message": str(e), "deleted": 0}
 
 
+@router.delete("/api/keywords/delete-all")
+async def delete_all_keywords(data: DeleteAllRequest, _: bool = Depends(verify_token)):
+    """删除全部关键词（软删除）"""
+    if not data.confirm:
+        return {"success": False, "message": "请确认删除操作", "deleted": 0}
+
+    try:
+        if data.group_id:
+            result = await execute_query(
+                "UPDATE keywords SET status = 0 WHERE group_id = %s AND status = 1",
+                (data.group_id,)
+            )
+        else:
+            result = await execute_query(
+                "UPDATE keywords SET status = 0 WHERE status = 1"
+            )
+        deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
+        return {"success": True, "deleted": deleted_count}
+    except Exception as e:
+        logger.error(f"Failed to delete all keywords: {e}")
+        return {"success": False, "message": str(e), "deleted": 0}
+
+
 @router.put("/api/keywords/batch/status")
 async def batch_update_keyword_status(data: BatchStatusUpdate, _: bool = Depends(verify_token)):
     """批量更新关键词状态"""
@@ -2026,6 +2089,29 @@ async def batch_delete_images(data: BatchIds, _: bool = Depends(verify_token)):
         return {"success": True, "deleted": len(data.ids)}
     except Exception as e:
         logger.error(f"Failed to batch delete images: {e}")
+        return {"success": False, "message": str(e), "deleted": 0}
+
+
+@router.delete("/api/images/delete-all")
+async def delete_all_images(data: DeleteAllRequest, _: bool = Depends(verify_token)):
+    """删除全部图片URL（软删除）"""
+    if not data.confirm:
+        return {"success": False, "message": "请确认删除操作", "deleted": 0}
+
+    try:
+        if data.group_id:
+            result = await execute_query(
+                "UPDATE images SET status = 0 WHERE group_id = %s AND status = 1",
+                (data.group_id,)
+            )
+        else:
+            result = await execute_query(
+                "UPDATE images SET status = 0 WHERE status = 1"
+            )
+        deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
+        return {"success": True, "deleted": deleted_count}
+    except Exception as e:
+        logger.error(f"Failed to delete all images: {e}")
         return {"success": False, "message": str(e), "deleted": 0}
 
 
@@ -2326,6 +2412,29 @@ async def batch_delete_articles(data: BatchIds, _: bool = Depends(verify_token))
         return {"success": True, "deleted": len(data.ids)}
     except Exception as e:
         logger.error(f"Failed to batch delete articles: {e}")
+        return {"success": False, "message": str(e), "deleted": 0}
+
+
+@router.delete("/api/articles/delete-all")
+async def delete_all_articles(data: DeleteAllRequest, _: bool = Depends(verify_token)):
+    """删除全部文章（软删除）"""
+    if not data.confirm:
+        return {"success": False, "message": "请确认删除操作", "deleted": 0}
+
+    try:
+        if data.group_id:
+            result = await execute_query(
+                "UPDATE original_articles SET status = 0 WHERE group_id = %s AND status = 1",
+                (data.group_id,)
+            )
+        else:
+            result = await execute_query(
+                "UPDATE original_articles SET status = 0 WHERE status = 1"
+            )
+        deleted_count = result.rowcount if hasattr(result, 'rowcount') else 0
+        return {"success": True, "deleted": deleted_count}
+    except Exception as e:
+        logger.error(f"Failed to delete all articles: {e}")
         return {"success": False, "message": str(e), "deleted": 0}
 
 
