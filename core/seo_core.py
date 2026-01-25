@@ -5,14 +5,13 @@ SEO核心整合模块
 
 主要功能:
 - 整合编码器、class生成器、Emoji、链接生成器等
-- 使用 minijinja (Rust 实现) 高性能模板引擎
+- 提供Jinja2模板函数
 - 管理站点配置
 - 生成完整HTML页面
 
 架构说明:
 - 关键词和图片URL使用全局异步池管理器 (MySQL + Redis)
 - 模板渲染使用本地同步缓存 (通过 load_keywords_sync/load_image_urls_sync 预加载)
-- 模板引擎使用 minijinja，比 Jinja2 性能提升 5-10 倍
 
 使用方法:
     >>> from core.seo_core import init_seo_core, get_seo_core
@@ -27,12 +26,9 @@ import random
 import asyncio
 import hashlib
 import time as time_module
-import os
 
-from minijinja import Environment as MinijinjaEnv
-# 保留 Jinja2 作为备选方案
-# from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
-# from markupsafe import Markup
+from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
+from markupsafe import Markup
 
 from .encoder import HTMLEntityEncoder
 from .class_generator import ClassGenerator
@@ -60,7 +56,7 @@ class SEOCore:
         link_gen: 链接生成器
         anchor_gen: 锚文本生成器
         title_gen: 标题生成器
-        jinja_env: minijinja 模板环境 (Rust 高性能实现)
+        jinja_env: Jinja2环境
 
     Example:
         >>> core = SEOCore(template_dir="./templates")
@@ -105,35 +101,39 @@ class SEOCore:
         if emoji_file:
             self.emoji_manager.load_from_file(emoji_file)
 
-        # 初始化 minijinja 环境
+        # 初始化Jinja2环境
         self.template_dir = template_dir
-        self.jinja_env = self._create_minijinja_env()
+        self.jinja_env = self._create_jinja_env(template_dir)
 
         # 页面级状态（每次渲染重置）
         self._used_emojis: Set[str] = set()
         self._encoding_count: int = 0
         self._preloaded_content: Optional[str] = None  # 预加载的正文内容
 
-        # 模板缓存标记（记录已添加到 minijinja 环境的模板）
-        self._compiled_templates: Dict[str, bool] = {}
+        # 编译后模板缓存（避免重复解析模板内容）
+        self._compiled_templates: Dict[str, Template] = {}
 
         logger.info(f"SEOCore initialized with template_dir: {template_dir}")
 
-    def _create_minijinja_env(self) -> MinijinjaEnv:
+    def _create_jinja_env(self, template_dir: str) -> Environment:
         """
-        创建 minijinja 环境并注册自定义函数
+        创建Jinja2环境并注册自定义函数
 
-        minijinja 是 Rust 实现的 Jinja2 兼容模板引擎，性能提升 5-10 倍。
+        Args:
+            template_dir: 模板目录
 
         Returns:
-            配置好的 minijinja Environment
+            配置好的Jinja2 Environment
         """
-        env = MinijinjaEnv()
+        env = Environment(
+            loader=FileSystemLoader(template_dir),
+            autoescape=select_autoescape(['html', 'xml']),
+            trim_blocks=True,
+            lstrip_blocks=True
+        )
 
         # 注册模板全局函数
-        template_functions = self._get_template_functions()
-        for name, func in template_functions.items():
-            env.add_function(name, func)
+        env.globals.update(self._get_template_functions())
 
         return env
 
@@ -176,19 +176,19 @@ class SEOCore:
             'random_number': lambda min_val, max_val: random.randint(min_val, max_val),
         }
 
-    def _random_keyword(self) -> str:
+    def _random_keyword(self) -> Markup:
         """
         获取随机关键词（编码后）
 
         Returns:
-            编码后的关键词字符串（模板中需使用 |safe 过滤器）
+            编码后的关键词（Markup安全标记）
         """
         t_start = time_module.perf_counter()
         keyword = self._random_keyword_sync()
         if not keyword:
             self._perf_kw_time += time_module.perf_counter() - t_start
             self._perf_kw_count += 1
-            return ""
+            return Markup("")
         # 编码计时单独统计
         t_enc_start = time_module.perf_counter()
         encoded = self.encoder.encode_text(keyword)
@@ -197,7 +197,7 @@ class SEOCore:
         self._encoding_count += len(keyword)
         self._perf_kw_time += time_module.perf_counter() - t_start
         self._perf_kw_count += 1
-        return encoded
+        return Markup(encoded)
 
     def _content(self) -> str:
         """
@@ -501,13 +501,8 @@ class SEOCore:
         context = self._prepare_render_context(keywords, site_config, **extra_context)
 
         try:
-            # 从文件读取模板内容
-            template_path = os.path.join(self.template_dir, template_name)
-            with open(template_path, 'r', encoding='utf-8') as f:
-                template_content = f.read()
-
-            # 使用 minijinja 渲染
-            html = self.jinja_env.render_str(template_content, **context)
+            template = self.jinja_env.get_template(template_name)
+            html = template.render(**context)
 
             logger.debug(
                 f"Page rendered: {template_name}, "
@@ -532,11 +527,9 @@ class SEOCore:
         """
         渲染模板内容字符串（从数据库加载的模板）
 
-        使用 minijinja (Rust 实现) 进行高性能渲染。
-
         Args:
             template_content: 模板HTML内容字符串
-            template_name: 模板名称（用于日志和缓存）
+            template_name: 模板名称（用于日志）
             keywords: 目标关键词列表（3个）
             site_config: 站点配置
             **extra_context: 额外的模板上下文
@@ -552,27 +545,27 @@ class SEOCore:
         t_ctx_end = time_module.perf_counter()
 
         try:
-            # 模板编译/缓存计时
+            # 模板编译计时
             t_compile_start = time_module.perf_counter()
             cache_key = hashlib.md5(template_content.encode()).hexdigest()
             compile_needed = cache_key not in self._compiled_templates
 
-            # minijinja 使用 add_template 添加命名模板，自动处理编译缓存
             if compile_needed:
-                self.jinja_env.add_template(cache_key, template_content)
-                self._compiled_templates[cache_key] = True  # 仅标记已添加
+                self._compiled_templates[cache_key] = self.jinja_env.from_string(template_content)
+
+            template = self._compiled_templates[cache_key]
             t_compile_end = time_module.perf_counter()
 
-            # minijinja 渲染计时
+            # Jinja2 渲染计时
             t_render_start = time_module.perf_counter()
-            html = self.jinja_env.render_template(cache_key, **context)
+            html = template.render(**context)
             t_render_end = time_module.perf_counter()
 
             # 详细渲染耗时日志
             logger.info(
                 f"[PERF-CORE] ctx={t_ctx_end-t_ctx_start:.3f}s "
                 f"compile={t_compile_end-t_compile_start:.3f}s "
-                f"minijinja_render={t_render_end-t_render_start:.3f}s "
+                f"jinja_render={t_render_end-t_render_start:.3f}s "
                 f"compile_needed={compile_needed} tpl={template_name}"
             )
             # 函数调用统计日志
