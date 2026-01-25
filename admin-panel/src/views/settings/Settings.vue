@@ -92,13 +92,66 @@
         </div>
       </el-col>
     </el-row>
+
+    <!-- API Token 设置 -->
+    <el-row :gutter="20" style="margin-top: 20px">
+      <el-col :xs="24" :lg="12">
+        <div class="card">
+          <div class="card-header">
+            <span class="title">API Token</span>
+            <div class="header-actions">
+              <el-button size="small" @click="showApiTokenGuide">
+                <el-icon><QuestionFilled /></el-icon>
+                指南
+              </el-button>
+              <el-switch
+                v-model="apiTokenForm.enabled"
+                active-text="启用"
+                inactive-text="禁用"
+                @change="handleSaveApiToken"
+              />
+            </div>
+          </div>
+          <el-form label-width="120px" v-loading="apiTokenLoading">
+            <el-form-item label="Token">
+              <el-input
+                v-model="apiTokenForm.token"
+                :type="showApiToken ? 'text' : 'password'"
+                placeholder="点击生成按钮创建 Token"
+                readonly
+              >
+                <template #append>
+                  <el-button @click="showApiToken = !showApiToken">
+                    <el-icon><View v-if="!showApiToken" /><Hide v-else /></el-icon>
+                  </el-button>
+                </template>
+              </el-input>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="handleGenerateToken">
+                生成新 Token
+              </el-button>
+              <el-button @click="handleCopyToken" :disabled="!apiTokenForm.token">
+                复制
+              </el-button>
+              <el-button type="success" @click="handleSaveApiToken" :loading="apiTokenSaving">
+                保存
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </div>
+        <ApiTokenGuide ref="apiTokenGuideRef" :token="apiTokenForm.token" />
+      </el-col>
+    </el-row>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, FormInstance, FormRules } from 'element-plus'
-import { getSettings, updateSettings } from '@/api/settings'
+import { View, Hide, QuestionFilled } from '@element-plus/icons-vue'
+import { getSettings, updateSettings, getApiTokenSettings, updateApiTokenSettings, generateApiToken } from '@/api/settings'
+import ApiTokenGuide from '@/components/ApiTokenGuide.vue'
 import { changePassword } from '@/api/auth'
 
 const settingsLoading = ref(false)
@@ -117,6 +170,20 @@ const passwordForm = reactive({
   new_password: '',
   confirm_password: ''
 })
+
+// API Token 相关
+const apiTokenLoading = ref(false)
+const apiTokenSaving = ref(false)
+const showApiToken = ref(false)
+const apiTokenGuideRef = ref()
+const apiTokenForm = reactive({
+  token: '',
+  enabled: true
+})
+
+function showApiTokenGuide() {
+  apiTokenGuideRef.value?.show()
+}
 
 const validateConfirmPassword = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
   if (value !== passwordForm.new_password) {
@@ -198,8 +265,74 @@ const handleChangePassword = async () => {
   }
 }
 
+// API Token 相关函数
+const loadApiTokenSettings = async () => {
+  apiTokenLoading.value = true
+  try {
+    const res = await getApiTokenSettings()
+    if (res.success) {
+      apiTokenForm.enabled = res.enabled ?? true
+      if (res.token) {
+        apiTokenForm.token = res.token
+      } else {
+        // 没有已保存的 Token，自动生成
+        const genRes = await generateApiToken()
+        if (genRes.success) {
+          apiTokenForm.token = genRes.token
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Failed to load API token settings:', e)
+  } finally {
+    apiTokenLoading.value = false
+  }
+}
+
+const handleGenerateToken = async () => {
+  try {
+    const res = await generateApiToken()
+    if (res.success) {
+      apiTokenForm.token = res.token
+      ElMessage.success('Token 已生成，请保存')
+    }
+  } catch (e) {
+    ElMessage.error((e as Error).message || '生成失败')
+  }
+}
+
+const handleSaveApiToken = async () => {
+  apiTokenSaving.value = true
+  try {
+    const res = await updateApiTokenSettings({
+      token: apiTokenForm.token,
+      enabled: apiTokenForm.enabled
+    })
+    if (res.success) {
+      ElMessage.success('保存成功')
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (e) {
+    ElMessage.error((e as Error).message || '保存失败')
+  } finally {
+    apiTokenSaving.value = false
+  }
+}
+
+const handleCopyToken = async () => {
+  if (!apiTokenForm.token) return
+  try {
+    await navigator.clipboard.writeText(apiTokenForm.token)
+    ElMessage.success('已复制到剪贴板')
+  } catch {
+    ElMessage.error('复制失败')
+  }
+}
+
 onMounted(() => {
   loadSettings()
+  loadApiTokenSettings()
 })
 </script>
 
@@ -239,6 +372,12 @@ onMounted(() => {
     margin-left: 12px;
     color: #909399;
     font-size: 12px;
+  }
+
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 }
 </style>
