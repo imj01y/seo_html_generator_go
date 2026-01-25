@@ -175,6 +175,7 @@
                 plain
                 @click="handleResetContentPool"
                 :loading="resetPoolLoading"
+                :disabled="!contentPoolAlert.pool_size && !contentPoolAlert.used_size"
               >
                 重置
               </el-button>
@@ -207,7 +208,7 @@
               <el-tooltip content="页面缓存占用的文件空间" placement="top">
                 <div class="cache-memory">{{ formatMemory(cacheStats.html_cache_memory_mb || 0) }}</div>
               </el-tooltip>
-              <el-button size="small" type="danger" plain @click="handleClearHtmlCache" :loading="clearHtmlCacheLoading">
+              <el-button size="small" type="danger" plain @click="handleClearHtmlCache" :loading="clearHtmlCacheLoading" :disabled="!cacheStats.html_cache_entries">
                 清理
               </el-button>
             </div>
@@ -215,7 +216,7 @@
             <div class="cache-section">
               <div class="section-header">
                 <span class="section-title">关键词缓存</span>
-                <el-button size="small" type="danger" plain @click="handleClearKeywordCache" :loading="clearKeywordCacheLoading">
+                <el-button size="small" type="danger" plain @click="handleClearKeywordCache" :loading="clearKeywordCacheLoading" :disabled="!cacheStats.keyword_group_stats?.total && !keywordPoolStats.cache_size">
                   清理
                 </el-button>
               </div>
@@ -286,7 +287,7 @@
             <div class="cache-section">
               <div class="section-header">
                 <span class="section-title">图片缓存</span>
-                <el-button size="small" type="danger" plain @click="handleClearImageCache" :loading="clearImageCacheLoading">
+                <el-button size="small" type="danger" plain @click="handleClearImageCache" :loading="clearImageCacheLoading" :disabled="!cacheStats.image_group_stats?.total && !imagePoolStats.cache_size">
                   清理
                 </el-button>
               </div>
@@ -357,7 +358,7 @@
           <el-divider />
 
           <div class="cache-actions">
-            <el-button type="warning" @click="handleClearAllCache" :loading="clearCacheLoading">
+            <el-button type="warning" @click="handleClearAllCache" :loading="clearCacheLoading" :disabled="!cacheStats.html_cache_entries && !cacheStats.keyword_group_stats?.total && !keywordPoolStats.cache_size && !cacheStats.image_group_stats?.total && !imagePoolStats.cache_size">
               <el-icon><Delete /></el-icon>
               清理全部缓存
             </el-button>

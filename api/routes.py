@@ -2242,7 +2242,7 @@ async def get_article(article_id: int, _: bool = Depends(verify_token)):
     """获取单篇文章"""
     try:
         article = await fetch_one(
-            "SELECT id, group_id, title, content, status, created_at, updated_at FROM original_articles WHERE id = %s",
+            "SELECT id, group_id, title, content, status, source_url, created_at, updated_at FROM original_articles WHERE id = %s",
             (article_id,)
         )
         if not article:

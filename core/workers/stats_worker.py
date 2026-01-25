@@ -385,6 +385,357 @@ class SpiderStatsWorker:
         if deleted > 0:
             logger.info(f"Cleaned up {deleted} old {period_type} stats records")
 
+    # ==================== 回退聚合辅助方法 ====================
+
+    async def _has_period_data(
+        self,
+        period_type: str,
+        project_id: Optional[int],
+        start: Optional[datetime],
+        end: Optional[datetime],
+    ) -> bool:
+        """
+        检查指定周期是否有数据
+
+        Args:
+            period_type: 周期类型
+            project_id: 项目ID，None 表示全部项目
+            start: 开始时间
+            end: 结束时间
+
+        Returns:
+            是否有数据
+        """
+        conditions = ["period_type = %s"]
+        args = [period_type]
+
+        if project_id is not None:
+            conditions.append("project_id = %s")
+            args.append(project_id)
+        if start:
+            conditions.append("period_start >= %s")
+            args.append(start)
+        if end:
+            conditions.append("period_start <= %s")
+            args.append(end)
+
+        where = " AND ".join(conditions)
+        sql = f"SELECT 1 FROM spider_stats_history WHERE {where} LIMIT 1"
+
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, args)
+                row = await cursor.fetchone()
+
+        return row is not None
+
+    def _get_fallback_period(self, period_type: str) -> Optional[str]:
+        """
+        获取回退周期类型
+
+        month -> day -> hour -> minute -> None
+
+        Args:
+            period_type: 当前周期类型
+
+        Returns:
+            回退周期类型，如果已是最细粒度则返回 None
+        """
+        fallback_map = {
+            self.PERIOD_MONTH: self.PERIOD_DAY,
+            self.PERIOD_DAY: self.PERIOD_HOUR,
+            self.PERIOD_HOUR: self.PERIOD_MINUTE,
+            self.PERIOD_MINUTE: None,
+        }
+        return fallback_map.get(period_type)
+
+    def _get_period_date_format(self, period_type: str) -> str:
+        """
+        获取周期类型对应的 MySQL DATE_FORMAT 格式串
+
+        Args:
+            period_type: 周期类型
+
+        Returns:
+            DATE_FORMAT 格式串
+        """
+        # 使用 %% 转义，避免 aiomysql 将 %Y/%m/%d 等误认为参数占位符
+        format_map = {
+            self.PERIOD_HOUR: '%%Y-%%m-%%d %%H:00:00',
+            self.PERIOD_DAY: '%%Y-%%m-%%d 00:00:00',
+            self.PERIOD_MONTH: '%%Y-%%m-01 00:00:00',
+        }
+        return format_map.get(period_type, '%%Y-%%m-%%d %%H:%%i:00')
+
+    def _get_fallback_limit(self, source_period: str) -> int:
+        """
+        获取回退查询时的数据量限制
+
+        Args:
+            source_period: 源周期类型
+
+        Returns:
+            最大记录数
+        """
+        limit_map = {
+            self.PERIOD_MINUTE: 10080,  # 7天
+            self.PERIOD_HOUR: 720,      # 30天
+            self.PERIOD_DAY: 365,       # 1年
+        }
+        return limit_map.get(source_period, 10080)
+
+    async def _fallback_aggregate_overview(
+        self,
+        target_period: str,
+        source_period: str,
+        project_id: Optional[int],
+        start: Optional[datetime],
+        end: Optional[datetime],
+    ) -> Dict[str, Any]:
+        """
+        概览数据回退聚合
+
+        当目标周期没有预聚合数据时，从更细粒度的源周期实时计算
+
+        Args:
+            target_period: 目标周期类型
+            source_period: 源周期类型
+            project_id: 项目ID，None 表示全部项目
+            start: 开始时间
+            end: 结束时间
+
+        Returns:
+            聚合后的统计概览数据
+        """
+        conditions = ["period_type = %s"]
+        args = [source_period]
+
+        if project_id is not None:
+            conditions.append("project_id = %s")
+            args.append(project_id)
+        if start:
+            conditions.append("period_start >= %s")
+            args.append(start)
+        if end:
+            conditions.append("period_start <= %s")
+            args.append(end)
+
+        where = " AND ".join(conditions)
+        limit = self._get_fallback_limit(source_period)
+
+        sql = f"""
+            SELECT
+                COALESCE(SUM(total), 0) as total,
+                COALESCE(SUM(completed), 0) as completed,
+                COALESCE(SUM(failed), 0) as failed,
+                COALESCE(SUM(retried), 0) as retried,
+                COALESCE(SUM(avg_speed), 0) as avg_speed
+            FROM (
+                SELECT total, completed, failed, retried, avg_speed
+                FROM spider_stats_history
+                WHERE {where}
+                ORDER BY period_start DESC
+                LIMIT {limit}
+            ) sub
+        """
+
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, args)
+                row = await cursor.fetchone()
+
+        if not row:
+            return {
+                'total': 0,
+                'completed': 0,
+                'failed': 0,
+                'retried': 0,
+                'success_rate': 0,
+                'avg_speed': 0,
+            }
+
+        total, completed, failed, retried, avg_speed = row
+        total_done = (completed or 0) + (failed or 0)
+        success_rate = round((completed or 0) / total_done * 100, 2) if total_done > 0 else 0
+
+        return {
+            'total': int(total or 0),
+            'completed': int(completed or 0),
+            'failed': int(failed or 0),
+            'retried': int(retried or 0),
+            'success_rate': success_rate,
+            'avg_speed': round(float(avg_speed or 0), 2),
+        }
+
+    async def _fallback_aggregate_chart_data(
+        self,
+        target_period: str,
+        source_period: str,
+        project_id: Optional[int],
+        start: Optional[datetime],
+        end: Optional[datetime],
+        limit: int,
+    ) -> List[Dict[str, Any]]:
+        """
+        图表数据回退聚合（按目标周期分组）
+
+        当目标周期没有预聚合数据时，从更细粒度的源周期实时聚合
+
+        Args:
+            target_period: 目标周期类型
+            source_period: 源周期类型
+            project_id: 项目ID，None 表示全部项目
+            start: 开始时间
+            end: 结束时间
+            limit: 最大记录数
+
+        Returns:
+            聚合后的图表数据列表
+        """
+        conditions = ["period_type = %s"]
+        args = [source_period]
+
+        if project_id is not None:
+            conditions.append("project_id = %s")
+            args.append(project_id)
+        if start:
+            conditions.append("period_start >= %s")
+            args.append(start)
+        if end:
+            conditions.append("period_start <= %s")
+            args.append(end)
+
+        where = " AND ".join(conditions)
+        date_format = self._get_period_date_format(target_period)
+        source_limit = self._get_fallback_limit(source_period)
+
+        sql = f"""
+            SELECT
+                grouped_time,
+                SUM(total) as total,
+                SUM(completed) as completed,
+                SUM(failed) as failed,
+                SUM(retried) as retried,
+                SUM(avg_speed) as avg_speed
+            FROM (
+                SELECT
+                    DATE_FORMAT(period_start, '{date_format}') as grouped_time,
+                    total, completed, failed, retried, avg_speed
+                FROM spider_stats_history
+                WHERE {where}
+                ORDER BY period_start DESC
+                LIMIT {source_limit}
+            ) sub
+            GROUP BY grouped_time
+            ORDER BY grouped_time DESC
+            LIMIT %s
+        """
+        args.append(limit)
+
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, args)
+                rows = await cursor.fetchall()
+
+        result = []
+        for row in rows:
+            grouped_time, total, completed, failed, retried, avg_speed = row
+            total_done = (completed or 0) + (failed or 0)
+            success_rate = round((completed or 0) / total_done * 100, 2) if total_done > 0 else 0
+
+            result.append({
+                'time': grouped_time if grouped_time else None,
+                'total': int(total or 0),
+                'completed': int(completed or 0),
+                'failed': int(failed or 0),
+                'retried': int(retried or 0),
+                'avg_speed': float(avg_speed or 0),
+                'success_rate': success_rate,
+            })
+
+        # 返回时间正序
+        result.reverse()
+        return result
+
+    async def _fallback_aggregate_stats_by_project(
+        self,
+        source_period: str,
+        start: Optional[datetime],
+        end: Optional[datetime],
+    ) -> List[Dict[str, Any]]:
+        """
+        按项目统计数据回退聚合
+
+        Args:
+            source_period: 源周期类型
+            start: 开始时间
+            end: 结束时间
+
+        Returns:
+            各项目统计数据列表
+        """
+        conditions = ["h.period_type = %s"]
+        args = [source_period]
+
+        if start:
+            conditions.append("h.period_start >= %s")
+            args.append(start)
+        if end:
+            conditions.append("h.period_start <= %s")
+            args.append(end)
+
+        where = " AND ".join(conditions)
+        source_limit = self._get_fallback_limit(source_period)
+
+        sql = f"""
+            SELECT
+                h.project_id,
+                p.name as project_name,
+                SUM(h.total) as total,
+                SUM(h.completed) as completed,
+                SUM(h.failed) as failed,
+                SUM(h.retried) as retried,
+                SUM(h.avg_speed) as avg_speed
+            FROM (
+                SELECT project_id, total, completed, failed, retried, avg_speed
+                FROM spider_stats_history
+                WHERE period_type = %s
+                  AND (period_start >= %s OR %s IS NULL)
+                  AND (period_start <= %s OR %s IS NULL)
+                ORDER BY period_start DESC
+                LIMIT {source_limit}
+            ) h
+            LEFT JOIN spider_projects p ON h.project_id = p.id
+            GROUP BY h.project_id, p.name
+            ORDER BY total DESC
+        """
+        # 重新构造参数
+        args = [source_period, start, start, end, end]
+
+        async with self.db_pool.acquire() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(sql, args)
+                rows = await cursor.fetchall()
+
+        result = []
+        for row in rows:
+            project_id, project_name, total, completed, failed, retried, avg_speed = row
+            total_done = (completed or 0) + (failed or 0)
+            success_rate = round((completed or 0) / total_done * 100, 2) if total_done > 0 else 0
+
+            result.append({
+                'project_id': project_id,
+                'project_name': project_name or f'项目 {project_id}',
+                'total': int(total or 0),
+                'completed': int(completed or 0),
+                'failed': int(failed or 0),
+                'retried': int(retried or 0),
+                'success_rate': success_rate,
+                'avg_speed': round(float(avg_speed or 0), 2),
+            })
+
+        return result
+
     async def get_chart_data(
         self,
         project_id: int,
@@ -396,6 +747,8 @@ class SpiderStatsWorker:
         """
         获取图表数据
 
+        当目标周期没有预聚合数据时，自动从更细粒度的数据实时计算。
+
         Args:
             project_id: 项目ID
             period_type: 周期类型（minute/hour/day/month）
@@ -406,6 +759,41 @@ class SpiderStatsWorker:
         Returns:
             统计数据列表
         """
+        # 检查目标周期是否有数据
+        has_data = await self._has_period_data(period_type, project_id, start, end)
+
+        if not has_data:
+            # 尝试回退到更细粒度的数据
+            fallback = self._get_fallback_period(period_type)
+            if fallback:
+                # 递归检查回退周期是否有数据
+                fallback_has_data = await self._has_period_data(fallback, project_id, start, end)
+                if fallback_has_data:
+                    return await self._fallback_aggregate_chart_data(
+                        target_period=period_type,
+                        source_period=fallback,
+                        project_id=project_id,
+                        start=start,
+                        end=end,
+                        limit=limit,
+                    )
+                else:
+                    # 继续递归查找
+                    deeper_fallback = self._get_fallback_period(fallback)
+                    while deeper_fallback:
+                        deeper_has_data = await self._has_period_data(deeper_fallback, project_id, start, end)
+                        if deeper_has_data:
+                            return await self._fallback_aggregate_chart_data(
+                                target_period=period_type,
+                                source_period=deeper_fallback,
+                                project_id=project_id,
+                                start=start,
+                                end=end,
+                                limit=limit,
+                            )
+                        deeper_fallback = self._get_fallback_period(deeper_fallback)
+
+        # 有预聚合数据，执行原有查询
         conditions = ["project_id = %s", "period_type = %s"]
         args = [project_id, period_type]
 
@@ -461,6 +849,8 @@ class SpiderStatsWorker:
         """
         获取统计概览（支持单项目或全部项目）
 
+        当目标周期没有预聚合数据时，自动从更细粒度的数据实时计算。
+
         Args:
             project_id: 项目ID，None 表示全部项目
             period_type: 周期类型（minute/hour/day/month）
@@ -470,6 +860,39 @@ class SpiderStatsWorker:
         Returns:
             统计概览数据
         """
+        # 检查目标周期是否有数据
+        has_data = await self._has_period_data(period_type, project_id, start, end)
+
+        if not has_data:
+            # 尝试回退到更细粒度的数据
+            fallback = self._get_fallback_period(period_type)
+            if fallback:
+                # 递归检查回退周期是否有数据
+                fallback_has_data = await self._has_period_data(fallback, project_id, start, end)
+                if fallback_has_data:
+                    return await self._fallback_aggregate_overview(
+                        target_period=period_type,
+                        source_period=fallback,
+                        project_id=project_id,
+                        start=start,
+                        end=end,
+                    )
+                else:
+                    # 继续递归查找
+                    deeper_fallback = self._get_fallback_period(fallback)
+                    while deeper_fallback:
+                        deeper_has_data = await self._has_period_data(deeper_fallback, project_id, start, end)
+                        if deeper_has_data:
+                            return await self._fallback_aggregate_overview(
+                                target_period=period_type,
+                                source_period=deeper_fallback,
+                                project_id=project_id,
+                                start=start,
+                                end=end,
+                            )
+                        deeper_fallback = self._get_fallback_period(deeper_fallback)
+
+        # 有预聚合数据，执行原有查询
         conditions = ["period_type = %s"]
         args = [period_type]
 
@@ -533,6 +956,8 @@ class SpiderStatsWorker:
         """
         获取全部项目汇总的图表数据
 
+        当目标周期没有预聚合数据时，自动从更细粒度的数据实时计算。
+
         Args:
             period_type: 周期类型（minute/hour/day/month）
             start: 开始时间
@@ -542,6 +967,41 @@ class SpiderStatsWorker:
         Returns:
             统计数据列表
         """
+        # 检查目标周期是否有数据（project_id=None 表示全部项目）
+        has_data = await self._has_period_data(period_type, None, start, end)
+
+        if not has_data:
+            # 尝试回退到更细粒度的数据
+            fallback = self._get_fallback_period(period_type)
+            if fallback:
+                # 递归检查回退周期是否有数据
+                fallback_has_data = await self._has_period_data(fallback, None, start, end)
+                if fallback_has_data:
+                    return await self._fallback_aggregate_chart_data(
+                        target_period=period_type,
+                        source_period=fallback,
+                        project_id=None,
+                        start=start,
+                        end=end,
+                        limit=limit,
+                    )
+                else:
+                    # 继续递归查找
+                    deeper_fallback = self._get_fallback_period(fallback)
+                    while deeper_fallback:
+                        deeper_has_data = await self._has_period_data(deeper_fallback, None, start, end)
+                        if deeper_has_data:
+                            return await self._fallback_aggregate_chart_data(
+                                target_period=period_type,
+                                source_period=deeper_fallback,
+                                project_id=None,
+                                start=start,
+                                end=end,
+                                limit=limit,
+                            )
+                        deeper_fallback = self._get_fallback_period(deeper_fallback)
+
+        # 有预聚合数据，执行原有查询
         conditions = ["period_type = %s"]
         args = [period_type]
 
@@ -603,6 +1063,8 @@ class SpiderStatsWorker:
         """
         获取各项目的统计数据列表
 
+        当目标周期没有预聚合数据时，自动从更细粒度的数据实时计算。
+
         Args:
             period_type: 周期类型（minute/hour/day/month）
             start: 开始时间
@@ -611,6 +1073,35 @@ class SpiderStatsWorker:
         Returns:
             各项目统计数据列表
         """
+        # 检查目标周期是否有数据（project_id=None 表示全部项目）
+        has_data = await self._has_period_data(period_type, None, start, end)
+
+        if not has_data:
+            # 尝试回退到更细粒度的数据
+            fallback = self._get_fallback_period(period_type)
+            if fallback:
+                # 递归检查回退周期是否有数据
+                fallback_has_data = await self._has_period_data(fallback, None, start, end)
+                if fallback_has_data:
+                    return await self._fallback_aggregate_stats_by_project(
+                        source_period=fallback,
+                        start=start,
+                        end=end,
+                    )
+                else:
+                    # 继续递归查找
+                    deeper_fallback = self._get_fallback_period(fallback)
+                    while deeper_fallback:
+                        deeper_has_data = await self._has_period_data(deeper_fallback, None, start, end)
+                        if deeper_has_data:
+                            return await self._fallback_aggregate_stats_by_project(
+                                source_period=deeper_fallback,
+                                start=start,
+                                end=end,
+                            )
+                        deeper_fallback = self._get_fallback_period(deeper_fallback)
+
+        # 有预聚合数据，执行原有查询
         conditions = ["h.period_type = %s"]
         args = [period_type]
 

@@ -210,6 +210,7 @@ export interface Article {
   title: string
   content: string
   status: number
+  source_url?: string  // 原始URL（可选，手动添加的文章可能没有）
   created_at: string
   updated_at: string
 }
