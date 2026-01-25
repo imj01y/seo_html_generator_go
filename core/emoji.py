@@ -45,6 +45,13 @@ class EmojiManager:
         self.emojis: List[str] = emojis if emojis is not None else []
         self.used_emojis: Set[str] = set()
 
+    def _get_available_emojis(self, exclude: Optional[Set[str]] = None) -> List[str]:
+        """获取可用的emoji列表"""
+        if not exclude:
+            return self.emojis
+        available = [e for e in self.emojis if e not in exclude]
+        return available if available else self.emojis
+
     def get_random(self, exclude_used: bool = False) -> str:
         """
         随机获取一个Emoji
@@ -59,11 +66,10 @@ class EmojiManager:
             return ""
 
         if exclude_used and self.used_emojis:
-            available = [e for e in self.emojis if e not in self.used_emojis]
-            if not available:
+            available = self._get_available_emojis(self.used_emojis)
+            if available == self.emojis and self.used_emojis:
                 # 所有Emoji都用过了，重置
                 self.reset_used()
-                available = self.emojis
         else:
             available = self.emojis
 
@@ -84,11 +90,8 @@ class EmojiManager:
         if not self.emojis:
             return ""
 
-        if exclude:
-            available = [e for e in self.emojis if e not in exclude]
-            if available:
-                return random.choice(available)
-        return random.choice(self.emojis)
+        available = self._get_available_emojis(exclude)
+        return random.choice(available)
 
     def get_random_list(self, count: int, unique: bool = True) -> List[str]:
         """

@@ -210,12 +210,7 @@ class ImageCachePool:
         Returns:
             URL列表
         """
-        result = []
-        for _ in range(count):
-            url = self.get_url_sync()
-            if url:
-                result.append(url)
-        return result
+        return [url for url in (self.get_url_sync() for _ in range(count)) if url]
 
     def get_remaining(self) -> int:
         """获取剩余可用URL数量"""

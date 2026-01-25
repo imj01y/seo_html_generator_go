@@ -236,6 +236,19 @@ class SpiderDetector:
 
         return None
 
+    def _get_cached_hostname(self, ip: str) -> Optional[str]:
+        """从缓存获取主机名，过期返回None"""
+        if ip not in self._dns_cache:
+            return None
+        hostname, cached_time = self._dns_cache[ip]
+        if (datetime.now() - cached_time).total_seconds() >= 3600:
+            return None
+        return hostname
+
+    def _matches_valid_domain(self, hostname: str, valid_domains: List[str]) -> bool:
+        """检查主机名是否匹配有效域名后缀"""
+        return any(hostname.endswith(d) for d in valid_domains)
+
     def _verify_dns_sync(
         self,
         ip: str,
@@ -253,20 +266,17 @@ class SpiderDetector:
         """
         try:
             # 检查缓存
-            cache_key = ip
-            if cache_key in self._dns_cache:
-                hostname, cached_time = self._dns_cache[cache_key]
-                if (datetime.now() - cached_time).total_seconds() < 3600:
-                    return any(hostname.endswith(d) for d in valid_domains)
+            cached_hostname = self._get_cached_hostname(ip)
+            if cached_hostname:
+                return self._matches_valid_domain(cached_hostname, valid_domains)
 
             # 反向DNS查询
             hostname, _, _ = socket.gethostbyaddr(ip)
 
             # 缓存结果
-            self._dns_cache[cache_key] = (hostname, datetime.now())
+            self._dns_cache[ip] = (hostname, datetime.now())
 
-            # 验证域名
-            return any(hostname.endswith(d) for d in valid_domains)
+            return self._matches_valid_domain(hostname, valid_domains)
 
         except (socket.herror, socket.gaierror, socket.timeout) as e:
             logger.debug(f"DNS verification failed for {ip}: {e}")
@@ -289,11 +299,9 @@ class SpiderDetector:
         """
         try:
             # 检查缓存
-            cache_key = ip
-            if cache_key in self._dns_cache:
-                hostname, cached_time = self._dns_cache[cache_key]
-                if (datetime.now() - cached_time).total_seconds() < 3600:
-                    return any(hostname.endswith(d) for d in valid_domains)
+            cached_hostname = self._get_cached_hostname(ip)
+            if cached_hostname:
+                return self._matches_valid_domain(cached_hostname, valid_domains)
 
             # 异步反向DNS查询
             loop = asyncio.get_event_loop()
@@ -303,10 +311,9 @@ class SpiderDetector:
             )
 
             # 缓存结果
-            self._dns_cache[cache_key] = (hostname, datetime.now())
+            self._dns_cache[ip] = (hostname, datetime.now())
 
-            # 验证域名
-            return any(hostname.endswith(d) for d in valid_domains)
+            return self._matches_valid_domain(hostname, valid_domains)
 
         except (socket.herror, socket.gaierror, socket.timeout, asyncio.TimeoutError) as e:
             logger.debug(f"DNS verification failed for {ip}: {e}")

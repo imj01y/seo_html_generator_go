@@ -271,26 +271,19 @@ class HTMLCacheManager:
         """统计目录下的文件数量"""
         if not directory.exists():
             return 0
-        count = 0
         try:
-            for _ in directory.rglob("*.html"):
-                count += 1
+            return sum(1 for _ in directory.rglob("*.html"))
         except Exception:
-            pass
-        return count
+            return 0
 
     def _get_dir_size(self, directory: Path) -> int:
         """获取目录大小（字节）"""
         if not directory.exists():
             return 0
-        total = 0
         try:
-            for f in directory.rglob("*"):
-                if f.is_file():
-                    total += f.stat().st_size
+            return sum(f.stat().st_size for f in directory.rglob("*") if f.is_file())
         except Exception:
-            pass
-        return total
+            return 0
 
     async def clear(self, domain: Optional[str] = None) -> int:
         """

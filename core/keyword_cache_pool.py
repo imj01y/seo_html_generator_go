@@ -210,12 +210,7 @@ class KeywordCachePool:
         Returns:
             关键词列表
         """
-        result = []
-        for _ in range(count):
-            keyword = self.get_keyword_sync()
-            if keyword:
-                result.append(keyword)
-        return result
+        return [kw for kw in (self.get_keyword_sync() for _ in range(count)) if kw]
 
     def get_remaining(self) -> int:
         """获取剩余可用关键词数量"""

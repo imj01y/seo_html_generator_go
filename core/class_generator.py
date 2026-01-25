@@ -68,12 +68,11 @@ class ClassGenerator:
             格式为 "随机串1 随机串2 语义名" 的class名称
         """
         # 如果启用缓存且已存在，返回缓存值
-        if self._use_cache and semantic_name in self._cache:
-            return self._cache[semantic_name]
+        if self._use_cache:
+            if semantic_name in self._cache:
+                return self._cache[semantic_name]
 
-        part1 = self._random_string(self.part1_length)
-        part2 = self._random_string(self.part2_length)
-        result = f"{part1} {part2} {semantic_name}"
+        result = f"{self._random_string(self.part1_length)} {self._random_string(self.part2_length)} {semantic_name}"
 
         if self._use_cache:
             self._cache[semantic_name] = result

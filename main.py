@@ -83,11 +83,19 @@ _stats_worker = None
 _scheduler_worker = None
 
 
+def _parse_setting_value(value: str, setting_type: str):
+    """解析配置值为对应类型"""
+    if setting_type == 'boolean':
+        return value.lower() in ('true', '1', 'yes')
+    if setting_type == 'number':
+        return float(value) if '.' in value else int(value)
+    return value
+
+
 async def _load_file_cache_config() -> dict:
     """从数据库加载文件缓存配置"""
-    file_cache_config = {}
     if not get_db_pool():
-        return file_cache_config
+        return {}
 
     try:
         from database.db import fetch_all
@@ -95,20 +103,13 @@ async def _load_file_cache_config() -> dict:
             "SELECT setting_key, setting_value, setting_type FROM system_settings "
             "WHERE setting_key LIKE 'file_cache%'"
         )
-        for s in settings or []:
-            key = s['setting_key']
-            value = s['setting_value']
-            stype = s['setting_type']
-            if stype == 'boolean':
-                file_cache_config[key] = value.lower() in ('true', '1', 'yes')
-            elif stype == 'number':
-                file_cache_config[key] = float(value) if '.' in value else int(value)
-            else:
-                file_cache_config[key] = value
+        return {
+            s['setting_key']: _parse_setting_value(s['setting_value'], s['setting_type'])
+            for s in (settings or [])
+        }
     except Exception as e:
         logger.warning(f"Failed to load file cache settings from database: {e}")
-
-    return file_cache_config
+        return {}
 
 
 async def _start_background_worker(worker_class, name: str, **kwargs):
@@ -121,7 +122,7 @@ async def _start_background_worker(worker_class, name: str, **kwargs):
         if name == 'generator':
             _generator_worker = worker
             await worker.run_forever(group_id=1)
-        elif name == 'stats':
+        else:  # 'stats'
             _stats_worker = worker
             await worker.start()
 

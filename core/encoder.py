@@ -96,15 +96,13 @@ class HTMLEntityEncoder:
         if not text:
             return ""
 
-        result = []
-        for char in text:
+        def process_char(char: str) -> str:
             if self.should_encode(char):
-                result.append(self.encode_char(char))
                 self._encode_count += 1
-            else:
-                result.append(char)
+                return self.encode_char(char)
+            return char
 
-        return ''.join(result)
+        return ''.join(process_char(c) for c in text)
 
     def encode(self, text: str) -> str:
         """

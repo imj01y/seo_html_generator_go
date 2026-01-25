@@ -87,26 +87,31 @@ async def init_database(
             current_stmt = []
             in_string = False  # 跟踪是否在单引号字符串内
 
+            def should_skip_line(line: str) -> bool:
+                """检查是否应跳过该行"""
+                upper_line = line.upper()
+                return (
+                    not line or
+                    line.startswith('--') or
+                    upper_line.startswith('USE ') or
+                    'CREATE DATABASE' in upper_line
+                )
+
+            def count_quotes(line: str) -> int:
+                """计算行中未转义的单引号数量"""
+                return line.replace("''", "").count("'")
+
             for line in schema_content.split('\n'):
                 stripped = line.strip()
+
                 # 跳过注释和空行（仅当不在字符串内时）
-                if not in_string:
-                    if not stripped or stripped.startswith('--'):
-                        continue
-                    # 跳过 USE 语句（已经切换了数据库）
-                    if stripped.upper().startswith('USE '):
-                        continue
-                    # 跳过 CREATE DATABASE 语句（已经创建了）
-                    if 'CREATE DATABASE' in stripped.upper():
-                        continue
+                if not in_string and should_skip_line(stripped):
+                    continue
 
                 current_stmt.append(line)
 
                 # 计算这行中单引号的数量（排除转义的 ''）
-                # 先替换转义的单引号，再计算
-                temp_line = line.replace("''", "")
-                quote_count = temp_line.count("'")
-                if quote_count % 2 == 1:
+                if count_quotes(line) % 2 == 1:
                     in_string = not in_string
 
                 # 只有在字符串外且行末是分号时才分割语句

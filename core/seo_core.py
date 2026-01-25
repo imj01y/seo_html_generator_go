@@ -228,6 +228,21 @@ class SEOCore:
             logger.warning(f"Failed to get content from pool: {e}")
             return ""
 
+    def _get_from_local_cache(self, cache: list, cursor_attr: str) -> str:
+        """从本地缓存获取随机项（通用方法）"""
+        if not cache:
+            return ""
+
+        cursor = getattr(self, cursor_attr)
+        if cursor >= len(cache):
+            random.shuffle(cache)
+            setattr(self, cursor_attr, 0)
+            cursor = 0
+
+        item = cache[cursor]
+        setattr(self, cursor_attr, cursor + 1)
+        return item
+
     def _random_image_sync(self) -> str:
         """
         同步获取随机图片URL（用于模板渲染）
@@ -246,16 +261,7 @@ class SEOCore:
                 return url
 
         # 降级到本地缓存
-        if not self._image_url_cache:
-            return ""
-
-        if self._image_cursor >= len(self._image_url_cache):
-            random.shuffle(self._image_url_cache)
-            self._image_cursor = 0
-
-        url = self._image_url_cache[self._image_cursor]
-        self._image_cursor += 1
-        return url
+        return self._get_from_local_cache(self._image_url_cache, '_image_cursor')
 
     def load_image_urls_sync(self, urls: List[str]) -> int:
         """
@@ -314,16 +320,7 @@ class SEOCore:
                 return keyword
 
         # 降级到本地缓存
-        if not self._keyword_cache:
-            return ""
-
-        if self._keyword_cursor >= len(self._keyword_cache):
-            random.shuffle(self._keyword_cache)
-            self._keyword_cursor = 0
-
-        keyword = self._keyword_cache[self._keyword_cursor]
-        self._keyword_cursor += 1
-        return keyword
+        return self._get_from_local_cache(self._keyword_cache, '_keyword_cursor')
 
     def _get_keywords_sync(self, count: int) -> List[str]:
         """
@@ -345,18 +342,11 @@ class SEOCore:
                 return keywords
 
         # 降级到本地缓存
-        if not self._keyword_cache:
-            return []
-
-        result = []
-        for _ in range(count):
-            if self._keyword_cursor >= len(self._keyword_cache):
-                random.shuffle(self._keyword_cache)
-                self._keyword_cursor = 0
-            result.append(self._keyword_cache[self._keyword_cursor])
-            self._keyword_cursor += 1
-
-        return result
+        return [
+            self._get_from_local_cache(self._keyword_cache, '_keyword_cursor')
+            for _ in range(count)
+            if self._keyword_cache
+        ]
 
     def load_keywords_sync(self, keywords: List[str]) -> int:
         """
@@ -621,19 +611,20 @@ class SEOCore:
             'image_cache_cleared': self._clear_image_cache()
         }
 
+    def _clear_local_cache(self, cache: list, cursor_attr: str) -> int:
+        """清空本地缓存（通用方法）"""
+        count = len(cache)
+        cache.clear()
+        setattr(self, cursor_attr, 0)
+        return count
+
     def _clear_keyword_cache(self) -> int:
         """清空本地关键词缓存"""
-        count = len(self._keyword_cache)
-        self._keyword_cache.clear()
-        self._keyword_cursor = 0
-        return count
+        return self._clear_local_cache(self._keyword_cache, '_keyword_cursor')
 
     def _clear_image_cache(self) -> int:
         """清空本地图片URL缓存"""
-        count = len(self._image_url_cache)
-        self._image_url_cache.clear()
-        self._image_cursor = 0
-        return count
+        return self._clear_local_cache(self._image_url_cache, '_image_cursor')
 
 
 # 全局SEOCore实例
