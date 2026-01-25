@@ -328,15 +328,18 @@ class TitleManager:
 
 
 # ============================================
-# 全局实例管理
+# 全局实例管理（多实例模式）
 # ============================================
 
-_title_manager: Optional[TitleManager] = None
+# 全局管理器字典（按 group_id 存储）
+_title_managers: Dict[int, TitleManager] = {}
+_redis_client = None
+_db_pool = None
 
 
 async def init_title_manager(redis_client, db_pool, group_id: int = 1, max_size: int = 500000) -> TitleManager:
     """
-    初始化全局标题管理器
+    初始化标题管理器（支持多分组）
 
     Args:
         redis_client: Redis客户端
@@ -347,27 +350,67 @@ async def init_title_manager(redis_client, db_pool, group_id: int = 1, max_size:
     Returns:
         TitleManager实例
     """
-    global _title_manager
-    _title_manager = TitleManager(redis_client, db_pool, group_id)
-    await _title_manager.load_pools(max_size)
-    return _title_manager
+    global _redis_client, _db_pool
+    _redis_client = redis_client
+    _db_pool = db_pool
+
+    manager = TitleManager(redis_client, db_pool, group_id)
+    await manager.load_pools(max_size)
+    _title_managers[group_id] = manager
+    return manager
 
 
-def get_title_manager() -> Optional[TitleManager]:
-    """获取全局标题管理器实例"""
-    return _title_manager
+async def get_or_create_title_manager(group_id: int, max_size: int = 500000) -> Optional[TitleManager]:
+    """
+    获取或创建指定分组的标题管理器（懒加载）
+
+    Args:
+        group_id: 分组ID
+        max_size: 每层最大加载数量
+
+    Returns:
+        TitleManager实例或None
+    """
+    if group_id in _title_managers:
+        return _title_managers[group_id]
+
+    if not _redis_client or not _db_pool:
+        return None
+
+    manager = TitleManager(_redis_client, _db_pool, group_id)
+    await manager.load_pools(max_size)
+    _title_managers[group_id] = manager
+    return manager
 
 
-async def get_random_titles(count: int = 4) -> List[str]:
+def get_title_manager(group_id: int = 1) -> Optional[TitleManager]:
+    """
+    获取指定分组的标题管理器实例
+
+    Args:
+        group_id: 分组ID
+
+    Returns:
+        TitleManager实例或None
+    """
+    return _title_managers.get(group_id)
+
+
+async def get_random_titles(count: int = 4, group_id: int = 1) -> List[str]:
     """
     获取随机标题（便捷函数）
 
     Args:
         count: 数量
+        group_id: 分组ID
 
     Returns:
         标题列表
     """
-    if _title_manager:
-        return await _title_manager.extract_titles(count)
+    manager = _title_managers.get(group_id)
+    if not manager:
+        # 尝试懒加载
+        manager = await get_or_create_title_manager(group_id)
+    if manager:
+        return await manager.extract_titles(count)
     return []

@@ -33,6 +33,7 @@ export const getTemplates = async (params?: {
   page?: number
   page_size?: number
   status?: number
+  site_group_id?: number
 }): Promise<PaginatedResponse<TemplateListItem>> => {
   const res: TemplateListResponse = await request.get('/templates', { params })
   return {
@@ -43,9 +44,11 @@ export const getTemplates = async (params?: {
 
 /**
  * 获取模板下拉选项
+ * @param siteGroupId 可选的站群ID过滤
  */
-export const getTemplateOptions = async (): Promise<TemplateOption[]> => {
-  const res: TemplateOptionsResponse = await request.get('/templates/options')
+export const getTemplateOptions = async (siteGroupId?: number): Promise<TemplateOption[]> => {
+  const params = siteGroupId ? { site_group_id: siteGroupId } : {}
+  const res: TemplateOptionsResponse = await request.get('/templates/options', { params })
   return res.options || []
 }
 

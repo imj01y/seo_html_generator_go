@@ -15,7 +15,7 @@ Redis 数据结构：
 """
 
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from loguru import logger
 
 
@@ -334,10 +334,13 @@ class ContentPoolManager:
 
 
 # ============================================
-# 全局实例管理
+# 全局实例管理（多实例模式）
 # ============================================
 
-_content_pool_manager: Optional[ContentPoolManager] = None
+# 全局管理器字典（按 group_id 存储）
+_content_pool_managers: Dict[int, ContentPoolManager] = {}
+_redis_client = None
+_db_pool = None
 
 
 async def init_content_pool_manager(
@@ -348,7 +351,7 @@ async def init_content_pool_manager(
     max_size: int = 0
 ) -> ContentPoolManager:
     """
-    初始化全局段落池管理器
+    初始化段落池管理器（支持多分组）
 
     Args:
         redis_client: Redis 客户端
@@ -360,37 +363,91 @@ async def init_content_pool_manager(
     Returns:
         ContentPoolManager 实例
     """
-    global _content_pool_manager
-    _content_pool_manager = ContentPoolManager(redis_client, db_pool, group_id)
+    global _redis_client, _db_pool
+    _redis_client = redis_client
+    _db_pool = db_pool
+
+    manager = ContentPoolManager(redis_client, db_pool, group_id)
 
     if auto_initialize:
         # 检查池是否为空
-        stats = await _content_pool_manager.get_pool_stats()
+        stats = await manager.get_pool_stats()
         if stats['total'] == 0:
-            await _content_pool_manager.initialize_pool_from_db(max_size)
+            await manager.initialize_pool_from_db(max_size)
         else:
             # 更新告警状态
-            await _content_pool_manager._update_alert_by_pool_status()
+            await manager._update_alert_by_pool_status()
             logger.info(
-                f"Content pool already has {stats['pool_size']} available, "
+                f"Content pool (group {group_id}) already has {stats['pool_size']} available, "
                 f"{stats['used_size']} used"
             )
 
-    return _content_pool_manager
+    _content_pool_managers[group_id] = manager
+    return manager
 
 
-def get_content_pool_manager() -> Optional[ContentPoolManager]:
-    """获取全局段落池管理器实例"""
-    return _content_pool_manager
+async def get_or_create_content_pool_manager(
+    group_id: int,
+    auto_initialize: bool = True,
+    max_size: int = 0
+) -> Optional[ContentPoolManager]:
+    """
+    获取或创建指定分组的段落池管理器（懒加载）
+
+    Args:
+        group_id: 分组ID
+        auto_initialize: 是否自动初始化
+        max_size: 最大加载数量
+
+    Returns:
+        ContentPoolManager实例或None
+    """
+    if group_id in _content_pool_managers:
+        return _content_pool_managers[group_id]
+
+    if not _redis_client or not _db_pool:
+        return None
+
+    manager = ContentPoolManager(_redis_client, _db_pool, group_id)
+
+    if auto_initialize:
+        stats = await manager.get_pool_stats()
+        if stats['total'] == 0:
+            await manager.initialize_pool_from_db(max_size)
+        else:
+            await manager._update_alert_by_pool_status()
+
+    _content_pool_managers[group_id] = manager
+    return manager
 
 
-async def get_pool_content() -> Optional[str]:
+def get_content_pool_manager(group_id: int = 1) -> Optional[ContentPoolManager]:
+    """
+    获取指定分组的段落池管理器实例
+
+    Args:
+        group_id: 分组ID
+
+    Returns:
+        ContentPoolManager实例或None
+    """
+    return _content_pool_managers.get(group_id)
+
+
+async def get_pool_content(group_id: int = 1) -> Optional[str]:
     """
     获取段落内容（便捷函数）
+
+    Args:
+        group_id: 分组ID
 
     Returns:
         段落内容或 None
     """
-    if _content_pool_manager:
-        return await _content_pool_manager.get_content()
+    manager = _content_pool_managers.get(group_id)
+    if not manager:
+        # 尝试懒加载
+        manager = await get_or_create_content_pool_manager(group_id)
+    if manager:
+        return await manager.get_content()
     return None

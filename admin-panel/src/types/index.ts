@@ -264,6 +264,7 @@ export interface TemplateCreate {
 }
 
 export interface TemplateUpdate {
+  site_group_id?: number  // 所属站群ID
   display_name?: string
   description?: string
   content?: string

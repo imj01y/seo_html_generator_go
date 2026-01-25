@@ -177,7 +177,7 @@
         label-width="100px"
       >
         <el-form-item label="所属分组" prop="site_group_id">
-          <el-select v-model="form.site_group_id" style="width: 100%">
+          <el-select v-model="form.site_group_id" style="width: 100%" @change="handleSiteGroupChange">
             <el-option
               v-for="group in siteGroups"
               :key="group.id"
@@ -424,9 +424,10 @@ const loadSites = async () => {
   }
 }
 
-const loadTemplates = async () => {
+const loadTemplates = async (siteGroupId?: number) => {
   try {
-    templateOptions.value = await getTemplateOptions()
+    // 传递站群ID过滤模板，优先显示当前站群的模板
+    templateOptions.value = await getTemplateOptions(siteGroupId || activeGroupId.value)
   } catch {
     templateOptions.value = [{ id: 0, name: 'download_site', display_name: '下载站模板' }]
   }
@@ -468,6 +469,8 @@ const selectGroup = (groupId: number) => {
   activeGroupId.value = groupId
   clearSelection()
   loadSites()
+  // 切换分组时重新加载模板选项
+  loadTemplates(groupId)
 }
 
 const showContextMenu = (event: MouseEvent, group: SiteGroup) => {
@@ -619,13 +622,22 @@ const handleBatchDisable = async () => {
 }
 
 // 站点操作
-const handleAdd = () => {
+const handleAdd = async () => {
   isEdit.value = false
   form.site_group_id = activeGroupId.value
+  // 加载当前分组的模板选项
+  await loadTemplates(form.site_group_id)
   dialogVisible.value = true
 }
 
-const handleEdit = (row: Site) => {
+// 站点所属分组变化时重新加载模板选项
+const handleSiteGroupChange = async (groupId: number) => {
+  await loadTemplates(groupId)
+  // 清空已选模板，因为分组变化可能导致模板不可用
+  form.template = ''
+}
+
+const handleEdit = async (row: Site) => {
   isEdit.value = true
   form.id = row.id
   form.site_group_id = row.site_group_id || 1
@@ -638,6 +650,8 @@ const handleEdit = (row: Site) => {
   form.icp_number = row.icp_number || ''
   form.baidu_token = row.baidu_token || ''
   form.analytics = row.analytics || ''
+  // 根据站点所属分组加载对应的模板选项
+  await loadTemplates(form.site_group_id)
   dialogVisible.value = true
 }
 

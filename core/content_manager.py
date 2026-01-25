@@ -213,10 +213,13 @@ class ContentManager:
 
 
 # ============================================
-# 全局实例管理
+# 全局实例管理（多实例模式）
 # ============================================
 
-_content_manager: Optional[ContentManager] = None
+# 全局管理器字典（按 group_id 存储）
+_content_managers: Dict[int, ContentManager] = {}
+_redis_client = None
+_db_pool = None
 
 
 async def init_content_manager(
@@ -226,7 +229,7 @@ async def init_content_manager(
     max_size: int = 50000
 ) -> ContentManager:
     """
-    初始化全局正文管理器
+    初始化正文管理器（支持多分组）
 
     Args:
         redis_client: Redis客户端
@@ -237,24 +240,66 @@ async def init_content_manager(
     Returns:
         ContentManager实例
     """
-    global _content_manager
-    _content_manager = ContentManager(redis_client, db_pool, group_id)
-    await _content_manager.load_ids(max_size)
-    return _content_manager
+    global _redis_client, _db_pool
+    _redis_client = redis_client
+    _db_pool = db_pool
+
+    manager = ContentManager(redis_client, db_pool, group_id)
+    await manager.load_ids(max_size)
+    _content_managers[group_id] = manager
+    return manager
 
 
-def get_content_manager() -> Optional[ContentManager]:
-    """获取全局正文管理器实例"""
-    return _content_manager
+async def get_or_create_content_manager(group_id: int, max_size: int = 50000) -> Optional[ContentManager]:
+    """
+    获取或创建指定分组的正文管理器（懒加载）
+
+    Args:
+        group_id: 分组ID
+        max_size: 最大加载数量
+
+    Returns:
+        ContentManager实例或None
+    """
+    if group_id in _content_managers:
+        return _content_managers[group_id]
+
+    if not _redis_client or not _db_pool:
+        return None
+
+    manager = ContentManager(_redis_client, _db_pool, group_id)
+    await manager.load_ids(max_size)
+    _content_managers[group_id] = manager
+    return manager
 
 
-async def get_random_content() -> str:
+def get_content_manager(group_id: int = 1) -> Optional[ContentManager]:
+    """
+    获取指定分组的正文管理器实例
+
+    Args:
+        group_id: 分组ID
+
+    Returns:
+        ContentManager实例或None
+    """
+    return _content_managers.get(group_id)
+
+
+async def get_random_content(group_id: int = 1) -> str:
     """
     获取随机正文（便捷函数）
+
+    Args:
+        group_id: 分组ID
 
     Returns:
         正文内容
     """
-    if _content_manager:
-        return await _content_manager.get_random_content()
+    manager = _content_managers.get(group_id)
+    if not manager:
+        # 尝试懒加载
+        manager = await get_or_create_content_manager(group_id)
+    if manager:
+        return await manager.get_random_content()
     return ""

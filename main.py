@@ -306,25 +306,25 @@ async def init_components():
             seo_core.load_image_urls_sync(urls)
             logger.info(f"Preloaded {len(urls)} image URLs to sync cache")
 
-    # 13-14. 初始化标题和正文管理器
+    # 13-14. 初始化标题和正文管理器（预热默认分组，其他分组懒加载）
     if redis_client and db_pool:
-        # 标题管理器（分层随机抽取）
+        # 标题管理器（分层随机抽取）- 预热分组1
         try:
             await init_title_manager(redis_client, db_pool, group_id=1, max_size=500000)
-            title_manager = get_title_manager()
+            title_manager = get_title_manager(group_id=1)
             if title_manager:
                 stats = title_manager.get_stats()
-                logger.info(f"Title manager initialized: {stats['total_loaded']} titles loaded")
+                logger.info(f"Title manager (group 1) initialized: {stats['total_loaded']} titles loaded")
         except Exception as e:
             logger.warning(f"Title manager initialization failed: {e}")
 
-        # 正文管理器（从contents表读取已处理好的正文）
+        # 正文管理器（从contents表读取已处理好的正文）- 预热分组1
         try:
             await init_content_manager(redis_client, db_pool, group_id=1, max_size=50000)
-            content_manager = get_content_manager()
+            content_manager = get_content_manager(group_id=1)
             if content_manager:
                 stats = content_manager.get_stats()
-                logger.info(f"Content manager initialized: {stats['total']} contents loaded")
+                logger.info(f"Content manager (group 1) initialized: {stats['total']} contents loaded")
         except Exception as e:
             logger.warning(f"Content manager initialization failed: {e}")
 
