@@ -16,8 +16,12 @@ FastAPI路由模块
 - /api/settings/*: 系统配置
 """
 import time
+import asyncio
+import threading
 from typing import Optional, List
 from datetime import datetime
+
+from cachetools import TTLCache
 
 from fastapi import APIRouter, HTTPException, Depends, Header, Query, Request, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import HTMLResponse
@@ -420,6 +424,51 @@ async def get_site_config_by_domain(domain: str) -> Optional[dict]:
         return None
 
 
+# 站点配置内存缓存（最多 500 个站点，TTL 5 分钟）
+_site_config_cache: TTLCache = TTLCache(maxsize=500, ttl=300)
+_site_config_lock = threading.Lock()
+
+
+async def get_site_config_cached(domain: str) -> Optional[dict]:
+    """
+    带内存缓存的站点配置获取
+
+    Args:
+        domain: 站点域名
+
+    Returns:
+        站点配置字典或 None
+    """
+    # 先检查缓存
+    with _site_config_lock:
+        if domain in _site_config_cache:
+            return _site_config_cache[domain]
+
+    # 数据库查询
+    site = await get_site_config_by_domain(domain)
+
+    # 写入缓存（包括 None 值，避免缓存穿透）
+    if site is not None:
+        with _site_config_lock:
+            _site_config_cache[domain] = site
+
+    return site
+
+
+def invalidate_site_config_cache(domain: Optional[str] = None):
+    """
+    清除站点配置缓存
+
+    Args:
+        domain: 指定域名，None 则清除所有
+    """
+    with _site_config_lock:
+        if domain:
+            _site_config_cache.pop(domain, None)
+        else:
+            _site_config_cache.clear()
+
+
 # ============================================
 # 页面服务路由（供蜘蛛访问）
 # ============================================
@@ -548,25 +597,32 @@ async def serve_page(
 
     # 生成页面
     try:
-        # 从数据库获取站点配置
-        site_config = await get_site_config_by_domain(domain)
+        # 从缓存或数据库获取站点配置
+        site_config = await get_site_config_cached(domain)
 
         # 检查站点是否存在于数据库中
         if site_config is None:
             logger.warning(f"Domain not registered: {domain}")
             raise HTTPException(status_code=403, detail="Domain not registered")
 
-        # 从数据库获取模板内容（按站群隔离）
+        # 提取配置参数
         template_name = site_config.get('template', 'download_site')
         site_group_id = site_config.get('site_group_id', 1)
+        article_group_id = site_config.get('article_group_id') or 1
 
-        # 优先从当前站群获取模板
-        template_data = await fetch_one(
+        # 并行获取：模板、标题、正文
+        template_task = fetch_one(
             "SELECT name, content FROM templates WHERE name = %s AND site_group_id = %s AND status = 1",
             (template_name, site_group_id)
         )
+        titles_task = get_random_titles(4, group_id=article_group_id)
+        content_task = get_random_content(group_id=article_group_id)
 
-        # 如果站群内找不到，回退到默认站群（兼容旧数据）
+        template_data, random_titles, random_content = await asyncio.gather(
+            template_task, titles_task, content_task
+        )
+
+        # 如果站群内找不到模板，回退到默认站群（兼容旧数据）
         if not template_data:
             template_data = await fetch_one(
                 "SELECT name, content FROM templates WHERE name = %s AND site_group_id = 1 AND status = 1",
@@ -576,13 +632,6 @@ async def serve_page(
         if not template_data or not template_data.get('content'):
             logger.error(f"Template not found or empty: {template_name} (site_group_id={site_group_id})")
             raise HTTPException(status_code=500, detail=f"Template '{template_name}' not found")
-
-        # 获取站点配置中的 article_group_id（用于标题和正文分组隔离）
-        article_group_id = site_config.get('article_group_id') or 1
-
-        # 获取随机标题（4个）和随机正文（已含拼音标注）- 按分组过滤
-        random_titles = await get_random_titles(4, group_id=article_group_id)
-        random_content = await get_random_content(group_id=article_group_id)
 
         # 组装 article_content
         article_content = _build_article_content(random_titles, random_content)

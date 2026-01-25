@@ -24,8 +24,9 @@ from typing import Dict, Any, Optional, List, Set, Callable
 from datetime import datetime
 import random
 import asyncio
+import hashlib
 
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+from jinja2 import Environment, FileSystemLoader, select_autoescape, Template
 from markupsafe import Markup
 
 from .encoder import HTMLEntityEncoder
@@ -107,6 +108,9 @@ class SEOCore:
         self._used_emojis: Set[str] = set()
         self._encoding_count: int = 0
         self._preloaded_content: Optional[str] = None  # 预加载的正文内容
+
+        # 编译后模板缓存（避免重复解析模板内容）
+        self._compiled_templates: Dict[str, Template] = {}
 
         logger.info(f"SEOCore initialized with template_dir: {template_dir}")
 
@@ -515,7 +519,13 @@ class SEOCore:
         )
 
         try:
-            template = self.jinja_env.from_string(template_content)
+            # 使用模板内容 hash 作为缓存 key，避免重复编译
+            cache_key = hashlib.md5(template_content.encode()).hexdigest()
+
+            if cache_key not in self._compiled_templates:
+                self._compiled_templates[cache_key] = self.jinja_env.from_string(template_content)
+
+            template = self._compiled_templates[cache_key]
             html = template.render(**context)
 
             logger.debug(

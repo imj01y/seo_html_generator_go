@@ -6,7 +6,7 @@
 - 从 contents 表存储的段落中消费
 - 一次性消费：用过的段落加入已用池
 - 可用池耗尽时自动轮转：已用池 -> 可用池
-- 告警机制：预警、严重、枯竭三级告警
+- 告警机制：预警、严重、枯竭三级告警（采样更新，减少 Redis 调用）
 
 Redis 数据结构：
 - contents:pool:{group_id}  SET  可用的段落ID池
@@ -14,6 +14,7 @@ Redis 数据结构：
 - alerts:content_pool       HASH 告警状态
 """
 
+import asyncio
 from datetime import datetime
 from typing import Optional, Dict, Any, List
 from loguru import logger
@@ -48,6 +49,10 @@ class ContentPoolManager:
         self.used_key = f"contents:used:{group_id}"
         self.alert_key = "alerts:content_pool"
 
+        # 告警采样计数器（每 100 次更新一次告警状态）
+        self._consume_count: int = 0
+        self._alert_sample_interval: int = 100
+
     async def get_content(self) -> Optional[str]:
         """
         获取一条段落内容（一次性消费）
@@ -77,8 +82,10 @@ class ContentPoolManager:
         # 4. 加入已用池
         await self.redis.sadd(self.used_key, content_id)
 
-        # 5. 更新告警状态
-        await self._update_alert_by_pool_status()
+        # 5. 采样更新告警状态（每 N 次更新一次，不阻塞主流程）
+        self._consume_count += 1
+        if self._consume_count % self._alert_sample_interval == 0:
+            asyncio.create_task(self._update_alert_by_pool_status())
 
         # 6. 从 MySQL 获取内容
         content = await self._fetch_content(content_id)
