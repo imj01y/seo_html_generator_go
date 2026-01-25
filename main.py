@@ -244,9 +244,11 @@ async def init_components():
     )
     logger.info("SEO core initialized")
 
-    # 11. 初始化关键词缓存池（生产者消费者模型）
+    # 11. 初始化关键词缓存池（生产者消费者模型，带预编码）
     # 允许空数据启动，新增数据后会自动加入缓存池
+    # 传入 encoder 实现加载时预编码，避免每次调用时编码
     keyword_group = get_keyword_group()
+    seo_core = get_seo_core()
     if redis_client and keyword_group:
         try:
             await init_keyword_cache_pool(
@@ -255,7 +257,8 @@ async def init_components():
                 cache_size=10000,
                 low_watermark_ratio=0.2,
                 refill_batch_size=2000,
-                check_interval=1.0
+                check_interval=1.0,
+                encoder=seo_core.encoder if seo_core else None  # 传入编码器
             )
             pool = get_keyword_cache_pool()
             if pool:
@@ -263,7 +266,7 @@ async def init_components():
                 if stats['cache_size'] == 0:
                     logger.warning("Keyword cache pool started empty - will populate when data is added")
                 else:
-                    logger.info(f"Keyword cache pool initialized: {stats['cache_size']} keywords, low_watermark={stats['low_watermark']}")
+                    logger.info(f"Keyword cache pool initialized: {stats['cache_size']} pre-encoded keywords, low_watermark={stats['low_watermark']}")
         except Exception as e:
             logger.warning(f"Keyword cache pool initialization failed: {e}")
 

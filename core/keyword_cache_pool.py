@@ -41,12 +41,13 @@ class KeywordCachePool:
         _low_watermark: 低水位阈值（触发填充）
         _keyword_manager: 异步关键词管理器引用
         _redis: Redis 客户端引用
+        _encoder: 编码器引用（用于预编码关键词）
 
     Example:
-        >>> pool = KeywordCachePool(keyword_manager, redis_client)
+        >>> pool = KeywordCachePool(keyword_manager, redis_client, encoder=encoder)
         >>> await pool.initialize()
         >>> await pool.start()
-        >>> keyword = pool.get_keyword_sync()  # 同步获取
+        >>> keyword = pool.get_keyword_sync()  # 同步获取（已预编码）
         >>> await pool.stop()
     """
 
@@ -57,7 +58,8 @@ class KeywordCachePool:
         cache_size: int = 10000,
         low_watermark_ratio: float = 0.2,
         refill_batch_size: int = 2000,
-        check_interval: float = 1.0
+        check_interval: float = 1.0,
+        encoder: Any = None
     ):
         """
         初始化缓存池
@@ -69,9 +71,11 @@ class KeywordCachePool:
             low_watermark_ratio: 低水位比例（0.2 = 20%）
             refill_batch_size: 每次填充数量
             check_interval: 检查间隔（秒）
+            encoder: 编码器（用于预编码关键词，提升渲染性能）
         """
         self._keyword_manager = keyword_manager
         self._redis = redis_client
+        self._encoder = encoder  # 编码器引用
 
         # 缓存池配置
         self._cache_size = cache_size
@@ -97,6 +101,20 @@ class KeywordCachePool:
         self._total_consumed = 0
         self._total_refilled = 0
 
+    def _encode_keywords(self, keywords: List[str]) -> List[str]:
+        """
+        批量编码关键词
+
+        Args:
+            keywords: 原始关键词列表
+
+        Returns:
+            编码后的关键词列表
+        """
+        if self._encoder and keywords:
+            return [self._encoder.encode_text(kw) for kw in keywords]
+        return keywords
+
     async def initialize(self) -> int:
         """
         初始化缓存池（首次填充），处理数据为空的情况
@@ -118,13 +136,16 @@ class KeywordCachePool:
                     self._cursor = 0
                 return 0
 
+            # 预编码关键词（提升渲染性能）
+            encoded_keywords = self._encode_keywords(keywords)
+
             with self._consume_lock:
-                self._cache = keywords.copy()
-                self._keyword_set = set(keywords)  # 同步去重集合
+                self._cache = encoded_keywords.copy()
+                self._keyword_set = set(encoded_keywords)  # 同步去重集合
                 random.shuffle(self._cache)
                 self._cursor = 0
 
-            logger.info(f"KeywordCachePool initialized with {len(self._cache)} keywords")
+            logger.info(f"KeywordCachePool initialized with {len(self._cache)} pre-encoded keywords")
             return len(self._cache)
 
         except Exception as e:
@@ -191,14 +212,20 @@ class KeywordCachePool:
         直接追加新关键词到缓存池（新增数据立即可用）
 
         用于新增关键词时立即加入缓存池，无需等待下次 refill。
+        关键词会被预编码后存入缓存。
 
         Args:
-            keyword: 新关键词
+            keyword: 新关键词（原始文本）
         """
+        # 预编码关键词
+        encoded_keyword = keyword
+        if self._encoder:
+            encoded_keyword = self._encoder.encode_text(keyword)
+
         with self._consume_lock:
-            if keyword not in self._keyword_set:
-                self._cache.append(keyword)
-                self._keyword_set.add(keyword)
+            if encoded_keyword not in self._keyword_set:
+                self._cache.append(encoded_keyword)
+                self._keyword_set.add(encoded_keyword)
 
     def get_keywords_sync(self, count: int) -> List[str]:
         """
@@ -291,9 +318,12 @@ class KeywordCachePool:
                 if not new_keywords:
                     return 0
 
-                # 过滤掉已存在的关键词
+                # 预编码新关键词
+                encoded_keywords = self._encode_keywords(new_keywords)
+
+                # 过滤掉已存在的关键词（使用编码后的关键词比较）
                 with self._consume_lock:
-                    new_unique_keywords = [kw for kw in new_keywords if kw not in self._keyword_set]
+                    new_unique_keywords = [kw for kw in encoded_keywords if kw not in self._keyword_set]
 
                 if not new_unique_keywords:
                     logger.debug("No new unique keywords to add")
@@ -311,7 +341,7 @@ class KeywordCachePool:
                     self._cursor = 0
 
                 self._total_refilled += len(new_unique_keywords)
-                logger.info(f"Refilled {len(new_unique_keywords)} keywords, cache size: {len(self._cache)}")
+                logger.info(f"Refilled {len(new_unique_keywords)} pre-encoded keywords, cache size: {len(self._cache)}")
 
                 return len(new_keywords)
 
@@ -337,7 +367,8 @@ async def init_keyword_cache_pool(
     cache_size: int = 10000,
     low_watermark_ratio: float = 0.2,
     refill_batch_size: int = 2000,
-    check_interval: float = 1.0
+    check_interval: float = 1.0,
+    encoder: Any = None
 ) -> KeywordCachePool:
     """
     初始化全局关键词缓存池
@@ -349,6 +380,7 @@ async def init_keyword_cache_pool(
         low_watermark_ratio: 低水位比例
         refill_batch_size: 每次填充数量
         check_interval: 检查间隔（秒）
+        encoder: 编码器（用于预编码关键词，提升渲染性能）
 
     Returns:
         KeywordCachePool 实例
@@ -361,7 +393,8 @@ async def init_keyword_cache_pool(
         cache_size=cache_size,
         low_watermark_ratio=low_watermark_ratio,
         refill_batch_size=refill_batch_size,
-        check_interval=check_interval
+        check_interval=check_interval,
+        encoder=encoder
     )
 
     # 初始化并启动

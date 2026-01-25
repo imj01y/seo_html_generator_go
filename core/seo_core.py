@@ -178,26 +178,23 @@ class SEOCore:
 
     def _random_keyword(self) -> Markup:
         """
-        获取随机关键词（编码后）
+        获取随机关键词（已预编码，直接返回）
+
+        关键词在缓存池加载时已经预编码，此处直接返回即可。
 
         Returns:
-            编码后的关键词（Markup安全标记）
+            预编码后的关键词（Markup安全标记）
         """
         t_start = time_module.perf_counter()
+
+        # 获取的已经是编码后的关键词
         keyword = self._random_keyword_sync()
-        if not keyword:
-            self._perf_kw_time += time_module.perf_counter() - t_start
-            self._perf_kw_count += 1
-            return Markup("")
-        # 编码计时单独统计
-        t_enc_start = time_module.perf_counter()
-        encoded = self.encoder.encode_text(keyword)
-        self._perf_encode_time += time_module.perf_counter() - t_enc_start
-        self._perf_encode_count += 1
-        self._encoding_count += len(keyword)
+
         self._perf_kw_time += time_module.perf_counter() - t_start
         self._perf_kw_count += 1
-        return Markup(encoded)
+
+        # 直接返回，不再编码
+        return Markup(keyword) if keyword else Markup("")
 
     def _content(self) -> str:
         """
@@ -358,18 +355,24 @@ class SEOCore:
 
     def load_keywords_sync(self, keywords: List[str]) -> int:
         """
-        同步加载关键词到缓存（用于模板渲染）
+        同步加载关键词到缓存（用于模板渲染，加载时预编码）
+
+        作为缓存池的降级方案，关键词会在加载时预编码，
+        避免每次调用时重复编码。
 
         Args:
-            keywords: 关键词列表
+            keywords: 关键词列表（原始文本）
 
         Returns:
             加载的关键词数量
         """
-        self._keyword_cache = keywords.copy()
+        # 加载时预编码所有关键词
+        self._keyword_cache = [
+            self.encoder.encode_text(kw) for kw in keywords
+        ]
         random.shuffle(self._keyword_cache)
         self._keyword_cursor = 0
-        logger.info(f"Loaded {len(self._keyword_cache)} keywords for sync access")
+        logger.info(f"Loaded {len(self._keyword_cache)} pre-encoded keywords for sync access")
         return len(self._keyword_cache)
 
     def set_keyword_cache_max_size(self, max_size: int) -> None:
