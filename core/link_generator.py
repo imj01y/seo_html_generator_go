@@ -12,12 +12,16 @@
 性能优化:
 - URLPool: 生成器 + 缓冲区 + 生产者消费者模型
 - 预生成URL，避免每次调用都生成
+- 多线程生产者：使用 ThreadPoolExecutor 并行生成 URL
 """
 import asyncio
 import random
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Optional, List, Generator
+
+from loguru import logger
 
 
 # ============================================
@@ -29,16 +33,21 @@ class URLPool:
     URL 池（生成器 + 缓冲区 + 生产者消费者模型）
 
     使用无限生成器作为数据源，后台任务按需填充缓冲区。
+
+    性能优化：
+    - 使用 ThreadPoolExecutor 多线程并行生成 URL
+    - 减少锁持有时间，提高并发性能
     """
 
     def __init__(
         self,
         format1_ratio: float = 0.6,
         date_range_days: int = 30,
-        pool_size: int = 5000,
-        low_watermark_ratio: float = 0.2,
-        refill_batch_size: int = 1000,
-        check_interval: float = 0.5
+        pool_size: int = 20000,
+        low_watermark_ratio: float = 0.3,
+        refill_batch_size: int = 5000,
+        check_interval: float = 0.3,
+        num_workers: int = 2
     ):
         self.format1_ratio = format1_ratio
         self.date_range_days = date_range_days
@@ -48,6 +57,7 @@ class URLPool:
         self._low_watermark = int(pool_size * low_watermark_ratio)
         self._refill_batch_size = refill_batch_size
         self._check_interval = check_interval
+        self._num_workers = num_workers
 
         # 生成器（数据源）
         self._generator: Optional[Generator[str, None, None]] = None
@@ -62,6 +72,9 @@ class URLPool:
         # 后台任务
         self._refill_task: Optional[asyncio.Task] = None
         self._running = False
+
+        # 多线程生产者
+        self._executor: Optional[ThreadPoolExecutor] = None
 
         # 统计
         self._total_consumed = 0
@@ -82,15 +95,57 @@ class URLPool:
                 number = random.randint(10000, 99999)
                 yield f"/?{date_str}/{number}.html"
 
+    @staticmethod
+    def _generate_batch_worker(format1_ratio: float, date_range_days: int, count: int) -> List[str]:
+        """
+        工作线程：批量生成 URL
+
+        Args:
+            format1_ratio: 格式1比例
+            date_range_days: 日期范围
+            count: 生成数量
+
+        Returns:
+            URL 列表
+        """
+        urls = []
+        for _ in range(count):
+            if random.random() < format1_ratio:
+                number = random.randint(100000000, 999999999)
+                urls.append(f"/?{number}.html")
+            else:
+                days_ago = random.randint(0, date_range_days)
+                date = datetime.now() - timedelta(days=days_ago)
+                date_str = date.strftime("%Y%m%d")
+                number = random.randint(10000, 99999)
+                urls.append(f"/?{date_str}/{number}.html")
+        return urls
+
     def _take_from_generator(self, count: int) -> List[str]:
-        """从生成器取指定数量的 URL"""
+        """从生成器取指定数量的 URL（单线程，用于降级）"""
         return [next(self._generator) for _ in range(count)]
 
     async def initialize(self) -> int:
-        """初始化池"""
+        """初始化池（使用多线程生成）"""
+        # 创建线程池
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._num_workers,
+            thread_name_prefix="url_pool"
+        )
+
+        # 创建生成器（用于降级）
         self._generator = self._create_generator()
-        self._buffer = self._take_from_generator(self._pool_size)
+
+        # 首次填充（使用多线程）
+        loop = asyncio.get_event_loop()
+        self._buffer = await loop.run_in_executor(
+            self._executor,
+            self._generate_batch_worker,
+            self.format1_ratio, self.date_range_days, self._pool_size
+        )
         self._cursor = 0
+
+        logger.info(f"URLPool initialized: {self._pool_size} URLs, {self._num_workers} workers")
         return self._pool_size
 
     async def start(self) -> None:
@@ -101,7 +156,7 @@ class URLPool:
         self._refill_task = asyncio.create_task(self._refill_monitor_loop())
 
     async def stop(self) -> None:
-        """停止后台任务"""
+        """停止后台任务和线程池"""
         self._running = False
         if self._refill_task:
             self._refill_task.cancel()
@@ -109,6 +164,11 @@ class URLPool:
                 await self._refill_task
             except asyncio.CancelledError:
                 pass
+
+        # 关闭线程池
+        if self._executor:
+            self._executor.shutdown(wait=False)
+            self._executor = None
 
     def get_sync(self) -> str:
         """同步获取 URL（O(1) 无阻塞）"""
@@ -142,9 +202,21 @@ class URLPool:
                 await asyncio.sleep(1)
 
     async def _refill(self) -> int:
-        """从生成器取值补充缓冲区"""
-        new_urls = self._take_from_generator(self._refill_batch_size)
+        """从生成器取值补充缓冲区（使用多线程生成）"""
+        # 使用多线程生成新数据
+        loop = asyncio.get_event_loop()
 
+        if self._executor:
+            new_urls = await loop.run_in_executor(
+                self._executor,
+                self._generate_batch_worker,
+                self.format1_ratio, self.date_range_days, self._refill_batch_size
+            )
+        else:
+            # 降级：单线程生成
+            new_urls = self._take_from_generator(self._refill_batch_size)
+
+        # 最小化锁持有时间
         with self._consume_lock:
             remaining = self._buffer[self._cursor:]
             self._buffer = remaining + new_urls

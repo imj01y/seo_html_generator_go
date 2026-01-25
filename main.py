@@ -247,20 +247,35 @@ async def init_components():
     logger.info("SEO core initialized")
 
     # 10.1 初始化随机字符串池（用于 cls() 函数优化）
+    # 每个请求约消费 5000+ 个 cls，需要足够大的池避免频繁 refill
     try:
-        await init_class_string_pool(pool_size=5000)
+        await init_class_string_pool(
+            pool_size=50000,           # 足够 10+ 个并发请求
+            low_watermark_ratio=0.3,   # 30% 时触发 refill
+            refill_batch_size=10000,   # 每次补充 10000 个
+            check_interval=0.3,        # 300ms 检查一次
+            num_workers=4              # 4 线程并行生成
+        )
         pool = get_class_string_pool()
         if pool:
-            logger.info(f"Class string pool initialized: {pool.get_stats()['buffer_size']} strings")
+            stats = pool.get_stats()
+            logger.info(f"Class string pool initialized: {stats['buffer_size']} strings, workers=4")
     except Exception as e:
         logger.warning(f"Class string pool initialization failed: {e}")
 
     # 10.2 初始化 URL 池（用于 random_url() 函数优化）
     try:
-        await init_url_pool(pool_size=5000)
+        await init_url_pool(
+            pool_size=20000,           # 足够多个并发请求
+            low_watermark_ratio=0.3,
+            refill_batch_size=5000,
+            check_interval=0.3,
+            num_workers=2
+        )
         pool = get_url_pool()
         if pool:
-            logger.info(f"URL pool initialized: {pool.get_stats()['buffer_size']} URLs")
+            stats = pool.get_stats()
+            logger.info(f"URL pool initialized: {stats['buffer_size']} URLs, workers=2")
     except Exception as e:
         logger.warning(f"URL pool initialization failed: {e}")
 
@@ -292,16 +307,17 @@ async def init_components():
 
     # 11.1 初始化图片缓存池（生产者消费者模型）
     # 允许空数据启动，新增数据后会自动加入缓存池
+    # 每个请求约消费 888 张图片，需要足够大的池
     image_group = get_image_group()
     if redis_client and image_group:
         try:
             await init_image_cache_pool(
                 image_manager=image_group,
                 redis_client=redis_client,
-                cache_size=10000,
-                low_watermark_ratio=0.2,
-                refill_batch_size=2000,
-                check_interval=1.0
+                cache_size=30000,          # 足够 30+ 个并发请求
+                low_watermark_ratio=0.3,   # 30% 时触发 refill
+                refill_batch_size=5000,    # 每次补充 5000 个
+                check_interval=0.5         # 500ms 检查一次
             )
             pool = get_image_cache_pool()
             if pool:

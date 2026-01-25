@@ -175,9 +175,8 @@ class ImageCachePool:
             if not self._cache:
                 return ""
 
-            # 检查是否需要重置游标
+            # 检查是否需要重置游标（只重置，不 shuffle，减少锁时间）
             if self._cursor >= len(self._cache):
-                random.shuffle(self._cache)
                 self._cursor = 0
 
             url = self._cache[self._cursor]
@@ -275,9 +274,10 @@ class ImageCachePool:
 
         async with self._refill_lock:
             try:
-                # 计算需要填充的数量
+                # 计算需要填充的数量（最小化锁时间）
                 with self._consume_lock:
                     current_remaining = len(self._cache) - self._cursor
+                    current_url_set = self._url_set.copy()
 
                 # 填充到目标大小
                 needed = self._cache_size - current_remaining
@@ -291,23 +291,21 @@ class ImageCachePool:
                 if not new_urls:
                     return 0
 
-                # 过滤掉已存在的URL
-                with self._consume_lock:
-                    new_unique_urls = [url for url in new_urls if url not in self._url_set]
+                # 过滤掉已存在的URL（在锁外进行）
+                new_unique_urls = [url for url in new_urls if url not in current_url_set]
 
                 if not new_unique_urls:
                     logger.debug("No new unique URLs to add")
                     return 0
 
-                # 合并到缓存池
+                # 合并到缓存池（最小化锁持有时间）
                 with self._consume_lock:
                     # 保留未消费的URL
                     remaining_urls = self._cache[self._cursor:]
 
-                    # 合并新URL
+                    # 合并新URL（不在锁内 shuffle）
                     self._cache = remaining_urls + new_unique_urls
-                    self._url_set.update(new_unique_urls)  # 更新去重集合
-                    random.shuffle(self._cache)
+                    self._url_set.update(new_unique_urls)
                     self._cursor = 0
 
                 self._total_refilled += len(new_unique_urls)

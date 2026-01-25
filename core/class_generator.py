@@ -13,12 +13,16 @@
 性能优化:
 - ClassStringPool: 生成器 + 缓冲区 + 生产者消费者模型
 - 预生成随机字符串，避免每次调用都生成
+- 多线程生产者：使用 ThreadPoolExecutor 并行生成随机字符串
 """
 import asyncio
 import random
 import string
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Optional, Generator
+
+from loguru import logger
 
 
 # ============================================
@@ -31,6 +35,10 @@ class ClassStringPool:
 
     使用无限生成器作为数据源，后台任务按需填充缓冲区。
     消费端从缓冲区 O(1) 获取，避免每次调用都生成随机字符串。
+
+    性能优化：
+    - 使用 ThreadPoolExecutor 多线程并行生成随机字符串
+    - 减少锁持有时间，提高并发性能
     """
 
     def __init__(
@@ -38,10 +46,11 @@ class ClassStringPool:
         part1_length: int = 13,
         part2_length: int = 32,
         chars: str = None,
-        pool_size: int = 5000,
-        low_watermark_ratio: float = 0.2,
-        refill_batch_size: int = 1000,
-        check_interval: float = 0.5
+        pool_size: int = 50000,
+        low_watermark_ratio: float = 0.3,
+        refill_batch_size: int = 10000,
+        check_interval: float = 0.3,
+        num_workers: int = 4
     ):
         self.part1_length = part1_length
         self.part2_length = part2_length
@@ -52,6 +61,7 @@ class ClassStringPool:
         self._low_watermark = int(pool_size * low_watermark_ratio)
         self._refill_batch_size = refill_batch_size
         self._check_interval = check_interval
+        self._num_workers = num_workers
 
         # 生成器（数据源，不占内存）
         self._generator_part1: Optional[Generator[str, None, None]] = None
@@ -70,6 +80,9 @@ class ClassStringPool:
         self._refill_task: Optional[asyncio.Task] = None
         self._running = False
 
+        # 多线程生产者
+        self._executor: Optional[ThreadPoolExecutor] = None
+
         # 统计
         self._total_consumed = 0
         self._total_refilled = 0
@@ -83,23 +96,92 @@ class ClassStringPool:
         while True:
             yield ''.join(random.choices(self.chars, k=length))
 
+    @staticmethod
+    def _generate_batch_worker(chars: str, length: int, count: int) -> List[str]:
+        """
+        工作线程：批量生成随机字符串
+
+        Args:
+            chars: 字符集
+            length: 字符串长度
+            count: 生成数量
+
+        Returns:
+            随机字符串列表
+        """
+        return [''.join(random.choices(chars, k=length)) for _ in range(count)]
+
     def _take_from_generator(self, generator: Generator[str, None, None], count: int) -> List[str]:
-        """从生成器取指定数量的字符串"""
+        """从生成器取指定数量的字符串（单线程，用于降级）"""
         return [next(generator) for _ in range(count)]
+
+    def _generate_batch_parallel(self, length: int, count: int) -> List[str]:
+        """
+        多线程并行生成随机字符串
+
+        Args:
+            length: 字符串长度
+            count: 生成数量
+
+        Returns:
+            随机字符串列表
+        """
+        if not self._executor or count < 1000:
+            # 数量少时直接单线程生成
+            return [''.join(random.choices(self.chars, k=length)) for _ in range(count)]
+
+        # 分配到多个线程
+        batch_per_worker = count // self._num_workers
+        remainder = count % self._num_workers
+
+        futures = []
+        for i in range(self._num_workers):
+            batch_count = batch_per_worker + (1 if i < remainder else 0)
+            if batch_count > 0:
+                future = self._executor.submit(
+                    self._generate_batch_worker,
+                    self.chars, length, batch_count
+                )
+                futures.append(future)
+
+        # 收集结果
+        result = []
+        for future in futures:
+            result.extend(future.result())
+
+        return result
 
     async def initialize(self) -> int:
         """初始化池（创建生成器并首次填充缓冲区）"""
-        # 创建生成器
+        # 创建线程池
+        self._executor = ThreadPoolExecutor(
+            max_workers=self._num_workers,
+            thread_name_prefix="cls_pool"
+        )
+
+        # 创建生成器（用于降级）
         self._generator_part1 = self._create_generator(self.part1_length)
         self._generator_part2 = self._create_generator(self.part2_length)
 
-        # 首次填充缓冲区
-        self._buffer_part1 = self._take_from_generator(self._generator_part1, self._pool_size)
-        self._buffer_part2 = self._take_from_generator(self._generator_part2, self._pool_size)
+        # 首次填充缓冲区（使用多线程）
+        loop = asyncio.get_event_loop()
+        self._buffer_part1, self._buffer_part2 = await asyncio.gather(
+            loop.run_in_executor(
+                self._executor,
+                self._generate_batch_worker,
+                self.chars, self.part1_length, self._pool_size
+            ),
+            loop.run_in_executor(
+                self._executor,
+                self._generate_batch_worker,
+                self.chars, self.part2_length, self._pool_size
+            )
+        )
 
         self._cursor1 = 0
         self._cursor2 = 0
 
+        logger.info(f"ClassStringPool initialized: {self._pool_size} strings, {self._num_workers} workers")
         return self._pool_size
 
     async def start(self) -> None:
@@ -110,7 +192,7 @@ class ClassStringPool:
         self._refill_task = asyncio.create_task(self._refill_monitor_loop())
 
     async def stop(self) -> None:
-        """停止后台任务"""
+        """停止后台任务和线程池"""
         self._running = False
         if self._refill_task:
             self._refill_task.cancel()
@@ -118,6 +200,11 @@ class ClassStringPool:
                 await self._refill_task
             except asyncio.CancelledError:
                 pass
+
+        # 关闭线程池
+        if self._executor:
+            self._executor.shutdown(wait=False)
+            self._executor = None
 
     def get_part1_sync(self) -> str:
         """同步获取 part1 字符串（O(1) 无阻塞）"""
@@ -165,11 +252,29 @@ class ClassStringPool:
                 await asyncio.sleep(1)
 
     async def _refill(self) -> int:
-        """从生成器取值补充缓冲区"""
-        # 从生成器取新数据
-        new_part1 = self._take_from_generator(self._generator_part1, self._refill_batch_size)
-        new_part2 = self._take_from_generator(self._generator_part2, self._refill_batch_size)
+        """从生成器取值补充缓冲区（使用多线程生成）"""
+        # 使用多线程并行生成新数据
+        loop = asyncio.get_event_loop()
 
+        if self._executor:
+            new_part1, new_part2 = await asyncio.gather(
+                loop.run_in_executor(
+                    self._executor,
+                    self._generate_batch_worker,
+                    self.chars, self.part1_length, self._refill_batch_size
+                ),
+                loop.run_in_executor(
+                    self._executor,
+                    self._generate_batch_worker,
+                    self.chars, self.part2_length, self._refill_batch_size
+                )
+            )
+        else:
+            # 降级：单线程生成
+            new_part1 = self._take_from_generator(self._generator_part1, self._refill_batch_size)
+            new_part2 = self._take_from_generator(self._generator_part2, self._refill_batch_size)
+
+        # 最小化锁持有时间
         with self._consume_lock:
             # 保留未消费的
             remaining1 = self._buffer_part1[self._cursor1:]
