@@ -97,8 +97,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import dayjs from 'dayjs'
 import {
@@ -111,13 +111,30 @@ import {
 import type { ContentGenerator } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 
 // 状态
 const loading = ref(false)
 const generators = ref<(ContentGenerator & { toggling?: boolean; reloading?: boolean })[]>([])
 const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
+const currentPage = ref(Number(route.query.page) || 1)
+const pageSize = ref(Number(route.query.pageSize) || 20)
+
+// 同步分页状态到 URL
+const updateUrlQuery = () => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: currentPage.value.toString(),
+      pageSize: pageSize.value.toString()
+    }
+  })
+}
+
+// 监听分页变化，同步到 URL
+watch([currentPage, pageSize], () => {
+  updateUrlQuery()
+})
 
 // 获取生成器列表
 const fetchGenerators = async () => {

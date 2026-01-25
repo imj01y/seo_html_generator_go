@@ -158,8 +158,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Loading } from '@element-plus/icons-vue'
 import {
@@ -175,13 +175,30 @@ import {
 import LogViewer from '@/components/LogViewer.vue'
 
 const router = useRouter()
+const route = useRoute()
 
 // 数据状态
 const projects = ref<SpiderProject[]>([])
 const loading = ref(false)
 const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
+const currentPage = ref(Number(route.query.page) || 1)
+const pageSize = ref(Number(route.query.pageSize) || 20)
+
+// 同步分页状态到 URL
+const updateUrlQuery = () => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: currentPage.value.toString(),
+      pageSize: pageSize.value.toString()
+    }
+  })
+}
+
+// 监听分页变化，同步到 URL
+watch([currentPage, pageSize], () => {
+  updateUrlQuery()
+})
 
 // 搜索条件
 const searchText = ref('')

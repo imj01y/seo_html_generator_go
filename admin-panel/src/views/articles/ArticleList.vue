@@ -199,8 +199,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, FormInstance, FormRules, TableInstance } from 'element-plus'
 import dayjs from 'dayjs'
 import {
@@ -217,6 +217,7 @@ import {
 import type { ArticleGroup, Article } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const editGroupLoading = ref(false)
 const groupDialogVisible = ref(false)
@@ -230,8 +231,8 @@ const activeGroupId = ref<number>(0)
 const articles = ref<Article[]>([])
 const selectedItems = ref<Article[]>([])
 const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
+const currentPage = ref(Number(route.query.page) || 1)
+const pageSize = ref(Number(route.query.pageSize) || 20)
 const searchTitle = ref('')
 const groupSearch = ref('')
 
@@ -255,6 +256,23 @@ const editGroupForm = reactive({
 const groupRules: FormRules = {
   name: [{ required: true, message: '请输入文章库名称', trigger: 'blur' }]
 }
+
+// 同步分页状态到 URL
+const updateUrlQuery = () => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: currentPage.value.toString(),
+      pageSize: pageSize.value.toString(),
+      group: activeGroupId.value.toString()
+    }
+  })
+}
+
+// 监听分页变化，同步到 URL
+watch([currentPage, pageSize, activeGroupId], () => {
+  updateUrlQuery()
+})
 
 const filteredGroups = computed(() => {
   if (!groupSearch.value) return groups.value
@@ -501,6 +519,15 @@ const handleClickOutside = (e: MouseEvent) => {
 
 onMounted(async () => {
   await loadGroups()
+
+  // 从 URL 恢复分组
+  if (route.query.group) {
+    const groupId = Number(route.query.group)
+    if (groups.value.some(g => g.id === groupId)) {
+      activeGroupId.value = groupId
+    }
+  }
+
   loadArticles()
   document.addEventListener('click', handleClickOutside)
 })

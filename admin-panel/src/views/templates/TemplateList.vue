@@ -152,8 +152,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, reactive, onMounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus'
 import dayjs from 'dayjs'
 import {
@@ -166,6 +166,7 @@ import {
 import type { TemplateListItem, Site } from '@/types'
 
 const router = useRouter()
+const route = useRoute()
 
 const loading = ref(false)
 const addLoading = ref(false)
@@ -175,9 +176,25 @@ const addFormRef = ref<FormInstance>()
 
 const templates = ref<TemplateListItem[]>([])
 const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
+const currentPage = ref(Number(route.query.page) || 1)
+const pageSize = ref(Number(route.query.pageSize) || 20)
 const searchStatus = ref<number | ''>('')
+
+// 同步分页状态到 URL
+const updateUrlQuery = () => {
+  router.replace({
+    query: {
+      ...route.query,
+      page: currentPage.value.toString(),
+      pageSize: pageSize.value.toString()
+    }
+  })
+}
+
+// 监听分页变化，同步到 URL
+watch([currentPage, pageSize], () => {
+  updateUrlQuery()
+})
 
 const currentTemplate = ref<TemplateListItem | null>(null)
 const boundSites = ref<Site[]>([])
