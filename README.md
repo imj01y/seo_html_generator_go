@@ -680,6 +680,112 @@ seo_html_generator/
 GET /page?ua=Baiduspider&path=/test.html&domain=example.com
 ```
 
+### API Token 外部调用
+
+外部系统可通过 API Token 调用数据新增接口，无需登录管理后台。
+
+#### 配置 API Token
+
+1. 登录管理后台，进入「系统设置」页面
+2. 在「API Token」卡片中点击「生成新 Token」
+3. 点击「保存」按钮保存 Token
+4. 确保启用开关为开启状态
+
+#### 调用方式
+
+支持两种 Header 传递方式：
+
+**方式一：X-API-Token Header（推荐）**
+
+```bash
+curl -X POST "http://localhost:8009/api/keywords/batch" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Token: seo_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" \
+  -d '{"group_id": 1, "keywords": ["关键词1", "关键词2"]}'
+```
+
+**方式二：Authorization Header**
+
+```bash
+curl -X POST "http://localhost:8009/api/articles/add" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer seo_a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" \
+  -d '{"group_id": 1, "title": "文章标题", "content": "文章内容"}'
+```
+
+#### 支持的接口
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `/api/keywords/add` | POST | 添加单个关键词 |
+| `/api/keywords/batch` | POST | 批量添加关键词（最多 10 万条/次） |
+| `/api/articles/add` | POST | 添加单篇文章 |
+| `/api/articles/batch` | POST | 批量添加文章（最多 1000 条/次） |
+| `/api/images/urls/add` | POST | 添加单个图片 URL |
+| `/api/images/urls/batch` | POST | 批量添加图片 URL（最多 10 万条/次） |
+
+#### 请求参数示例
+
+**添加关键词**
+
+```json
+// POST /api/keywords/add
+{"group_id": 1, "keyword": "关键词"}
+
+// POST /api/keywords/batch
+{"group_id": 1, "keywords": ["关键词1", "关键词2", "关键词3"]}
+```
+
+**添加文章**
+
+```json
+// POST /api/articles/add
+{"group_id": 1, "title": "文章标题", "content": "文章正文内容"}
+
+// POST /api/articles/batch
+{
+  "articles": [
+    {"group_id": 1, "title": "标题1", "content": "内容1"},
+    {"group_id": 1, "title": "标题2", "content": "内容2"}
+  ]
+}
+```
+
+**添加图片 URL**
+
+```json
+// POST /api/images/urls/add
+{"group_id": 1, "url": "https://example.com/image.jpg"}
+
+// POST /api/images/urls/batch
+{"group_id": 1, "urls": ["https://example.com/1.jpg", "https://example.com/2.jpg"]}
+```
+
+#### 响应格式
+
+**成功响应**
+
+```json
+// 单条添加
+{"success": true, "id": 123}
+
+// 批量添加
+{"success": true, "added": 10, "failed": 0}
+```
+
+**错误响应**
+
+```json
+// 缺少 Token (HTTP 401)
+{"detail": "Missing API token"}
+
+// Token 无效 (HTTP 401)
+{"detail": "Invalid API token"}
+
+// API Token 未启用 (HTTP 403)
+{"detail": "API Token authentication is disabled"}
+```
+
 ## 配置说明
 
 ### 配置文件结构
