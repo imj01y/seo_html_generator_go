@@ -660,15 +660,25 @@ async def serve_page(
             except Exception as e:
                 logger.warning(f"Failed to preload content from pool: {e}")
 
-        # 模板统计日志
+        # 模板统计日志 - 检测所有函数调用（含别名）
         tpl_content = template_data['content']
         tpl_size = len(tpl_content)
-        kw_calls = len(re.findall(r'\{\{\s*random_keyword\s*\(\s*\)\s*\}\}', tpl_content))
-        img_calls = len(re.findall(r'\{\{\s*random_image\s*\(\s*\)\s*\}\}', tpl_content))
-        encode_calls = len(re.findall(r'\{\{\s*encode\s*\(', tpl_content))
+        # 关键词函数（新旧命名）
+        kw_calls = len(re.findall(r'\{\{[^}]*(?:random_keyword|random_hotspot|keyword_with_emoji)\s*\(\s*\)', tpl_content))
+        # 图片函数
+        img_calls = len(re.findall(r'\{\{[^}]*random_image\s*\(\s*\)', tpl_content))
+        # 编码函数
+        encode_calls = len(re.findall(r'\{\{[^}]*(?:encode|encode_text)\s*\(', tpl_content))
+        # 正文函数
+        content_calls = len(re.findall(r'\{\{[^}]*(?:content|content_with_pinyin)\s*\(\s*\)', tpl_content))
+        # class生成函数
+        cls_calls = len(re.findall(r'\{\{[^}]*cls\s*\(\s*\)', tpl_content))
+        # for循环统计
+        for_loops = len(re.findall(r'\{%\s*for\s+', tpl_content))
         logger.info(
-            f"[PERF-TPL] size={tpl_size} kw_calls={kw_calls} "
-            f"img_calls={img_calls} encode_calls={encode_calls} tpl={template_name}"
+            f"[PERF-TPL] size={tpl_size} kw={kw_calls} img={img_calls} "
+            f"enc={encode_calls} content={content_calls} cls={cls_calls} "
+            f"for_loops={for_loops} tpl={template_name}"
         )
 
         # 使用模板内容渲染页面

@@ -183,11 +183,20 @@ class SEOCore:
         Returns:
             编码后的关键词（Markup安全标记）
         """
+        t_start = time_module.perf_counter()
         keyword = self._random_keyword_sync()
         if not keyword:
+            self._perf_kw_time += time_module.perf_counter() - t_start
+            self._perf_kw_count += 1
             return Markup("")
+        # 编码计时单独统计
+        t_enc_start = time_module.perf_counter()
         encoded = self.encoder.encode_text(keyword)
+        self._perf_encode_time += time_module.perf_counter() - t_enc_start
+        self._perf_encode_count += 1
         self._encoding_count += len(keyword)
+        self._perf_kw_time += time_module.perf_counter() - t_start
+        self._perf_kw_count += 1
         return Markup(encoded)
 
     def _content(self) -> str:
@@ -245,16 +254,22 @@ class SEOCore:
         Returns:
             图片URL字符串
         """
+        t_start = time_module.perf_counter()
         # 优先使用全局缓存池
         from .image_cache_pool import get_image_cache_pool
         pool = get_image_cache_pool()
         if pool:
             url = pool.get_url_sync()
             if url:
+                self._perf_img_time += time_module.perf_counter() - t_start
+                self._perf_img_count += 1
                 return url
 
         # 降级到本地缓存
-        return self._get_from_local_cache(self._image_url_cache, '_image_cursor')
+        result = self._get_from_local_cache(self._image_url_cache, '_image_cursor')
+        self._perf_img_time += time_module.perf_counter() - t_start
+        self._perf_img_count += 1
+        return result
 
     def load_image_urls_sync(self, urls: List[str]) -> int:
         """
@@ -387,6 +402,13 @@ class SEOCore:
         self._preloaded_content = None  # 清空预加载的内容
         self.class_gen.reset()
         self.encoder.reset_count()
+        # 函数调用性能统计
+        self._perf_kw_time = 0.0
+        self._perf_kw_count = 0
+        self._perf_img_time = 0.0
+        self._perf_img_count = 0
+        self._perf_encode_time = 0.0
+        self._perf_encode_count = 0
 
     def set_preloaded_content(self, content: str) -> None:
         """
@@ -545,6 +567,12 @@ class SEOCore:
                 f"compile={t_compile_end-t_compile_start:.3f}s "
                 f"jinja_render={t_render_end-t_render_start:.3f}s "
                 f"compile_needed={compile_needed} tpl={template_name}"
+            )
+            # 函数调用统计日志
+            logger.info(
+                f"[PERF-FUNC] kw={self._perf_kw_count}x/{self._perf_kw_time*1000:.1f}ms "
+                f"img={self._perf_img_count}x/{self._perf_img_time*1000:.1f}ms "
+                f"enc={self._perf_encode_count}x/{self._perf_encode_time*1000:.1f}ms"
             )
 
             logger.debug(
