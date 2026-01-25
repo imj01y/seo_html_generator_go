@@ -120,10 +120,14 @@ class URLPool:
             self._total_consumed += 1
             return result
 
+    def _get_remaining_unlocked(self) -> int:
+        """内部方法：获取剩余数量（调用者需持有锁）"""
+        return len(self._buffer) - self._cursor
+
     def get_remaining(self) -> int:
         """获取剩余可用数量"""
         with self._consume_lock:
-            return len(self._buffer) - self._cursor
+            return self._get_remaining_unlocked()
 
     async def _refill_monitor_loop(self) -> None:
         """后台任务：监控低水位并自动填充"""
@@ -154,7 +158,7 @@ class URLPool:
         with self._consume_lock:
             return {
                 "buffer_size": len(self._buffer),
-                "remaining": self.get_remaining(),
+                "remaining": self._get_remaining_unlocked(),
                 "low_watermark": self._low_watermark,
                 "total_consumed": self._total_consumed,
                 "total_refilled": self._total_refilled,

@@ -138,13 +138,17 @@ class ClassStringPool:
             self._cursor2 += 1
             return result
 
+    def _get_remaining_unlocked(self) -> int:
+        """内部方法：获取剩余数量（调用者需持有锁）"""
+        return min(
+            len(self._buffer_part1) - self._cursor1,
+            len(self._buffer_part2) - self._cursor2
+        )
+
     def get_remaining(self) -> int:
         """获取剩余可用数量"""
         with self._consume_lock:
-            return min(
-                len(self._buffer_part1) - self._cursor1,
-                len(self._buffer_part2) - self._cursor2
-            )
+            return self._get_remaining_unlocked()
 
     async def _refill_monitor_loop(self) -> None:
         """后台任务：监控低水位并自动从生成器填充"""
@@ -187,7 +191,7 @@ class ClassStringPool:
         with self._consume_lock:
             return {
                 "buffer_size": len(self._buffer_part1),
-                "remaining": self.get_remaining(),
+                "remaining": self._get_remaining_unlocked(),
                 "low_watermark": self._low_watermark,
                 "total_consumed": self._total_consumed,
                 "total_refilled": self._total_refilled,
