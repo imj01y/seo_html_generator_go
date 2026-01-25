@@ -65,6 +65,8 @@ from core.html_cache_manager import init_cache_manager, get_cache_manager
 from core.keyword_group_manager import init_keyword_group, get_keyword_group
 from core.keyword_cache_pool import init_keyword_cache_pool, stop_keyword_cache_pool, get_keyword_cache_pool
 from core.image_cache_pool import init_image_cache_pool, stop_image_cache_pool, get_image_cache_pool
+from core.class_generator import init_class_string_pool, stop_class_string_pool, get_class_string_pool
+from core.link_generator import init_url_pool, stop_url_pool, get_url_pool
 from core.image_group_manager import init_image_group, get_image_group
 from core.emoji import get_emoji_manager
 from core.auth import ensure_default_admin
@@ -244,6 +246,24 @@ async def init_components():
     )
     logger.info("SEO core initialized")
 
+    # 10.1 初始化随机字符串池（用于 cls() 函数优化）
+    try:
+        await init_class_string_pool(pool_size=5000)
+        pool = get_class_string_pool()
+        if pool:
+            logger.info(f"Class string pool initialized: {pool.get_stats()['buffer_size']} strings")
+    except Exception as e:
+        logger.warning(f"Class string pool initialization failed: {e}")
+
+    # 10.2 初始化 URL 池（用于 random_url() 函数优化）
+    try:
+        await init_url_pool(pool_size=5000)
+        pool = get_url_pool()
+        if pool:
+            logger.info(f"URL pool initialized: {pool.get_stats()['buffer_size']} URLs")
+    except Exception as e:
+        logger.warning(f"URL pool initialization failed: {e}")
+
     # 11. 初始化关键词缓存池（生产者消费者模型，带预编码）
     # 允许空数据启动，新增数据后会自动加入缓存池
     # 传入 encoder 实现加载时预编码，避免每次调用时编码
@@ -411,6 +431,8 @@ async def cleanup_components():
     # 停止缓存池
     await _safe_stop(stop_keyword_cache_pool(), "Keyword cache pool")
     await _safe_stop(stop_image_cache_pool(), "Image cache pool")
+    await _safe_stop(stop_class_string_pool(), "Class string pool")
+    await _safe_stop(stop_url_pool(), "URL pool")
 
     # 关闭连接
     await _safe_stop(close_redis_client(), "Redis client connection")

@@ -8,11 +8,192 @@
 主要功能:
 - random_url(): 生成随机内链URL
 - random_internal_link(): random_url的别名
-"""
-import random
-from datetime import datetime, timedelta
-from typing import Optional, List
 
+性能优化:
+- URLPool: 生成器 + 缓冲区 + 生产者消费者模型
+- 预生成URL，避免每次调用都生成
+"""
+import asyncio
+import random
+import threading
+from datetime import datetime, timedelta
+from typing import Optional, List, Generator
+
+
+# ============================================
+# URLPool - URL池（生产者消费者模型）
+# ============================================
+
+class URLPool:
+    """
+    URL 池（生成器 + 缓冲区 + 生产者消费者模型）
+
+    使用无限生成器作为数据源，后台任务按需填充缓冲区。
+    """
+
+    def __init__(
+        self,
+        format1_ratio: float = 0.6,
+        date_range_days: int = 30,
+        pool_size: int = 5000,
+        low_watermark_ratio: float = 0.2,
+        refill_batch_size: int = 1000,
+        check_interval: float = 0.5
+    ):
+        self.format1_ratio = format1_ratio
+        self.date_range_days = date_range_days
+
+        # 池配置
+        self._pool_size = pool_size
+        self._low_watermark = int(pool_size * low_watermark_ratio)
+        self._refill_batch_size = refill_batch_size
+        self._check_interval = check_interval
+
+        # 生成器（数据源）
+        self._generator: Optional[Generator[str, None, None]] = None
+
+        # 缓冲区
+        self._buffer: List[str] = []
+        self._cursor: int = 0
+
+        # 线程安全
+        self._consume_lock = threading.Lock()
+
+        # 后台任务
+        self._refill_task: Optional[asyncio.Task] = None
+        self._running = False
+
+        # 统计
+        self._total_consumed = 0
+        self._total_refilled = 0
+
+    def _create_generator(self) -> Generator[str, None, None]:
+        """创建无限 URL 生成器"""
+        while True:
+            if random.random() < self.format1_ratio:
+                # 格式1: /?数字9位.html
+                number = random.randint(100000000, 999999999)
+                yield f"/?{number}.html"
+            else:
+                # 格式2: /?日期8位/数字5位.html
+                days_ago = random.randint(0, self.date_range_days)
+                date = datetime.now() - timedelta(days=days_ago)
+                date_str = date.strftime("%Y%m%d")
+                number = random.randint(10000, 99999)
+                yield f"/?{date_str}/{number}.html"
+
+    def _take_from_generator(self, count: int) -> List[str]:
+        """从生成器取指定数量的 URL"""
+        return [next(self._generator) for _ in range(count)]
+
+    async def initialize(self) -> int:
+        """初始化池"""
+        self._generator = self._create_generator()
+        self._buffer = self._take_from_generator(self._pool_size)
+        self._cursor = 0
+        return self._pool_size
+
+    async def start(self) -> None:
+        """启动后台任务"""
+        if self._running:
+            return
+        self._running = True
+        self._refill_task = asyncio.create_task(self._refill_monitor_loop())
+
+    async def stop(self) -> None:
+        """停止后台任务"""
+        self._running = False
+        if self._refill_task:
+            self._refill_task.cancel()
+            try:
+                await self._refill_task
+            except asyncio.CancelledError:
+                pass
+
+    def get_sync(self) -> str:
+        """同步获取 URL（O(1) 无阻塞）"""
+        with self._consume_lock:
+            if self._cursor >= len(self._buffer):
+                self._cursor = 0
+            result = self._buffer[self._cursor]
+            self._cursor += 1
+            self._total_consumed += 1
+            return result
+
+    def get_remaining(self) -> int:
+        """获取剩余可用数量"""
+        with self._consume_lock:
+            return len(self._buffer) - self._cursor
+
+    async def _refill_monitor_loop(self) -> None:
+        """后台任务：监控低水位并自动填充"""
+        while self._running:
+            try:
+                await asyncio.sleep(self._check_interval)
+                if self.get_remaining() < self._low_watermark:
+                    await self._refill()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                await asyncio.sleep(1)
+
+    async def _refill(self) -> int:
+        """从生成器取值补充缓冲区"""
+        new_urls = self._take_from_generator(self._refill_batch_size)
+
+        with self._consume_lock:
+            remaining = self._buffer[self._cursor:]
+            self._buffer = remaining + new_urls
+            self._cursor = 0
+
+        self._total_refilled += self._refill_batch_size
+        return self._refill_batch_size
+
+    def get_stats(self) -> dict:
+        """获取统计信息"""
+        with self._consume_lock:
+            return {
+                "buffer_size": len(self._buffer),
+                "remaining": self.get_remaining(),
+                "low_watermark": self._low_watermark,
+                "total_consumed": self._total_consumed,
+                "total_refilled": self._total_refilled,
+                "running": self._running
+            }
+
+
+# ============================================
+# 全局 URLPool 实例管理
+# ============================================
+
+_url_pool: Optional[URLPool] = None
+
+
+def get_url_pool() -> Optional[URLPool]:
+    """获取全局 URL 池实例"""
+    return _url_pool
+
+
+async def init_url_pool(**kwargs) -> URLPool:
+    """初始化全局 URL 池"""
+    global _url_pool
+    _url_pool = URLPool(**kwargs)
+    await _url_pool.initialize()
+    await _url_pool.start()
+    return _url_pool
+
+
+async def stop_url_pool() -> None:
+    """停止全局 URL 池"""
+    global _url_pool
+    if _url_pool:
+        await _url_pool.stop()
+        _url_pool = None
+
+
+# ============================================
+# LinkGenerator - 内链URL生成器
+# ============================================
 
 class LinkGenerator:
     """
@@ -75,11 +256,17 @@ class LinkGenerator:
         """
         生成随机内链URL
 
-        根据配置的比例随机选择格式1或格式2。
+        优先使用全局 URL 池（O(1)），降级到直接生成。
 
         Returns:
             随机内链URL
         """
+        # 优先从池获取预生成的 URL
+        pool = get_url_pool()
+        if pool:
+            return pool.get_sync()
+
+        # 降级：直接生成（池未初始化时）
         if random.random() < self.format1_ratio:
             return self._generate_format1()
         else:
