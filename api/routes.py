@@ -332,6 +332,65 @@ async def verify_token(authorization: Optional[str] = Header(None)) -> dict:
     return payload
 
 
+async def verify_api_token(
+    authorization: Optional[str] = Header(None),
+    x_api_token: Optional[str] = Header(None, alias="X-API-Token")
+) -> dict:
+    """
+    验证 API Token（用于外部系统调用）
+
+    支持两种方式传递 Token:
+    1. X-API-Token Header
+    2. Authorization Header (Bearer token 或直接 token)
+    """
+    token = x_api_token or (authorization[7:] if authorization and authorization.startswith("Bearer ") else authorization)
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing API token")
+
+    # 检查是否启用
+    enabled = await fetch_value("SELECT setting_value FROM system_settings WHERE setting_key = 'api_token_enabled'")
+    if enabled and enabled.lower() != 'true':
+        raise HTTPException(status_code=403, detail="API Token authentication is disabled")
+
+    # 验证 token
+    stored_token = await fetch_value("SELECT setting_value FROM system_settings WHERE setting_key = 'api_token'")
+    if not stored_token or token != stored_token:
+        raise HTTPException(status_code=401, detail="Invalid API token")
+
+    return {"type": "api_token"}
+
+
+async def verify_token_or_api_token(
+    authorization: Optional[str] = Header(None),
+    x_api_token: Optional[str] = Header(None, alias="X-API-Token")
+) -> dict:
+    """
+    双重认证：支持 JWT Token 或 API Token
+
+    优先检查 X-API-Token Header，其次检查 Authorization Header
+    以 seo_ 开头的 token 走 API Token 验证，否则走 JWT 验证
+    """
+    if x_api_token:
+        return await verify_api_token(authorization, x_api_token)
+
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Missing authorization")
+
+    token = authorization[7:] if authorization.startswith("Bearer ") else authorization
+
+    # 以 seo_ 开头的走 API Token 验证
+    if token.startswith("seo_"):
+        return await verify_api_token(authorization, token)
+
+    # 否则走 JWT 验证
+    payload = verify_jwt_token(token)
+    if not payload:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+
+    return {"type": "jwt", "payload": payload}
+
+
 async def get_site_config_by_domain(domain: str) -> Optional[dict]:
     """
     根据域名获取站点配置
@@ -2485,7 +2544,7 @@ async def batch_move_articles(data: BatchMoveGroup, _: bool = Depends(verify_tok
 @router.post("/api/articles/add")
 async def add_article(
     data: ArticleCreate,
-    _: bool = Depends(verify_token)
+    _: dict = Depends(verify_token_or_api_token)
 ):
     """
     添加单篇文章
@@ -2519,7 +2578,7 @@ async def add_article(
 @router.post("/api/articles/batch")
 async def add_articles_batch(
     data: ArticleBatchCreate,
-    _: bool = Depends(verify_token)
+    _: dict = Depends(verify_token_or_api_token)
 ):
     """
     批量添加文章（每次最多1000条）
@@ -2582,7 +2641,7 @@ async def add_articles_batch(
 async def add_image_url(
     data: ImageUrlCreate,
     group: AsyncImageGroupManager = Depends(get_image_group_dep),
-    _: bool = Depends(verify_token)
+    _: dict = Depends(verify_token_or_api_token)
 ):
     """
     添加单个图片URL
@@ -2602,7 +2661,7 @@ async def add_image_url(
 async def add_image_urls_batch(
     data: ImageUrlBatchCreate,
     group: AsyncImageGroupManager = Depends(get_image_group_dep),
-    _: bool = Depends(verify_token)
+    _: dict = Depends(verify_token_or_api_token)
 ):
     """
     批量添加图片URL（每次最多100000条）
@@ -2686,7 +2745,7 @@ async def clear_image_cache(
 async def add_keyword(
     data: KeywordCreate,
     group: AsyncKeywordGroupManager = Depends(get_keyword_group_dep),
-    _: bool = Depends(verify_token)
+    _: dict = Depends(verify_token_or_api_token)
 ):
     """
     添加单个关键词
@@ -2706,7 +2765,7 @@ async def add_keyword(
 async def add_keywords_batch(
     data: KeywordBatchCreate,
     group: AsyncKeywordGroupManager = Depends(get_keyword_group_dep),
-    _: bool = Depends(verify_token)
+    _: dict = Depends(verify_token_or_api_token)
 ):
     """
     批量添加关键词（每次最多100000条）
@@ -3434,6 +3493,77 @@ async def check_database(_: bool = Depends(verify_token)):
         "pool_size": pool.maxsize,
         "free_connections": pool.freesize
     }
+
+
+# ============================================
+# API Token 管理
+# ============================================
+
+@router.get("/api/settings/api-token")
+async def get_api_token_settings(_: dict = Depends(verify_token)):
+    """获取 API Token 设置"""
+    try:
+        token = await fetch_value("SELECT setting_value FROM system_settings WHERE setting_key = 'api_token'")
+        enabled = await fetch_value("SELECT setting_value FROM system_settings WHERE setting_key = 'api_token_enabled'")
+        return {
+            "success": True,
+            "token": token or "",
+            "enabled": (enabled or 'true').lower() == 'true'
+        }
+    except Exception as e:
+        logger.error(f"Failed to get API token settings: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@router.put("/api/settings/api-token")
+async def update_api_token_settings(data: dict, _: dict = Depends(verify_token)):
+    """更新 API Token 设置"""
+    try:
+        token = data.get('token', '')
+        enabled = data.get('enabled', True)
+
+        # 更新 token
+        if token:
+            existing = await fetch_value("SELECT id FROM system_settings WHERE setting_key = 'api_token'")
+            if existing:
+                await execute_query(
+                    "UPDATE system_settings SET setting_value = %s WHERE setting_key = 'api_token'",
+                    (token,)
+                )
+            else:
+                await insert('system_settings', {
+                    'setting_key': 'api_token',
+                    'setting_value': token,
+                    'description': 'API Token for external access'
+                })
+
+        # 更新 enabled 状态
+        enabled_str = 'true' if enabled else 'false'
+        existing_enabled = await fetch_value("SELECT id FROM system_settings WHERE setting_key = 'api_token_enabled'")
+        if existing_enabled:
+            await execute_query(
+                "UPDATE system_settings SET setting_value = %s WHERE setting_key = 'api_token_enabled'",
+                (enabled_str,)
+            )
+        else:
+            await insert('system_settings', {
+                'setting_key': 'api_token_enabled',
+                'setting_value': enabled_str,
+                'description': 'Enable API Token authentication'
+            })
+
+        return {"success": True, "message": "API Token 设置已更新"}
+    except Exception as e:
+        logger.error(f"Failed to update API token settings: {e}")
+        return {"success": False, "message": str(e)}
+
+
+@router.post("/api/settings/api-token/generate")
+async def generate_api_token(_: dict = Depends(verify_token)):
+    """生成新的随机 API Token"""
+    import secrets
+    token = f"seo_{secrets.token_hex(16)}"
+    return {"success": True, "token": token}
 
 
 # ============================================
