@@ -236,3 +236,20 @@ export interface FileCacheSettings {
   file_cache_max_size_gb: number
   file_cache_nginx_mode: boolean
 }
+
+// API Token 设置
+export interface ApiTokenResponse {
+  success: boolean
+  token?: string
+  enabled?: boolean
+  message?: string
+}
+
+export const getApiTokenSettings = (): Promise<ApiTokenResponse> =>
+  request.get('/settings/api-token')
+
+export const updateApiTokenSettings = (data: { token: string; enabled: boolean }): Promise<{ success: boolean; message?: string }> =>
+  request.put('/settings/api-token', data)
+
+export const generateApiToken = (): Promise<{ success: boolean; token: string }> =>
+  request.post('/settings/api-token/generate')
