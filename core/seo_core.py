@@ -150,10 +150,14 @@ class SEOCore:
             # 链接生成函数
             'random_url': self.link_gen.generate,
 
-            # 关键词函数
-            'random_hotspot': self._random_hotspot,
-            'keyword_with_emoji': self._keyword_with_emoji,
-            'content_with_pinyin': self._content_with_pinyin,
+            # 关键词函数（新命名）
+            'random_keyword': self._random_keyword,
+            'content': self._content,
+
+            # 关键词函数（旧命名，向后兼容）
+            'random_hotspot': self._random_keyword,
+            'keyword_with_emoji': self._random_keyword,
+            'content_with_pinyin': self._content,
 
             # 图片函数
             'random_image': self._random_image_sync,
@@ -167,9 +171,9 @@ class SEOCore:
             'random_number': lambda min_val, max_val: random.randint(min_val, max_val),
         }
 
-    def _random_hotspot(self) -> Markup:
+    def _random_keyword(self) -> Markup:
         """
-        获取随机热点关键词（编码后）
+        获取随机关键词（编码后）
 
         Returns:
             编码后的关键词（Markup安全标记）
@@ -181,28 +185,12 @@ class SEOCore:
         self._encoding_count += len(keyword)
         return Markup(encoded)
 
-    def _keyword_with_emoji(self) -> Markup:
+    def _content(self) -> str:
         """
-        生成 关键词+emoji+关键词+emoji+关键词 格式（已编码）
+        获取正文内容
 
         Returns:
-            编码后的关键词emoji组合（Markup安全标记）
-        """
-        keywords = self._get_keywords_sync(3)
-        if len(keywords) < 3:
-            return Markup("")
-        emojis = self.emoji_manager.get_random_list(2)
-        result = f"{keywords[0]}{emojis[0]}{keywords[1]}{emojis[1]}{keywords[2]}"
-        encoded = self.encoder.encode_text(result)
-        self._encoding_count += len(result)
-        return Markup(encoded)
-
-    def _content_with_pinyin(self) -> str:
-        """
-        从段落池获取带拼音的内容
-
-        Returns:
-            带拼音标注的正文内容，段落池不可用时返回空字符串
+            正文内容，内容池不可用时返回空字符串
         """
         # 优先使用预加载的内容（由 render_template_content 预先获取）
         if hasattr(self, '_preloaded_content') and self._preloaded_content:
@@ -222,7 +210,7 @@ class SEOCore:
                 return content or ""
             else:
                 # 在异步环境中，应该使用预加载的内容
-                logger.warning("content_with_pinyin called in async context without preloaded content")
+                logger.warning("content() called in async context without preloaded content")
                 return ""
         except Exception as e:
             logger.warning(f"Failed to get content from pool: {e}")
@@ -397,7 +385,7 @@ class SEOCore:
 
     def set_preloaded_content(self, content: str) -> None:
         """
-        预加载内容供 content_with_pinyin() 使用
+        预加载内容供 content() 使用
 
         在异步环境中，应该在调用 render_template_content 之前
         预先获取内容并通过此方法设置。

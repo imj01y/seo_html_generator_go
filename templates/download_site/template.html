@@ -30,11 +30,11 @@
         categroyId: '{{ random_number(100,999) }}',
         rootId: '{{ random_number(1,9) }}',
         commendid: '0',
-        catalogname: '{{ random_hotspot() }}',
-        softname: '{{ random_hotspot() }}',
-        softver: '{{ random_hotspot() }}',
-        system: '{{ random_hotspot() }}',
-        softlicence: "{{ random_hotspot() }}",
+        catalogname: '{{ random_keyword() }}',
+        softname: '{{ random_keyword() }}',
+        softver: '{{ random_keyword() }}',
+        system: '{{ random_keyword() }}',
+        softlicence: "{{ random_keyword() }}",
         body: "1"
     }
     </script>
@@ -45,12 +45,12 @@
     <meta property="og:type" content="soft" />
     <meta property="og:description" content="" />
     <meta property="og:image" content="{{ random_image() }}" />
-    <meta property="og:title" content="{{ random_hotspot() }}" />
+    <meta property="og:title" content="{{ random_keyword() }}" />
 
     <!-- ========== 8. OG软件扩展标签 (og:soft:*) ========== -->
-    <meta property="og:soft:operating_system" content="{{ random_hotspot() }}" />
-    <meta property="og:soft:language" content="{{ random_hotspot() }}" />
-    <meta property="og:soft:license" content="{{ random_hotspot() }}" />
+    <meta property="og:soft:operating_system" content="{{ random_keyword() }}" />
+    <meta property="og:soft:language" content="{{ random_keyword() }}" />
+    <meta property="og:soft:license" content="{{ random_keyword() }}" />
     <meta property="og:soft:url" content="{{ random_url() }}" />
     <meta property="og:release_date" content="{{ now() }}" />
 
@@ -67,9 +67,9 @@
     <!-- ========== 区域1: 顶部导航条 (topper) ========== -->
     <div class="{{ cls('topper') }}">
         <div class="{{ cls('box') }}">
-            <span class="{{ cls('fl') }}">{{ keyword_with_emoji() }}</span>
+            <span class="{{ cls('fl') }}">{{ random_keyword() }}</span>
             {% for i in range(4) %}
-            <a href="{{ random_url() }}">{{ random_hotspot() }}</a>|
+            <a href="{{ random_url() }}">{{ random_keyword() }}</a>|
             {% endfor %}
         </div>
     </div>
@@ -101,7 +101,7 @@
                 <!-- 热搜词 -->
                 <div class="{{ cls('hot_word') }}">
                     {% for i in range(9) %}
-                    <a href="{{ random_url() }}" class="{{ cls('bdcs-hot-item') }}" target="_blank">{{ random_hotspot() }}</a>
+                    <a href="{{ random_url() }}" class="{{ cls('bdcs-hot-item') }}" target="_blank">{{ random_keyword() }}</a>
                     {% endfor %}
                 </div>
             </div>
@@ -111,10 +111,10 @@
     <!-- ========== 区域3: 面包屑导航 (breadcrumb) ========== -->
     <div class="{{ cls('box') }}">
         <p class="{{ cls('pos') }}">当前位置：
-            <a href="{{ random_url() }}">{{ random_hotspot() }}</a>→
-            <a href="{{ random_url() }}">{{ random_hotspot() }}</a>→
-            <a href="{{ random_url() }}">{{ random_hotspot() }}</a>
-            {{ keyword_with_emoji() }} 安卓版
+            <a href="{{ random_url() }}">{{ random_keyword() }}</a>→
+            <a href="{{ random_url() }}">{{ random_keyword() }}</a>→
+            <a href="{{ random_url() }}">{{ random_keyword() }}</a>
+            {{ random_keyword() }} 安卓版
         </p>
     </div>
 
@@ -124,8 +124,8 @@
         <div class="{{ cls('infoSub') }}">
             <!-- 应用图标和H1标题 -->
             <div class="{{ cls('subAppicon') }}">
-                <img src="{{ random_image() }}" alt="{{ random_hotspot() }}" />
-                <h1>{{ keyword_with_emoji() }}</h1>
+                <img src="{{ random_image() }}" alt="{{ random_keyword() }}" />
+                <h1>{{ random_keyword() }}</h1>
 
                 <!-- 下载按钮 -->
                 <ul id="dbtns">
@@ -154,10 +154,10 @@
                 <ul class="{{ cls('zolSub') }}">
                     {% for i in range(50) %}
                     <li>
-                        <a href="{{ random_url() }}" title="{{ random_hotspot() }}">
-                            <img src="{{ random_image() }}" alt="{{ random_hotspot() }}" />
+                        <a href="{{ random_url() }}" title="{{ random_keyword() }}">
+                            <img src="{{ random_image() }}" alt="{{ random_keyword() }}" />
                             <section>
-                                <h3>{{ random_hotspot() }}</h3>
+                                <h3>{{ random_keyword() }}</h3>
                                 <span class="{{ cls('star') }}" title="热度评级：6/10">
                                     <span style="width:calc(40%*2)"></span>
                                 </span>
@@ -177,8 +177,8 @@
                 <dd>
                     {% for i in range(18) %}
                     <a href="{{ random_url() }}">
-                        <img alt="{{ random_hotspot() }}" src="{{ random_image() }}" />
-                        <i>{{ random_hotspot() }}</i>
+                        <img alt="{{ random_keyword() }}" src="{{ random_image() }}" />
+                        <i>{{ random_keyword() }}</i>
                     </a>
                     {% endfor %}
                 </dd>
@@ -192,9 +192,9 @@
                     <i>{{ now() }}</i>
                     <b class='on'>{{ random_number(100, 999) }}</b>
                     <a href="{{ random_url() }}" target="_blank">
-                        <img src="{{ random_image() }}" alt="{{ random_hotspot() }}" />
+                        <img src="{{ random_image() }}" alt="{{ random_keyword() }}" />
                     </a>
-                    <p><a href="{{ random_url() }}" target="_blank">{{ random_hotspot() }}</a></p>
+                    <p><a href="{{ random_url() }}" target="_blank">{{ random_keyword() }}</a></p>
                 </li>
                 {% endfor %}
             </ul>
@@ -205,12 +205,12 @@
             <!-- 软件信息表格 -->
             <table cellpadding="0" cellspacing="0">
                 <tr>
-                    <td><i>分类：</i>{{ random_hotspot() }} / {{ random_hotspot() }}</td>
+                    <td><i>分类：</i>{{ random_keyword() }} / {{ random_keyword() }}</td>
                     <td><i>大小：</i></td>
-                    <td><i>授权：</i>{{ random_hotspot() }}</td>
+                    <td><i>授权：</i>{{ random_keyword() }}</td>
                 </tr>
                 <tr>
-                    <td><i>语言：</i>{{ random_hotspot() }}</td>
+                    <td><i>语言：</i>{{ random_keyword() }}</td>
                     <td><i>更新：</i>{{ now() }}</td>
                     <td><i>等级：</i>
                         <span class="{{ cls('star') }}">
@@ -219,9 +219,9 @@
                     </td>
                 </tr>
                 <tr>
-                    <td><i>平台：</i>{{ random_hotspot() }}</td>
+                    <td><i>平台：</i>{{ random_keyword() }}</td>
                     <td><i>厂商：</i>
-                        <a href="{{ random_url() }}" target="_blank">{{ random_hotspot() }}</a>
+                        <a href="{{ random_url() }}" target="_blank">{{ random_keyword() }}</a>
                     </td>
                     <td class="{{ cls('siteurl') }}"><i>官网：</i>暂无</td>
                 </tr>
@@ -236,7 +236,7 @@
                     <td colspan="3"><i>标签：</i>
                         <span class="{{ cls('tipWord') }}">
                             {% for i in range(3) %}
-                            <a href="{{ random_url() }}" target="_blank">{{ random_hotspot() }}</a>
+                            <a href="{{ random_url() }}" target="_blank">{{ random_keyword() }}</a>
                             {% endfor %}
                         </span>
                     </td>
@@ -259,8 +259,8 @@
                         <ul class="{{ cls('piclist') }}">
                             {% for i in range(4) %}
                             <li>
-                                <a href="{{ random_image() }}" data-lightbox="s1" data-text="{{ random_hotspot() }}">
-                                    <img src="{{ random_image() }}" alt="{{ random_hotspot() }}" />
+                                <a href="{{ random_image() }}" data-lightbox="s1" data-text="{{ random_keyword() }}">
+                                    <img src="{{ random_image() }}" alt="{{ random_keyword() }}" />
                                 </a>
                             </li>
                             {% endfor %}
@@ -276,13 +276,13 @@
                 <h3 id="anchorInfo"><i class="{{ cls('iInfo') }}"></i>内容详情</h3>
                 <div class="{{ cls('txtIntro') }}">
                     <!-- 热点新闻标题 -->
-                    <p id="news_1">{{ random_hotspot() }}</p>
-                    <p id="news_2">{{ random_hotspot() }}</p>
-                    <p id="news_3">{{ random_hotspot() }}</p>
+                    <p id="news_1">{{ random_keyword() }}</p>
+                    <p id="news_2">{{ random_keyword() }}</p>
+                    <p id="news_3">{{ random_keyword() }}</p>
 
                     <!-- 厂商新闻 -->
                     <p style="text-indent:2em;">
-                        <i>厂商新闻</i>{{ random_hotspot() }} 时间：{{ now() }}
+                        <i>厂商新闻</i>{{ random_keyword() }} 时间：{{ now() }}
                     </p>
 
                     <!-- 文章正文（含拼音标注） -->
@@ -293,7 +293,7 @@
                         <p align="center">{{ now() }}
                         <div class="{{ cls('left_zw') }}">
                             <!-- 拼音标注段落 -->
-                            <p>　{{ content_with_pinyin() }}</p>
+                            <p>　{{ content() }}</p>
 
                             <table border="0" cellspacing="0" cellpadding="0" align="left" class="{{ cls('adInContent') }}">
                                 <tr>
@@ -336,8 +336,8 @@
                     {% for i in range(350) %}
                     <li>
                         <a href="{{ random_url() }}" target="_blank">
-                            <img alt="{{ random_hotspot() }}" src="{{ random_image() }}" />
-                            {{ random_hotspot() }}
+                            <img alt="{{ random_keyword() }}" src="{{ random_image() }}" />
+                            {{ random_keyword() }}
                         </a>
                     </li>
                     {% endfor %}
@@ -349,17 +349,17 @@
         <div class="{{ cls('AppBox') }}">
             <!-- App-details: 应用图标和标题 -->
             <div class="{{ cls('App-details') }}">
-                <img class="{{ cls('icon') }}" height="51px" width="51px" alt="{{ random_hotspot() }}" src="{{ random_image() }}" />
+                <img class="{{ cls('icon') }}" height="51px" width="51px" alt="{{ random_keyword() }}" src="{{ random_image() }}" />
                 <div class="{{ cls('App-details-det') }}">
                     <div class="{{ cls('app-details-appname') }}">
-                        <h2>{{ keyword_with_emoji() }}</h2>
+                        <h2>{{ random_keyword() }}</h2>
                     </div>
                     <div class="{{ cls('app-details-appdes') }}">
                         <h3>「活动」首次登录送{{ random_number(50, 200) }}元红包</h3>
                     </div>
                     <div class="{{ cls('app-details-appinfo') }}">
-                        <div>{{ random_hotspot() }}</div>
-                        <div>{{ random_hotspot() }}</div>
+                        <div>{{ random_keyword() }}</div>
+                        <div>{{ random_keyword() }}</div>
                     </div>
                 </div>
             </div>
@@ -395,7 +395,7 @@
             <div class="{{ cls('img') }}">
                 <div class="{{ cls('App_ImgBox') }}">
                     {% for i in range(5) %}
-                    <img alt="{{ random_hotspot() }}截图{{ i }}" src="{{ random_image() }}" />
+                    <img alt="{{ random_keyword() }}截图{{ i }}" src="{{ random_image() }}" />
                     {% endfor %}
                 </div>
             </div>
@@ -451,7 +451,7 @@
                         <div class="{{ cls('icon') }}"></div>
                     </div>
                     <div class="{{ cls('App_Introduce') }}">
-                        <span><a href='{{ random_url() }}'>{{ random_hotspot() }}</a></span>
+                        <span><a href='{{ random_url() }}'>{{ random_keyword() }}</a></span>
                     </div>
                 </div>
 
@@ -482,7 +482,7 @@
                 <li class="{{ cls('StrategyList_Content') }}">
                     <div class="{{ cls('StrategyList_ContentTitle ml0') }}">
                         <a href="{{ random_url() }}">
-                            <div>{{ keyword_with_emoji() }}</div>
+                            <div>{{ random_keyword() }}</div>
                         </a>
                     </div>
                     <div class="{{ cls('StrategyList_TimeBox') }}">
@@ -506,18 +506,18 @@
                 <li class="{{ cls('3ce690') }}">
                     <table>
                         <tr>
-                            <td style="width:230px;">{{ random_hotspot() }}</td>
+                            <td style="width:230px;">{{ random_keyword() }}</td>
                             <td>{{ random_number(1, 59) }}分钟前</td>
                         </tr>
                         <tr>
-                            <td colspan="2" style="color:#44423C; text-align:justify; text-justify:distribute-all-lines;word-wrap:break-word;word-break:break-all;">{{ random_hotspot() }}</td>
+                            <td colspan="2" style="color:#44423C; text-align:justify; text-justify:distribute-all-lines;word-wrap:break-word;word-break:break-all;">{{ random_keyword() }}</td>
                         </tr>
                     </table>
                 </li>
                 {% endfor %}
             </ul>
             <a href="{{ random_url() }}">
-                <div class="{{ cls('link_more') }}">{{ keyword_with_emoji() }}</div>
+                <div class="{{ cls('link_more') }}">{{ random_keyword() }}</div>
             </a>
         </div>
     </div>
@@ -546,14 +546,14 @@
     <script>
     var detail = {
         'sid': {{ random_number(10000, 99999) }},
-        'sname': "{{ random_hotspot() }}",
+        'sname': "{{ random_keyword() }}",
         'cname': "冒险解谜",
         'crid': {{ random_number(1, 10) }},
         'cid': {{ random_number(10, 99) }}
     };
     var _webInfo = {};
     _webInfo = {
-        Username: "{{ random_hotspot() }}",
+        Username: "{{ random_keyword() }}",
         Type: "0",
         DateTime: "{{ now() }}",
         Id: "{{ random_number(10000, 99999) }}"
@@ -614,9 +614,9 @@
 "@context": "http://zhanzhang.baidu.com/contexts/cambrian.jsonld",
 "@id": "{{ random_url() }}",
 "appid": "否",
-"title": "{{ random_hotspot() }}",
+"title": "{{ random_keyword() }}",
 "images": ["{{ random_image() }}"],
-"description": "{{ random_hotspot() }}",
+"description": "{{ random_keyword() }}",
 "upDate": "{{ now() }}",
 "data": {
 "WebPage": {
@@ -659,8 +659,8 @@
                 <img class="{{ cls('img') }}" alt="" src="/static/images/close_black.png" />
             </div>
             <div class="{{ cls('middle') }}">
-                <p class="{{ cls('one') }}">{{ keyword_with_emoji() }}</p>
-                <p class="{{ cls('two') }}">{{ random_hotspot() }}</p>
+                <p class="{{ cls('one') }}">{{ random_keyword() }}</p>
+                <p class="{{ cls('two') }}">{{ random_keyword() }}</p>
             </div>
             <p class="{{ cls('right') }}">
                 <span class="{{ cls('freedownload') }}">下载</span>
@@ -695,25 +695,25 @@
             <div class="{{ cls('breadcrumb') }}">
                 <a href="{{ random_url() }}">首页</a>
                 &gt;
-                <a href="{{ random_url() }}">{{ random_hotspot() }}</a>
+                <a href="{{ random_url() }}">{{ random_keyword() }}</a>
                 &gt;
-                <a href="{{ random_url() }}">{{ random_hotspot() }}</a>
+                <a href="{{ random_url() }}">{{ random_keyword() }}</a>
             </div>
 
             <!-- 移动端AppBox -->
             <div class="{{ cls('AppBox') }}">
                 <div class="{{ cls('App-details') }}">
-                    <img class="{{ cls('icon') }}" height="51px" width="51px" alt="{{ random_hotspot() }}" src="{{ random_image() }}" />
+                    <img class="{{ cls('icon') }}" height="51px" width="51px" alt="{{ random_keyword() }}" src="{{ random_image() }}" />
                     <div class="{{ cls('App-details-det') }}">
                         <div class="{{ cls('app-details-appname') }}">
-                            <h2>{{ keyword_with_emoji() }}</h2>
+                            <h2>{{ random_keyword() }}</h2>
                         </div>
                         <div class="{{ cls('app-details-appdes') }}">
                             <h3>「活动」首次登录送{{ random_number(50, 200) }}元红包</h3>
                         </div>
                         <div class="{{ cls('app-details-appinfo') }}">
-                            <div>{{ random_hotspot() }}</div>
-                            <div>{{ random_hotspot() }}</div>
+                            <div>{{ random_keyword() }}</div>
+                            <div>{{ random_keyword() }}</div>
                         </div>
                     </div>
                 </div>
@@ -743,7 +743,7 @@
                 <div class="{{ cls('img') }}">
                     <div class="{{ cls('App_ImgBox') }}">
                         {% for i in range(5) %}
-                        <img alt="{{ random_hotspot() }}截图{{ i }}" src="{{ random_image() }}" />
+                        <img alt="{{ random_keyword() }}截图{{ i }}" src="{{ random_image() }}" />
                         {% endfor %}
                     </div>
                 </div>
@@ -770,7 +770,7 @@
                             <div class="{{ cls('icon') }}"></div>
                         </div>
                         <div class="{{ cls('App_Introduce') }}">
-                            <span><a href='{{ random_url() }}'>{{ random_hotspot() }}</a></span>
+                            <span><a href='{{ random_url() }}'>{{ random_keyword() }}</a></span>
                         </div>
                     </div>
                     <div class="{{ cls('App_SpreadBox') }}">
@@ -780,7 +780,7 @@
                         </div>
                         <div class="{{ cls('App_Update') }}">
                             <span>V{{ random_number(10, 20) }}.{{ random_number(0, 99) }}.{{ random_number(0, 9) }}</span>
-                            <div class="{{ cls('get_more') }}">{{ random_hotspot() }}</div>
+                            <div class="{{ cls('get_more') }}">{{ random_keyword() }}</div>
                         </div>
                     </div>
                 </div>
@@ -794,10 +794,10 @@
             <!-- 分类标签 (ClassifyBox) -->
             <section class="{{ cls('ClassifyBox') }}">
                 <ul>
-                    <li class="{{ cls('Classify_Checked') }}"><a href="{{ random_url() }}">{{ random_hotspot() }}</a></li>
+                    <li class="{{ cls('Classify_Checked') }}"><a href="{{ random_url() }}">{{ random_keyword() }}</a></li>
                     {% for i in range(20) %}
                     <li data-is-active="{{ cls('') }}">
-                        <a href="{{ random_url() }}">{{ keyword_with_emoji() }}</a>
+                        <a href="{{ random_url() }}">{{ random_keyword() }}</a>
                     </li>
                     {% endfor %}
                 </ul>
@@ -808,22 +808,22 @@
                 {% for i in range(132) %}
                 <li class="{{ cls('app-list-con') }}">
                     <a href="{{ random_url() }}">
-                        <img class="{{ cls('app-list-img') }}" alt="{{ random_hotspot() }}" title="{{ random_hotspot() }}">
+                        <img class="{{ cls('app-list-img') }}" alt="{{ random_keyword() }}" title="{{ random_keyword() }}">
                     </a>
                     <div class="{{ cls('app-list-details') }}">
                         <div class="{{ cls('app-list-name') }}">
-                            <h2><a href="{{ random_url() }}">{{ random_hotspot() }}</a></h2>
+                            <h2><a href="{{ random_url() }}">{{ random_keyword() }}</a></h2>
                         </div>
                         <div class="{{ cls('app-list-des') }}">
-                            <h3>{{ random_hotspot() }}</h3>
+                            <h3>{{ random_keyword() }}</h3>
                         </div>
                         <div class="{{ cls('app-list-info') }}">
-                            <div>{{ random_hotspot() }}</div>
-                            <div>{{ random_hotspot() }}</div>
+                            <div>{{ random_keyword() }}</div>
+                            <div>{{ random_keyword() }}</div>
                         </div>
                     </div>
                     <div class="{{ cls('app-list-download') }}">
-                        <a class="{{ cls('detail') }}" href="{{ random_url() }}">{{ random_hotspot() }}</a>
+                        <a class="{{ cls('detail') }}" href="{{ random_url() }}">{{ random_keyword() }}</a>
                     </div>
                 </li>
                 {% endfor %}
@@ -833,17 +833,17 @@
 
     <!-- ========== 区域: App-everybody-dl 应用推荐 (1800个) ========== -->
     <div class="{{ cls('App-everybody-dl') }}">
-        <h3 class="{{ cls('title') }}">{{ random_hotspot() }}</h3>
+        <h3 class="{{ cls('title') }}">{{ random_keyword() }}</h3>
         <ul class="{{ cls('App-ul fix') }}" style="width: 100%; overflow: hidden;">
             {% for i in range(1800) %}
             <li class="{{ cls('li fix') }}">
                 <a href="{{ random_url() }}">
                     <div class="{{ cls('img') }}">
-                        {{ random_hotspot() }}
+                        {{ random_keyword() }}
                     </div>
                 </a>
                 <div class="{{ cls('right') }}" style="padding-left: 0;">
-                    <p class="{{ cls('App-name') }}">{{ keyword_with_emoji() }}</p>
+                    <p class="{{ cls('App-name') }}">{{ random_keyword() }}</p>
                     </a>
                 </div>
             </li>
@@ -883,8 +883,8 @@
                 </div>
                 <a href="{{ random_url() }}">
                     <div class="{{ cls('App') }}">
-                        <div class="{{ cls('App_tit') }}">{{ random_hotspot() }}</div>
-                        <div class="{{ cls('App_user') }}">{{ keyword_with_emoji() }}</div>
+                        <div class="{{ cls('App_tit') }}">{{ random_keyword() }}</div>
+                        <div class="{{ cls('App_user') }}">{{ random_keyword() }}</div>
                         <div class="{{ cls('App_oth') }}">
                             <span>{{ random_number(10000, 99999) }}</span>
                             <span>{{ random_number(10000, 99999) }}</span>
@@ -900,8 +900,8 @@
     <!-- ========== 移动端Footer (Footer-line) ========== -->
     <div class="{{ cls('Footer') }}">
         <div class="{{ cls('Footer-line') }}"></div>
-        <span class="{{ cls('Appchina.com/') }}">{{ random_hotspot() }}-安卓手机网上最贴心的Android软件应用平台!</span>
-        <span class="{{ cls('Footer-com') }}">版权所有：{{ random_hotspot() }}有限公司</span>
+        <span class="{{ cls('Appchina.com/') }}">{{ random_keyword() }}-安卓手机网上最贴心的Android软件应用平台!</span>
+        <span class="{{ cls('Footer-com') }}">版权所有：{{ random_keyword() }}有限公司</span>
         <span class="{{ cls('Footer-com') }}">备案号：京ICP备44633832号-1</span>
     </div>
 
