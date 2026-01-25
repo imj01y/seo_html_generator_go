@@ -557,6 +557,8 @@ async def serve_page(
         path: 请求路径
         domain: 站点域名
     """
+    import time as time_module
+    t0 = time_module.perf_counter()
     start_time = time.time()
     client_ip = get_client_ip(request)
     cache_hit = False
@@ -564,6 +566,7 @@ async def serve_page(
 
     # 蜘蛛检测
     detection = await detect_spider_async(ua)
+    t1 = time_module.perf_counter()
 
     # 非蜘蛛处理
     if not detection.is_spider:
@@ -574,10 +577,15 @@ async def serve_page(
 
     # 尝试从缓存获取
     cached_html = await cache.get(domain, path)
+    t2 = time_module.perf_counter()
     if cached_html:
         elapsed = (time.time() - start_time) * 1000
         cache_hit = True
         logger.debug(f"Cache hit: {domain}/{path} ({elapsed:.2f}ms)")
+        logger.info(
+            f"[PERF] spider={t1-t0:.3f}s cache={t2-t1:.3f}s "
+            f"total={t2-t0:.3f}s path={path} (cache_hit)"
+        )
 
         # 后台记录蜘蛛日志
         background_tasks.add_task(
@@ -599,6 +607,7 @@ async def serve_page(
     try:
         # 从缓存或数据库获取站点配置
         site_config = await get_site_config_cached(domain)
+        t3 = time_module.perf_counter()
 
         # 检查站点是否存在于数据库中
         if site_config is None:
@@ -621,6 +630,7 @@ async def serve_page(
         template_data, random_titles, random_content = await asyncio.gather(
             template_task, titles_task, content_task
         )
+        t4 = time_module.perf_counter()
 
         # 如果站群内找不到模板，回退到默认站群（兼容旧数据）
         if not template_data:
@@ -656,6 +666,7 @@ async def serve_page(
             site_config=site_config,
             article_content=article_content
         )
+        t5 = time_module.perf_counter()
         # 缓存结果（后台执行，不阻塞响应）
         background_tasks.add_task(cache.set, domain, path, html)
 
@@ -663,6 +674,12 @@ async def serve_page(
         logger.info(
             f"Page generated: {domain}/{path} "
             f"spider={detection.spider_type} ({elapsed:.2f}ms)"
+        )
+        # 详细耗时日志
+        logger.info(
+            f"[PERF] spider={t1-t0:.3f}s cache={t2-t1:.3f}s "
+            f"site={t3-t2:.3f}s fetch={t4-t3:.3f}s render={t5-t4:.3f}s "
+            f"total={t5-t0:.3f}s path={path}"
         )
 
         # 后台记录蜘蛛日志
