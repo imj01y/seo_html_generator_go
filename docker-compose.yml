@@ -106,6 +106,7 @@ services:
     volumes:
       - ./config.yaml:/app/config.yaml:ro
       - ./go-page-server/templates:/app/templates
+      - ./data:/app/data:ro
     depends_on:
       mysql:
         condition: service_healthy

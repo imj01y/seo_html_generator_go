@@ -149,6 +149,8 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	// Get random titles and content
 	titles := h.dataManager.GetRandomTitles(articleGroupID, 4)
 	content := h.dataManager.GetRandomContent(articleGroupID)
+	// 获取关键词用于标题生成
+	titleKeywords := h.dataManager.GetRandomKeywords(articleGroupID, 3)
 	fetchTime := time.Since(t4)
 
 	// Build article content
@@ -159,18 +161,25 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	h.templateRenderer.SetPreloadContent(preloadContent)
 
 	// Prepare render data
-	analyticsCode := ""
-	if site.Analytics.Valid {
-		analyticsCode = site.Analytics.String
+	analyticsCode := getNullString(site.Analytics)
+	baiduPushJS := ""
+	if baiduToken := getNullString(site.BaiduToken); baiduToken != "" {
+		baiduPushJS = generateBaiduPushJS(baiduToken)
 	}
 
-	baiduPushJS := ""
-	if site.BaiduToken.Valid && site.BaiduToken.String != "" {
-		baiduPushJS = generateBaiduPushJS(site.BaiduToken.String)
+	// 创建标题生成器闭包，同一页面多次调用返回相同标题
+	var cachedTitle string
+	titleGenerator := func() string {
+		if cachedTitle == "" {
+			kws := h.dataManager.GetRandomKeywords(articleGroupID, 3)
+			cachedTitle = h.generateTitle(kws)
+		}
+		return cachedTitle
 	}
 
 	renderData := &core.RenderData{
-		Title:          h.generateTitle(titles),
+		Title:          h.generateTitle(titleKeywords), // 兼容静态用途
+		TitleGenerator: titleGenerator,                 // 动态生成器
 		SiteID:         site.ID,
 		AnalyticsCode:  template.HTML(analyticsCode),
 		BaiduPushJS:    template.HTML(baiduPushJS),
@@ -243,15 +252,32 @@ func (h *PageHandler) getTemplate(ctx context.Context, name string, siteGroupID 
 	return tmpl, nil
 }
 
-// generateTitle generates a page title from random titles
-func (h *PageHandler) generateTitle(titles []string) string {
-	if len(titles) == 0 {
+// generateTitle 生成 SEO 优化的页面标题
+// 格式: 关键词1 + Emoji1 + 关键词2 + Emoji2 + 关键词3
+func (h *PageHandler) generateTitle(keywords []string) string {
+	switch {
+	case len(keywords) == 0:
 		return "Welcome"
+	case len(keywords) < 3:
+		return keywords[0]
 	}
-	if len(titles) >= 3 {
-		return titles[0] + " - " + titles[1]
+
+	usedEmojis := make(map[string]bool, 2)
+	var builder strings.Builder
+	builder.Grow(100) // 预分配空间
+
+	for i := 0; i < 3; i++ {
+		builder.WriteString(keywords[i])
+		// 在前两个关键词后添加 Emoji
+		if i < 2 {
+			if emoji := h.dataManager.GetRandomEmojiExclude(usedEmojis); emoji != "" {
+				usedEmojis[emoji] = true
+				builder.WriteString(emoji)
+			}
+		}
 	}
-	return titles[0]
+
+	return builder.String()
 }
 
 // logSpiderVisit logs spider visit to database asynchronously
@@ -304,6 +330,14 @@ func (h *PageHandler) logSpiderVisit(
 	} else {
 		log.Debug().Msg("Spider log inserted successfully")
 	}
+}
+
+// getNullString 安全获取 sql.NullString 的值
+func getNullString(ns sql.NullString) string {
+	if ns.Valid {
+		return ns.String
+	}
+	return ""
 }
 
 // getClientIP gets the client's real IP address
@@ -364,4 +398,9 @@ func (h *PageHandler) Stats(c *gin.Context) {
 		"data_manager":    h.dataManager.GetStats(),
 		"template_cache":  h.templateRenderer.GetCacheStats(),
 	})
+}
+
+// GetTemplateRenderer returns the template renderer for cache management
+func (h *PageHandler) GetTemplateRenderer() *core.TemplateRenderer {
+	return h.templateRenderer
 }

@@ -14,10 +14,12 @@ import (
 type DataManager struct {
 	db           *sqlx.DB
 	keywords     map[int][]string // group_id -> keywords (pre-encoded)
+	rawKeywords  map[int][]string // group_id -> keywords (raw, not encoded)
 	imageURLs    map[int][]string // group_id -> image URLs
 	titles       map[int][]string // group_id -> titles
 	contents     map[int][]string // group_id -> contents
 	encoder      *HTMLEntityEncoder
+	emojiManager *EmojiManager // Emoji 管理器
 	mu           sync.RWMutex
 	lastReload   time.Time
 	reloadMutex  sync.Mutex
@@ -26,12 +28,14 @@ type DataManager struct {
 // NewDataManager creates a new data manager
 func NewDataManager(db *sqlx.DB, encoder *HTMLEntityEncoder) *DataManager {
 	return &DataManager{
-		db:        db,
-		keywords:  make(map[int][]string),
-		imageURLs: make(map[int][]string),
-		titles:    make(map[int][]string),
-		contents:  make(map[int][]string),
-		encoder:   encoder,
+		db:           db,
+		keywords:     make(map[int][]string),
+		rawKeywords:  make(map[int][]string),
+		imageURLs:    make(map[int][]string),
+		titles:       make(map[int][]string),
+		contents:     make(map[int][]string),
+		encoder:      encoder,
+		emojiManager: NewEmojiManager(),
 	}
 }
 
@@ -44,6 +48,10 @@ func (m *DataManager) LoadKeywords(ctx context.Context, groupID int, limit int) 
 		return 0, err
 	}
 
+	// Store raw keywords (not encoded)
+	rawCopy := make([]string, len(keywords))
+	copy(rawCopy, keywords)
+
 	// Pre-encode keywords
 	encoded := make([]string, len(keywords))
 	for i, kw := range keywords {
@@ -52,6 +60,7 @@ func (m *DataManager) LoadKeywords(ctx context.Context, groupID int, limit int) 
 
 	m.mu.Lock()
 	m.keywords[groupID] = encoded
+	m.rawKeywords[groupID] = rawCopy
 	m.mu.Unlock()
 
 	log.Info().Int("group_id", groupID).Int("count", len(encoded)).Msg("Keywords loaded and pre-encoded")
@@ -125,98 +134,61 @@ func (m *DataManager) GetImageURLs(groupID int) []string {
 	return result
 }
 
-// GetRandomKeywords returns random pre-encoded keywords
-func (m *DataManager) GetRandomKeywords(groupID int, count int) []string {
+// getSliceWithFallback 获取指定 groupID 的切片，如果为空则回退到默认组
+func (m *DataManager) getSliceWithFallback(data map[int][]string, groupID int) []string {
 	m.mu.RLock()
-	keywords, ok := m.keywords[groupID]
-	m.mu.RUnlock()
-
-	if !ok || len(keywords) == 0 {
-		// Try default group
-		m.mu.RLock()
-		keywords = m.keywords[1]
-		m.mu.RUnlock()
+	items, ok := data[groupID]
+	if !ok || len(items) == 0 {
+		items = data[1] // fallback to default group
 	}
+	m.mu.RUnlock()
+	return items
+}
 
-	if len(keywords) == 0 {
+// getRandomItems 从切片中随机选取指定数量的元素
+func getRandomItems(items []string, count int) []string {
+	if len(items) == 0 {
 		return nil
 	}
-
-	// Random selection
 	result := make([]string, 0, count)
-	indices := rand.Perm(len(keywords))
+	indices := rand.Perm(len(items))
 	for i := 0; i < count && i < len(indices); i++ {
-		result = append(result, keywords[indices[i]])
+		result = append(result, items[indices[i]])
 	}
-
 	return result
+}
+
+// getRandomItem 从切片中随机选取一个元素
+func getRandomItem(items []string) string {
+	if len(items) == 0 {
+		return ""
+	}
+	return items[rand.Intn(len(items))]
+}
+
+// GetRandomKeywords returns random pre-encoded keywords
+func (m *DataManager) GetRandomKeywords(groupID int, count int) []string {
+	return getRandomItems(m.getSliceWithFallback(m.keywords, groupID), count)
+}
+
+// GetRawKeywords returns raw (not encoded) keywords for a group
+func (m *DataManager) GetRawKeywords(groupID int, count int) []string {
+	return getRandomItems(m.getSliceWithFallback(m.rawKeywords, groupID), count)
 }
 
 // GetRandomImageURL returns a random image URL
 func (m *DataManager) GetRandomImageURL(groupID int) string {
-	m.mu.RLock()
-	urls, ok := m.imageURLs[groupID]
-	m.mu.RUnlock()
-
-	if !ok || len(urls) == 0 {
-		// Try default group
-		m.mu.RLock()
-		urls = m.imageURLs[1]
-		m.mu.RUnlock()
-	}
-
-	if len(urls) == 0 {
-		return ""
-	}
-
-	return urls[rand.Intn(len(urls))]
+	return getRandomItem(m.getSliceWithFallback(m.imageURLs, groupID))
 }
 
 // GetRandomTitles returns random titles
 func (m *DataManager) GetRandomTitles(groupID int, count int) []string {
-	m.mu.RLock()
-	titles, ok := m.titles[groupID]
-	m.mu.RUnlock()
-
-	if !ok || len(titles) == 0 {
-		// Try default group
-		m.mu.RLock()
-		titles = m.titles[1]
-		m.mu.RUnlock()
-	}
-
-	if len(titles) == 0 {
-		return nil
-	}
-
-	// Random selection
-	result := make([]string, 0, count)
-	indices := rand.Perm(len(titles))
-	for i := 0; i < count && i < len(indices); i++ {
-		result = append(result, titles[indices[i]])
-	}
-
-	return result
+	return getRandomItems(m.getSliceWithFallback(m.titles, groupID), count)
 }
 
 // GetRandomContent returns a random content
 func (m *DataManager) GetRandomContent(groupID int) string {
-	m.mu.RLock()
-	contents, ok := m.contents[groupID]
-	m.mu.RUnlock()
-
-	if !ok || len(contents) == 0 {
-		// Try default group
-		m.mu.RLock()
-		contents = m.contents[1]
-		m.mu.RUnlock()
-	}
-
-	if len(contents) == 0 {
-		return ""
-	}
-
-	return contents[rand.Intn(len(contents))]
+	return getRandomItem(m.getSliceWithFallback(m.contents, groupID))
 }
 
 // LoadAllForGroup loads all data for a specific group
@@ -285,4 +257,24 @@ func (m *DataManager) GetStats() map[string]interface{} {
 	}
 
 	return stats
+}
+
+// LoadEmojis 从文件加载 Emoji 数据
+func (m *DataManager) LoadEmojis(path string) error {
+	return m.emojiManager.LoadFromFile(path)
+}
+
+// GetRandomEmoji 获取随机 Emoji
+func (m *DataManager) GetRandomEmoji() string {
+	return m.emojiManager.GetRandom()
+}
+
+// GetRandomEmojiExclude 获取不在 exclude 中的随机 Emoji
+func (m *DataManager) GetRandomEmojiExclude(exclude map[string]bool) string {
+	return m.emojiManager.GetRandomExclude(exclude)
+}
+
+// GetEmojiCount 返回已加载的 Emoji 数量
+func (m *DataManager) GetEmojiCount() int {
+	return m.emojiManager.Count()
 }

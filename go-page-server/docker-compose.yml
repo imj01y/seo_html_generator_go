@@ -41,6 +41,7 @@ services:
         condition: service_healthy
     volumes:
       - ./templates:/app/templates
+      - ../data:/app/data
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s

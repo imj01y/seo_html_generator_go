@@ -86,3 +86,22 @@ export const updateTemplate = async (id: number, data: TemplateUpdate): Promise<
 export const deleteTemplate = async (id: number): Promise<{ success: boolean; message?: string }> => {
   return await request.delete(`/templates/${id}`)
 }
+
+/**
+ * 清除Go服务的模板缓存
+ * 模板内容更新后调用此接口使新模板生效
+ */
+export const clearGoTemplateCache = async (): Promise<{ success: boolean; html_cleared?: number; message?: string }> => {
+  try {
+    // Go服务地址，可根据环境配置
+    const goServerUrl = import.meta.env.VITE_GO_SERVER_URL || 'http://127.0.0.1:8081'
+    const response = await fetch(`${goServerUrl}/api/cache/template/clear`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    })
+    return await response.json()
+  } catch (error) {
+    console.warn('Failed to clear Go template cache:', error)
+    return { success: false, message: '无法连接Go服务' }
+  }
+}

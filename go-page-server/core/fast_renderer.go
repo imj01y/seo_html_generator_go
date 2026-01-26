@@ -21,10 +21,13 @@ const (
 	PlaceholderCls PlaceholderType = iota
 	PlaceholderURL
 	PlaceholderKeyword
+	PlaceholderKeywordEmoji // 带 emoji 的关键词
 	PlaceholderImage
 	PlaceholderNumber
 	PlaceholderNow
 	PlaceholderContent
+	PlaceholderTitle          // Title 动态占位符
+	PlaceholderArticleContent // ArticleContent 动态占位符
 )
 
 // Placeholder 占位符信息
@@ -79,7 +82,7 @@ func (r *FastRenderer) Render(cacheKey string, data *RenderData) (string, bool) 
 	for i, segment := range ct.Segments {
 		buf.WriteString(segment)
 		if i < len(ct.Placeholders) {
-			buf.WriteString(r.getValue(ct.Placeholders[i]))
+			buf.WriteString(r.getValue(ct.Placeholders[i], data))
 		}
 	}
 
@@ -90,22 +93,45 @@ func (r *FastRenderer) Render(cacheKey string, data *RenderData) (string, bool) 
 }
 
 // getValue 获取占位符对应的实际值
-func (r *FastRenderer) getValue(p Placeholder) string {
+func (r *FastRenderer) getValue(p Placeholder, data *RenderData) string {
+	return resolvePlaceholder(p, data, r.funcsManager)
+}
+
+// resolvePlaceholder 解析占位符获取实际值（公共函数，供多处复用）
+func resolvePlaceholder(p Placeholder, data *RenderData, fm *TemplateFuncsManager) string {
 	switch p.Type {
 	case PlaceholderCls:
-		return r.funcsManager.Cls(p.Arg)
+		return fm.Cls(p.Arg)
 	case PlaceholderURL:
-		return r.funcsManager.RandomURL()
+		return fm.RandomURL()
 	case PlaceholderKeyword:
-		return r.funcsManager.RandomKeyword()
+		return fm.RandomKeyword()
+	case PlaceholderKeywordEmoji:
+		return fm.RandomKeywordEmoji()
 	case PlaceholderImage:
-		return r.funcsManager.RandomImage()
+		return fm.RandomImage()
 	case PlaceholderNumber:
-		return formatInt(r.funcsManager.RandomNumber(p.MinMax[0], p.MinMax[1]))
+		return formatInt(fm.RandomNumber(p.MinMax[0], p.MinMax[1]))
 	case PlaceholderNow:
 		return NowFunc()
 	case PlaceholderContent:
-		return "" // Content 在快速模板中不变
+		if data != nil && data.Content != "" {
+			return data.Content
+		}
+		return ""
+	case PlaceholderTitle:
+		if data != nil && data.TitleGenerator != nil {
+			return data.TitleGenerator()
+		}
+		if data != nil {
+			return data.Title
+		}
+		return ""
+	case PlaceholderArticleContent:
+		if data != nil {
+			return string(data.ArticleContent)
+		}
+		return ""
 	default:
 		return ""
 	}
@@ -152,27 +178,38 @@ func (r *FastRenderer) GetStats() map[string]interface{} {
 	}
 }
 
+// ClearCache 清除快速模板缓存
+func (r *FastRenderer) ClearCache() {
+	r.templates = sync.Map{}
+}
+
 // ============================================================
 // MarkerContext - 用于首次渲染，生成占位符模板
 // ============================================================
 
 // MarkerContext 标记上下文，用于生成占位符模板
 type MarkerContext struct {
-	Title          string
-	SiteID         int
-	AnalyticsCode  template.HTML
-	BaiduPushJS    template.HTML
-	ArticleContent template.HTML
-	Now            string
-	Content        string
+	// 静态字段（可以被模板直接访问）
+	SiteID        int
+	AnalyticsCode template.HTML
+	BaiduPushJS   template.HTML
+
+	// 私有字段（不能被模板直接访问，需要通过方法获取占位符）
+	articleContent template.HTML // 重命名为小写
+	now            string        // 重命名为小写
+	content        string        // 重命名为小写
 
 	// 占位符计数器
-	clsCounter     int64
-	urlCounter     int64
-	keywordCounter int64
-	imageCounter   int64
-	numberCounter  int64
-	nowCounter     int64
+	clsCounter            int64
+	urlCounter            int64
+	keywordCounter        int64
+	keywordEmojiCounter   int64 // 带 emoji 的关键词计数器
+	imageCounter          int64
+	numberCounter         int64
+	nowCounter            int64
+	titleCounter          int64 // Title 占位符计数器
+	contentCounter        int64 // Content 占位符计数器
+	articleContentCounter int64 // ArticleContent 占位符计数器
 
 	// 收集的占位符
 	placeholders []Placeholder
@@ -182,13 +219,12 @@ type MarkerContext struct {
 // NewMarkerContext 创建标记上下文
 func NewMarkerContext(data *RenderData, content string) *MarkerContext {
 	return &MarkerContext{
-		Title:          data.Title,
 		SiteID:         data.SiteID,
 		AnalyticsCode:  data.AnalyticsCode,
 		BaiduPushJS:    data.BaiduPushJS,
-		ArticleContent: data.ArticleContent,
-		Now:            NowFunc(),
-		Content:        content,
+		articleContent: data.ArticleContent, // 私有字段
+		now:            NowFunc(),           // 私有字段
+		content:        content,             // 私有字段
 		placeholders:   make([]Placeholder, 0, 1000),
 	}
 }
@@ -214,6 +250,17 @@ func (c *MarkerContext) RandomKeyword() template.HTML {
 	c.addPlaceholder(Placeholder{
 		Token: token,
 		Type:  PlaceholderKeyword,
+	})
+	return template.HTML(token)
+}
+
+// RandomKeywordEmoji 返回带 emoji 的关键词占位符标记
+func (c *MarkerContext) RandomKeywordEmoji() template.HTML {
+	idx := atomic.AddInt64(&c.keywordEmojiCounter, 1) - 1
+	token := "__PH_KWE_" + formatInt(int(idx)) + "__"
+	c.addPlaceholder(Placeholder{
+		Token: token,
+		Type:  PlaceholderKeywordEmoji,
 	})
 	return template.HTML(token)
 }
@@ -268,4 +315,48 @@ func (c *MarkerContext) RandomNumber(min, max int) string {
 		MinMax: [2]int{min, max},
 	})
 	return token
+}
+
+// Title 返回 Title 占位符标记（动态生成）
+func (c *MarkerContext) Title() string {
+	idx := atomic.AddInt64(&c.titleCounter, 1) - 1
+	token := "__PH_TITLE_" + formatInt(int(idx)) + "__"
+	c.addPlaceholder(Placeholder{
+		Token: token,
+		Type:  PlaceholderTitle,
+	})
+	return token
+}
+
+// Content 返回 Content 占位符标记（动态生成）
+func (c *MarkerContext) Content() string {
+	idx := atomic.AddInt64(&c.contentCounter, 1) - 1
+	token := "__PH_CONTENT_" + formatInt(int(idx)) + "__"
+	c.addPlaceholder(Placeholder{
+		Token: token,
+		Type:  PlaceholderContent,
+	})
+	return token
+}
+
+// Now 返回 Now 占位符标记（动态生成）
+func (c *MarkerContext) Now() string {
+	idx := atomic.AddInt64(&c.nowCounter, 1) - 1
+	token := "__PH_NOW_" + formatInt(int(idx)) + "__"
+	c.addPlaceholder(Placeholder{
+		Token: token,
+		Type:  PlaceholderNow,
+	})
+	return token
+}
+
+// ArticleContent 返回 ArticleContent 占位符标记（动态生成）
+func (c *MarkerContext) ArticleContent() template.HTML {
+	idx := atomic.AddInt64(&c.articleContentCounter, 1) - 1
+	token := "__PH_ARTICLE_" + formatInt(int(idx)) + "__"
+	c.addPlaceholder(Placeholder{
+		Token: token,
+		Type:  PlaceholderArticleContent,
+	})
+	return template.HTML(token)
 }

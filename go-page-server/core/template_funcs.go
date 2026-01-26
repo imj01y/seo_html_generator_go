@@ -11,21 +11,28 @@ import (
 // TemplateFuncsManager 模板函数管理器（高并发版）
 type TemplateFuncsManager struct {
 	// 预生成池
-	clsPool    *ObjectPool[string]
-	urlPool    *ObjectPool[string]
-	numberPool *NumberPool
+	clsPool          *ObjectPool[string]
+	urlPool          *ObjectPool[string]
+	keywordEmojiPool *ObjectPool[string] // 带 emoji 的关键词池
+	numberPool       *NumberPool
 
 	// 关键词（原子计数器访问）
 	keywords   []string
 	keywordIdx int64
 	keywordLen int64
 
+	// 原始关键词（未编码，用于生成带 emoji 的关键词）
+	rawKeywords   []string
+	rawKeywordIdx int64
+	rawKeywordLen int64
+
 	// 图片URL（原子计数器访问）
 	imageURLs []string
 	imageIdx  int64
 	imageLen  int64
 
-	encoder *HTMLEntityEncoder
+	encoder      *HTMLEntityEncoder
+	emojiManager *EmojiManager // emoji 管理器引用
 }
 
 // NewTemplateFuncsManager 创建管理器
@@ -33,6 +40,11 @@ func NewTemplateFuncsManager(encoder *HTMLEntityEncoder) *TemplateFuncsManager {
 	return &TemplateFuncsManager{
 		encoder: encoder,
 	}
+}
+
+// SetEmojiManager 设置 emoji 管理器引用
+func (m *TemplateFuncsManager) SetEmojiManager(em *EmojiManager) {
+	m.emojiManager = em
 }
 
 // InitPools 初始化所有池子（支持500 QPS）
@@ -66,6 +78,74 @@ func (m *TemplateFuncsManager) InitPools() {
 	m.numberPool.Start()
 }
 
+// InitKeywordEmojiPool 初始化带 emoji 的关键词池
+func (m *TemplateFuncsManager) InitKeywordEmojiPool() {
+	if m.emojiManager == nil || atomic.LoadInt64(&m.rawKeywordLen) == 0 {
+		return
+	}
+
+	// 500K 容量，与 clsPool 一致，支持 500 QPS
+	m.keywordEmojiPool = NewObjectPool[string](PoolConfig{
+		Name:          "keyword_emoji",
+		Size:          500000,
+		LowWatermark:  0.3,
+		RefillBatch:   100000,
+		NumWorkers:    16,
+		CheckInterval: 50 * time.Millisecond,
+	}, m.generateKeywordWithEmoji)
+
+	m.keywordEmojiPool.Start()
+}
+
+// generateKeywordWithEmoji 生成带 emoji 的关键词
+func (m *TemplateFuncsManager) generateKeywordWithEmoji() string {
+	// 1. 获取原始关键词
+	length := atomic.LoadInt64(&m.rawKeywordLen)
+	if length == 0 {
+		return ""
+	}
+	idx := atomic.AddInt64(&m.rawKeywordIdx, 1) - 1
+	keyword := m.rawKeywords[idx%length]
+
+	// 2. 如果 emojiManager 为 nil，直接返回关键词
+	if m.emojiManager == nil {
+		return m.encoder.EncodeText(keyword)
+	}
+
+	// 3. 随机决定插入 1 或 2 个 emoji（50% 概率）
+	emojiCount := 1
+	if rand.Float64() < 0.5 {
+		emojiCount = 2
+	}
+
+	// 4. 转换为 rune 切片处理中文
+	runes := []rune(keyword)
+	runeLen := len(runes)
+	if runeLen == 0 {
+		return m.encoder.EncodeText(keyword)
+	}
+
+	// 5. 插入 emoji
+	exclude := make(map[string]bool)
+	for i := 0; i < emojiCount; i++ {
+		pos := rand.Intn(runeLen + 1) // 0 到 len，包含首尾
+		emoji := m.emojiManager.GetRandomExclude(exclude)
+		if emoji != "" {
+			exclude[emoji] = true
+			// 在位置插入
+			newRunes := make([]rune, 0, len(runes)+len([]rune(emoji)))
+			newRunes = append(newRunes, runes[:pos]...)
+			newRunes = append(newRunes, []rune(emoji)...)
+			newRunes = append(newRunes, runes[pos:]...)
+			runes = newRunes
+			runeLen = len(runes)
+		}
+	}
+
+	// 6. 编码并返回
+	return m.encoder.EncodeText(string(runes))
+}
+
 // StopPools 停止所有池
 func (m *TemplateFuncsManager) StopPools() {
 	if m.clsPool != nil {
@@ -73,6 +153,9 @@ func (m *TemplateFuncsManager) StopPools() {
 	}
 	if m.urlPool != nil {
 		m.urlPool.Stop()
+	}
+	if m.keywordEmojiPool != nil {
+		m.keywordEmojiPool.Stop()
 	}
 	if m.numberPool != nil {
 		m.numberPool.Stop()
@@ -95,6 +178,16 @@ func (m *TemplateFuncsManager) LoadKeywords(keywords []string) int {
 	m.keywords = encoded
 	atomic.StoreInt64(&m.keywordLen, int64(len(encoded)))
 	atomic.StoreInt64(&m.keywordIdx, 0)
+
+	// 存储原始关键词（未编码，用于生成带 emoji 的关键词）
+	rawCopy := make([]string, len(keywords))
+	copy(rawCopy, keywords)
+	rand.Shuffle(len(rawCopy), func(i, j int) {
+		rawCopy[i], rawCopy[j] = rawCopy[j], rawCopy[i]
+	})
+	m.rawKeywords = rawCopy
+	atomic.StoreInt64(&m.rawKeywordLen, int64(len(rawCopy)))
+	atomic.StoreInt64(&m.rawKeywordIdx, 0)
 
 	return len(encoded)
 }
@@ -143,6 +236,15 @@ func (m *TemplateFuncsManager) RandomKeyword() string {
 	}
 	idx := atomic.AddInt64(&m.keywordIdx, 1) - 1
 	return m.keywords[idx%length]
+}
+
+// RandomKeywordEmoji 从池中获取带 emoji 的随机关键词
+func (m *TemplateFuncsManager) RandomKeywordEmoji() string {
+	if m.keywordEmojiPool != nil {
+		return m.keywordEmojiPool.Get()
+	}
+	// 降级：实时生成
+	return m.generateKeywordWithEmoji()
 }
 
 // RandomImage 获取随机图片URL（原子操作）
@@ -215,6 +317,9 @@ func (m *TemplateFuncsManager) GetStats() map[string]interface{} {
 	}
 	if m.urlPool != nil {
 		stats["url_pool"] = m.urlPool.Stats()
+	}
+	if m.keywordEmojiPool != nil {
+		stats["keyword_emoji_pool"] = m.keywordEmojiPool.Stats()
 	}
 	if m.numberPool != nil {
 		stats["number_pools"] = m.numberPool.Stats()

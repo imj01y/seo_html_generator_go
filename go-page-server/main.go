@@ -33,25 +33,8 @@ func main() {
 		TimeFormat: "2006-01-02 15:04:05",
 	})
 
-	// Get project root (parent of go-page-server)
-	execPath, err := os.Executable()
-	if err != nil {
-		log.Fatal().Err(err).Msg("Failed to get executable path")
-	}
-	projectRoot := filepath.Dir(filepath.Dir(execPath))
-
-	// For development, use current directory's parent
-	if _, err := os.Stat(filepath.Join(projectRoot, "config.yaml")); os.IsNotExist(err) {
-		cwd, _ := os.Getwd()
-		projectRoot = filepath.Dir(cwd)
-		if _, err := os.Stat(filepath.Join(projectRoot, "config.yaml")); os.IsNotExist(err) {
-			projectRoot = cwd
-			if _, err := os.Stat(filepath.Join(projectRoot, "..", "config.yaml")); err == nil {
-				projectRoot = filepath.Dir(projectRoot)
-			}
-		}
-	}
-
+	// Find project root directory
+	projectRoot := findProjectRoot()
 	log.Info().Str("project_root", projectRoot).Msg("Starting Go page server")
 
 	// Load configuration from Python's config.yaml
@@ -90,6 +73,23 @@ func main() {
 	funcsManager.InitPools()
 	log.Info().Dur("duration", time.Since(startTime)).Msg("Object pools initialized")
 
+	// Load emojis from data/emojis.json
+	emojisPath := filepath.Join(projectRoot, "data", "emojis.json")
+	emojiManager := core.NewEmojiManager()
+	if err := emojiManager.LoadFromFile(emojisPath); err != nil {
+		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis")
+	} else {
+		log.Info().Int("count", emojiManager.Count()).Msg("Emojis loaded")
+	}
+
+	// Also load emojis into dataManager for backward compatibility
+	if err := dataManager.LoadEmojis(emojisPath); err != nil {
+		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis to data manager")
+	}
+
+	// Set emoji manager on funcsManager for keyword+emoji generation
+	funcsManager.SetEmojiManager(emojiManager)
+
 	// Load initial data for default group
 	ctx := context.Background()
 	log.Info().Msg("Loading initial data...")
@@ -100,10 +100,16 @@ func main() {
 
 	// Also load data into funcsManager for template rendering
 	// This connects funcsManager to dataManager for keywords and images
-	keywords := dataManager.GetRandomKeywords(1, 50000)
-	if len(keywords) > 0 {
-		funcsManager.LoadKeywords(keywords) // Note: these are already encoded
-		log.Info().Int("count", len(keywords)).Msg("Keywords loaded to funcs manager")
+	// Use raw keywords (not encoded) - LoadKeywords will encode them
+	rawKeywords := dataManager.GetRawKeywords(1, 50000)
+	if len(rawKeywords) > 0 {
+		funcsManager.LoadKeywords(rawKeywords)
+		log.Info().Int("count", len(rawKeywords)).Msg("Keywords loaded to funcs manager")
+
+		// Initialize keyword+emoji pool (requires keywords and emojiManager)
+		log.Info().Msg("Initializing keyword emoji pool...")
+		funcsManager.InitKeywordEmojiPool()
+		log.Info().Msg("Keyword emoji pool initialized")
 	}
 
 	// Load image URLs into funcsManager
@@ -128,6 +134,13 @@ func main() {
 	templatesDir := filepath.Join(cwd, "templates")
 	compileHandler := handlers.NewCompileHandler(pageHandler, templatesDir)
 
+	// Create cache handler
+	cacheHandler := handlers.NewCacheHandler(
+		htmlCache,
+		pageHandler.GetTemplateRenderer(),
+		siteCache,
+	)
+
 	// Setup Gin
 	if !cfg.Server.Debug {
 		gin.SetMode(gin.ReleaseMode)
@@ -138,6 +151,20 @@ func main() {
 	// Middleware
 	r.Use(gin.Recovery())
 	r.Use(requestLogger())
+
+	// CORS middleware for cross-origin requests from admin panel
+	r.Use(func(c *gin.Context) {
+		c.Header("Access-Control-Allow-Origin", "*")
+		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	})
 
 	// Routes - Page rendering
 	r.GET("/page", pageHandler.ServePage)
@@ -151,6 +178,11 @@ func main() {
 		api.POST("/template/validate", compileHandler.ValidateTemplate)
 		api.POST("/template/preview", compileHandler.PreviewTemplate)
 		api.GET("/template/compile/status", compileHandler.CompileStatus)
+
+		// Cache management routes
+		api.POST("/cache/clear", cacheHandler.ClearAllCache)
+		api.POST("/cache/clear/:domain", cacheHandler.ClearDomainCache)
+		api.POST("/cache/template/clear", cacheHandler.ClearTemplateCache)
 	}
 
 	// Create server
@@ -228,4 +260,46 @@ func requestLogger() gin.HandlerFunc {
 			Str("ip", c.ClientIP()).
 			Msg("Request")
 	}
+}
+
+// findProjectRoot 查找项目根目录（包含 config.yaml 的目录）
+// 搜索顺序：可执行文件的父目录 -> 当前目录的父目录 -> 当前目录 -> 当前目录的上级
+func findProjectRoot() string {
+	configFile := "config.yaml"
+
+	// 尝试从可执行文件路径推断
+	if execPath, err := os.Executable(); err == nil {
+		candidate := filepath.Dir(filepath.Dir(execPath))
+		if fileExists(filepath.Join(candidate, configFile)) {
+			return candidate
+		}
+	}
+
+	// 尝试当前工作目录及其父目录
+	cwd, _ := os.Getwd()
+	candidates := []string{
+		filepath.Dir(cwd), // 父目录
+		cwd,               // 当前目录
+	}
+
+	for _, candidate := range candidates {
+		if fileExists(filepath.Join(candidate, configFile)) {
+			return candidate
+		}
+	}
+
+	// 最后尝试当前目录的上级
+	parent := filepath.Dir(cwd)
+	if fileExists(filepath.Join(parent, configFile)) {
+		return parent
+	}
+
+	// 默认返回当前目录
+	return cwd
+}
+
+// fileExists 检查文件是否存在
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

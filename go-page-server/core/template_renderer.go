@@ -24,7 +24,8 @@ type TemplateRenderer struct {
 
 // RenderData holds data passed to templates
 type RenderData struct {
-	Title          string
+	Title          string        // 静态标题（兼容用途）
+	TitleGenerator func() string // 动态标题生成器
 	SiteID         int
 	AnalyticsCode  template.HTML
 	BaiduPushJS    template.HTML
@@ -74,6 +75,12 @@ func (r *TemplateRenderer) Render(templateContent string, templateName string, d
 	hash := md5.Sum([]byte(templateContent))
 	cacheKey := hex.EncodeToString(hash[:])
 
+	// 获取预加载内容并设置到 data.Content（快速渲染和首次渲染都需要）
+	content := r.GetPreloadContent()
+	if data != nil {
+		data.Content = content
+	}
+
 	// 1. 尝试快速渲染（绕过反射）
 	if result, ok := r.fastRenderer.Render(cacheKey, data); ok {
 		elapsed := time.Since(startTime)
@@ -112,7 +119,7 @@ func (r *TemplateRenderer) Render(templateContent string, templateName string, d
 	}
 
 	// 使用 MarkerContext 渲染，收集占位符
-	content := r.GetPreloadContent()
+	// content 已在上面获取并设置到 data.Content
 	markerCtx := NewMarkerContext(data, content)
 
 	// 从对象池获取 buffer
@@ -148,7 +155,7 @@ func (r *TemplateRenderer) Render(templateContent string, templateName string, d
 	for i, segment := range segments {
 		resultBuf.WriteString(segment)
 		if i < len(placeholders) {
-			resultBuf.WriteString(r.getPlaceholderValue(placeholders[i]))
+			resultBuf.WriteString(r.getPlaceholderValue(placeholders[i], data))
 		}
 	}
 
@@ -167,26 +174,9 @@ func (r *TemplateRenderer) Render(templateContent string, templateName string, d
 	return result, nil
 }
 
-// getPlaceholderValue 获取占位符的实际值
-func (r *TemplateRenderer) getPlaceholderValue(p Placeholder) string {
-	switch p.Type {
-	case PlaceholderCls:
-		return r.funcsManager.Cls(p.Arg)
-	case PlaceholderURL:
-		return r.funcsManager.RandomURL()
-	case PlaceholderKeyword:
-		return r.funcsManager.RandomKeyword()
-	case PlaceholderImage:
-		return r.funcsManager.RandomImage()
-	case PlaceholderNumber:
-		return formatInt(r.funcsManager.RandomNumber(p.MinMax[0], p.MinMax[1]))
-	case PlaceholderNow:
-		return NowFunc()
-	case PlaceholderContent:
-		return ""
-	default:
-		return ""
-	}
+// getPlaceholderValue 获取占位符的实际值（复用公共函数）
+func (r *TemplateRenderer) getPlaceholderValue(p Placeholder, data *RenderData) string {
+	return resolvePlaceholder(p, data, r.funcsManager)
 }
 
 // templateRenderContext is the context passed to templates
@@ -227,9 +217,12 @@ func (c *templateRenderContext) RandomNumber(min, max int) int {
 	return c.funcsManager.RandomNumber(min, max)
 }
 
-// ClearCache clears the compiled template cache
+// ClearCache clears the compiled template cache and fast template cache
 func (r *TemplateRenderer) ClearCache() {
 	r.compiledCache = sync.Map{}
+	if r.fastRenderer != nil {
+		r.fastRenderer.ClearCache()
+	}
 }
 
 // GetCacheStats returns cache statistics

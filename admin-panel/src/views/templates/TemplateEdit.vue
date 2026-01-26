@@ -99,7 +99,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDebounceFn } from '@vueuse/core'
 import { ArrowLeft, Check, Loading, CircleCheck, Warning, MagicStick, Sunny, Moon } from '@element-plus/icons-vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
-import { getTemplate, updateTemplate } from '@/api/templates'
+import { getTemplate, updateTemplate, clearGoTemplateCache } from '@/api/templates'
 import type { Template } from '@/types'
 
 const route = useRoute()
@@ -216,6 +216,12 @@ const saveContent = async () => {
       // 更新版本号
       if (template.value) {
         template.value.version += 1
+      }
+
+      // 清除Go服务的模板缓存，使新模板立即生效
+      const cacheRes = await clearGoTemplateCache()
+      if (cacheRes.success) {
+        console.log('Go cache cleared:', cacheRes.html_cleared, 'entries')
       }
     } else {
       ElMessage.error(res.message || '保存失败')
