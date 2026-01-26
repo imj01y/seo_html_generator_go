@@ -137,7 +137,7 @@ production:
     password: "@format {env[DB_PASSWORD]}"
     database: "@format {env[DB_NAME]}"
     charset: "utf8mb4"
-    pool_size: 10
+    pool_size: 50
     pool_recycle: 1800
 
   redis:

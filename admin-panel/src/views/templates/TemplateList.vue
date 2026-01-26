@@ -2,10 +2,16 @@
   <div class="group-list-page template-list">
     <div class="page-header">
       <h2 class="title">模板管理</h2>
-      <el-button type="primary" @click="handleAdd">
-        <el-icon><Plus /></el-icon>
-        新增模板
-      </el-button>
+      <div class="header-actions">
+        <el-button type="warning" :loading="reloadingCache" @click="handleReloadCache">
+          <el-icon><Refresh /></el-icon>
+          刷新缓存
+        </el-button>
+        <el-button type="primary" @click="handleAdd">
+          <el-icon><Plus /></el-icon>
+          新增模板
+        </el-button>
+      </div>
     </div>
 
     <div class="page-container">
@@ -255,12 +261,23 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="addDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="addLoading" @click="handleCreate">
-          创建并编辑
-        </el-button>
+        <div class="dialog-footer">
+          <el-button @click="showGuide" class="guide-btn">
+            <el-icon><QuestionFilled /></el-icon>
+            模板标签指南
+          </el-button>
+          <div class="footer-right">
+            <el-button @click="addDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="addLoading" @click="handleCreate">
+              创建并编辑
+            </el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
+
+    <!-- 模板标签指南 -->
+    <TemplateGuide ref="guideRef" />
 
     <!-- 绑定站点弹窗 -->
     <el-dialog
@@ -294,14 +311,16 @@
 import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage, ElMessageBox, FormInstance, FormRules, TableInstance } from 'element-plus'
-import { Plus, Search, Folder, Delete, Check, Close, Edit, Star, ArrowDown } from '@element-plus/icons-vue'
+import { Plus, Search, Folder, Delete, Check, Close, Edit, Star, ArrowDown, Refresh, QuestionFilled } from '@element-plus/icons-vue'
+import TemplateGuide from '@/components/TemplateGuide.vue'
 import dayjs from 'dayjs'
 import {
   getTemplates,
   createTemplate,
   updateTemplate,
   deleteTemplate,
-  getTemplateSites
+  getTemplateSites,
+  reloadGoTemplateCache
 } from '@/api/templates'
 import {
   getSiteGroups,
@@ -317,6 +336,7 @@ const route = useRoute()
 const loading = ref(false)
 const addLoading = ref(false)
 const editGroupLoading = ref(false)
+const reloadingCache = ref(false)
 const addDialogVisible = ref(false)
 const sitesDialogVisible = ref(false)
 const groupDialogVisible = ref(false)
@@ -325,6 +345,7 @@ const addFormRef = ref<FormInstance>()
 const groupFormRef = ref<FormInstance>()
 const editGroupFormRef = ref<FormInstance>()
 const tableRef = ref<TableInstance>()
+const guideRef = ref<InstanceType<typeof TemplateGuide>>()
 
 // 模板库相关
 const groups = ref<SiteGroup[]>([])
@@ -552,6 +573,23 @@ const handleUpdateGroup = async () => {
   }
 }
 
+// 刷新模板缓存
+const handleReloadCache = async () => {
+  reloadingCache.value = true
+  try {
+    const res = await reloadGoTemplateCache()
+    if (res.success) {
+      ElMessage.success(`模板缓存已刷新，共加载 ${res.stats?.item_count || 0} 个模板`)
+    } else {
+      ElMessage.error(res.message || '刷新缓存失败')
+    }
+  } catch (e) {
+    ElMessage.error('刷新缓存失败')
+  } finally {
+    reloadingCache.value = false
+  }
+}
+
 // 模板操作
 const handleAdd = () => {
   addForm.site_group_id = activeGroupId.value
@@ -733,6 +771,11 @@ const resetAddForm = () => {
   addFormRef.value?.clearValidate()
 }
 
+// 显示指南
+const showGuide = () => {
+  guideRef.value?.show()
+}
+
 // 点击其他地方隐藏右键菜单
 const handleClickOutside = (e: MouseEvent) => {
   const target = e.target as HTMLElement
@@ -764,6 +807,18 @@ onUnmounted(() => {
     font-size: 12px;
     color: #909399;
     margin-top: 4px;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+  }
+
+  .footer-right {
+    display: flex;
+    gap: 12px;
   }
 }
 </style>

@@ -54,11 +54,11 @@ class RandomNumberPool:
     def __init__(
         self,
         ranges: Optional[Dict[str, Tuple[int, int]]] = None,
-        pool_size: int = 20000,
-        low_watermark_ratio: float = 0.3,
-        refill_batch_size: int = 5000,
+        pool_size: int = 100000,
+        low_watermark_ratio: float = 0.4,
+        refill_batch_size: int = 30000,
         check_interval: float = 0.3,
-        num_workers: int = 2
+        num_workers: int = 4
     ):
         """
         初始化随机数池

@@ -15,6 +15,10 @@
           <el-icon v-else color="#67C23A"><CircleCheck /></el-icon>
           <span>{{ saveStatusText }}</span>
         </span>
+        <el-button @click="showGuide">
+          <el-icon><QuestionFilled /></el-icon>
+          指南
+        </el-button>
         <el-button type="primary" :loading="saving" @click="handleSave">
           <el-icon><Check /></el-icon>
           保存 (Ctrl+S)
@@ -89,6 +93,9 @@
         </el-tag>
       </div>
     </div>
+
+    <!-- 模板标签指南 -->
+    <TemplateGuide ref="guideRef" />
   </div>
 </template>
 
@@ -97,8 +104,9 @@ import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useDebounceFn } from '@vueuse/core'
-import { ArrowLeft, Check, Loading, CircleCheck, Warning, MagicStick, Sunny, Moon } from '@element-plus/icons-vue'
+import { ArrowLeft, Check, Loading, CircleCheck, Warning, MagicStick, Sunny, Moon, QuestionFilled } from '@element-plus/icons-vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
+import TemplateGuide from '@/components/TemplateGuide.vue'
 import { getTemplate, updateTemplate, clearGoTemplateCache } from '@/api/templates'
 import type { Template } from '@/types'
 
@@ -112,6 +120,7 @@ const hasInfoChanges = ref(false)
 const lastSaveTime = ref<Date | null>(null)
 const theme = ref<'vs-dark' | 'vs'>('vs-dark')
 const editorRef = ref<InstanceType<typeof MonacoEditor>>()
+const guideRef = ref<InstanceType<typeof TemplateGuide>>()
 
 const template = ref<Template | null>(null)
 const templateId = computed(() => Number(route.params.id))
@@ -273,6 +282,11 @@ const formatCode = () => {
 // 切换主题
 const toggleTheme = () => {
   theme.value = theme.value === 'vs-dark' ? 'vs' : 'vs-dark'
+}
+
+// 显示指南
+const showGuide = () => {
+  guideRef.value?.show()
 }
 
 // 返回列表

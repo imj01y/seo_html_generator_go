@@ -4,63 +4,124 @@ import (
 	"context"
 	"database/sql"
 	"sync"
-	"time"
 
 	"github.com/jmoiron/sqlx"
-	"github.com/patrickmn/go-cache"
 	"github.com/rs/zerolog/log"
 
 	"go-page-server/models"
 )
 
-// SiteCache manages site configuration caching
+// SiteCache manages site configuration with permanent caching
+// Sites are loaded at startup and updated on-demand via API
 type SiteCache struct {
 	db    *sqlx.DB
-	cache *cache.Cache
+	cache sync.Map // domain -> *models.Site
+	count int64    // cached site count
 	mu    sync.RWMutex
 }
 
-// NewSiteCache creates a new site cache with TTL
-func NewSiteCache(db *sqlx.DB, ttl time.Duration) *SiteCache {
+// NewSiteCache creates a new site cache (permanent mode, no TTL)
+func NewSiteCache(db *sqlx.DB) *SiteCache {
 	return &SiteCache{
-		db:    db,
-		cache: cache.New(ttl, ttl*2), // TTL and cleanup interval
+		db: db,
 	}
 }
 
-// Get retrieves site configuration by domain
+// LoadAll loads all active sites into cache at startup
+func (sc *SiteCache) LoadAll(ctx context.Context) error {
+	sites := []models.Site{}
+	query := `SELECT * FROM sites WHERE status = 1`
+
+	if err := sc.db.SelectContext(ctx, &sites, query); err != nil {
+		return err
+	}
+
+	sc.mu.Lock()
+	sc.count = int64(len(sites))
+	sc.mu.Unlock()
+
+	for i := range sites {
+		sc.cache.Store(sites[i].Domain, &sites[i])
+	}
+
+	log.Info().
+		Int("count", len(sites)).
+		Msg("All sites loaded into cache")
+
+	return nil
+}
+
+// Get retrieves site configuration by domain (no DB query, pure memory)
 func (sc *SiteCache) Get(ctx context.Context, domain string) (*models.Site, error) {
-	// Check cache first
-	if cached, found := sc.cache.Get(domain); found {
+	if cached, found := sc.cache.Load(domain); found {
 		if site, ok := cached.(*models.Site); ok {
 			return site, nil
 		}
+		// nil marker for non-existent domain
+		return nil, nil
 	}
 
-	// Query database
+	// Domain not in cache - try to load from DB (for newly added domains)
 	site := &models.Site{}
 	query := `SELECT * FROM sites WHERE domain = ? AND status = 1 LIMIT 1`
 
 	err := sc.db.GetContext(ctx, site, query, domain)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			// Cache negative result to prevent repeated queries
-			sc.cache.Set(domain, (*models.Site)(nil), cache.DefaultExpiration)
+			// Cache negative result
+			sc.cache.Store(domain, (*models.Site)(nil))
 			return nil, nil
 		}
 		return nil, err
 	}
 
 	// Cache the result
-	sc.cache.Set(domain, site, cache.DefaultExpiration)
+	sc.cache.Store(domain, site)
 
 	log.Debug().
 		Str("domain", domain).
 		Str("template", site.Template).
 		Int("site_group_id", site.SiteGroupID).
-		Msg("Site config loaded and cached")
+		Msg("Site config loaded on-demand and cached")
 
 	return site, nil
+}
+
+// Reload reloads a single site from database
+func (sc *SiteCache) Reload(ctx context.Context, domain string) error {
+	site := &models.Site{}
+	query := `SELECT * FROM sites WHERE domain = ? AND status = 1 LIMIT 1`
+
+	err := sc.db.GetContext(ctx, site, query, domain)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			// Site was deleted or disabled, remove from cache
+			sc.cache.Delete(domain)
+			log.Info().Str("domain", domain).Msg("Site removed from cache (not found or disabled)")
+			return nil
+		}
+		return err
+	}
+
+	sc.cache.Store(domain, site)
+	log.Info().
+		Str("domain", domain).
+		Str("template", site.Template).
+		Msg("Site cache reloaded")
+
+	return nil
+}
+
+// ReloadAll reloads all sites from database
+func (sc *SiteCache) ReloadAll(ctx context.Context) error {
+	// Clear existing cache
+	sc.cache.Range(func(key, value interface{}) bool {
+		sc.cache.Delete(key)
+		return true
+	})
+
+	// Reload all
+	return sc.LoadAll(ctx)
 }
 
 // Invalidate removes a domain from the cache
@@ -70,12 +131,26 @@ func (sc *SiteCache) Invalidate(domain string) {
 
 // InvalidateAll clears the entire cache
 func (sc *SiteCache) InvalidateAll() {
-	sc.cache.Flush()
+	sc.cache.Range(func(key, value interface{}) bool {
+		sc.cache.Delete(key)
+		return true
+	})
+
+	sc.mu.Lock()
+	sc.count = 0
+	sc.mu.Unlock()
 }
 
 // GetStats returns cache statistics
 func (sc *SiteCache) GetStats() map[string]interface{} {
+	count := 0
+	sc.cache.Range(func(key, value interface{}) bool {
+		count++
+		return true
+	})
+
 	return map[string]interface{}{
-		"item_count": sc.cache.ItemCount(),
+		"item_count": count,
+		"mode":       "permanent",
 	}
 }

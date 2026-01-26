@@ -55,10 +55,10 @@ class KeywordCachePool:
         self,
         keyword_manager: "AsyncKeywordGroupManager",
         redis_client: Any,
-        cache_size: int = 10000,
-        low_watermark_ratio: float = 0.2,
-        refill_batch_size: int = 2000,
-        check_interval: float = 1.0,
+        cache_size: int = 100000,
+        low_watermark_ratio: float = 0.3,
+        refill_batch_size: int = 20000,
+        check_interval: float = 0.3,
         encoder: Any = None
     ):
         """
@@ -364,10 +364,10 @@ def get_keyword_cache_pool() -> Optional[KeywordCachePool]:
 async def init_keyword_cache_pool(
     keyword_manager: "AsyncKeywordGroupManager",
     redis_client: Any,
-    cache_size: int = 10000,
-    low_watermark_ratio: float = 0.2,
-    refill_batch_size: int = 2000,
-    check_interval: float = 1.0,
+    cache_size: int = 100000,
+    low_watermark_ratio: float = 0.3,
+    refill_batch_size: int = 20000,
+    check_interval: float = 0.3,
     encoder: Any = None
 ) -> KeywordCachePool:
     """

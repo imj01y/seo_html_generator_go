@@ -39,11 +39,11 @@ func NewNumberPool() *NumberPool {
 		minVal, maxVal := r[0], r[1]
 		cfg := PoolConfig{
 			Name:          "number_" + key,
-			Size:          100000,
-			LowWatermark:  0.3,
-			RefillBatch:   30000,
-			NumWorkers:    4,
-			CheckInterval: 50 * time.Millisecond,
+			Size:          200000,
+			LowWatermark:  0.4,
+			RefillBatch:   50000,
+			NumWorkers:    8,
+			CheckInterval: 30 * time.Millisecond,
 		}
 
 		// 使用闭包捕获min/max

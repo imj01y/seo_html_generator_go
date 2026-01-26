@@ -140,10 +140,13 @@ docker-compose down
 docker-compose down -v
 
 # 重新构建并启动
-docker-compose up -d --build --no-cache
+docker-compose up -d --build
 
 # 强制重建所有容器（推荐）
-docker-compose up -d --build --no-cache --force-recreate
+docker-compose up -d --build  --force-recreate
+
+# 重启docker中nginx服务
+docker restart seo-generator-nginx
 
 ```
 

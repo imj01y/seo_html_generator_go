@@ -20,14 +20,15 @@ import (
 
 // PageHandler handles /page requests
 type PageHandler struct {
-	db              *sqlx.DB
-	cfg             *config.Config
-	spiderDetector  *core.SpiderDetector
-	siteCache       *core.SiteCache
-	htmlCache       *core.HTMLCache
-	dataManager     *core.DataManager
+	db               *sqlx.DB
+	cfg              *config.Config
+	spiderDetector   *core.SpiderDetector
+	siteCache        *core.SiteCache
+	templateCache    *core.TemplateCache
+	htmlCache        *core.HTMLCache
+	dataManager      *core.DataManager
 	templateRenderer *core.TemplateRenderer
-	funcsManager    *core.TemplateFuncsManager
+	funcsManager     *core.TemplateFuncsManager
 }
 
 // NewPageHandler creates a new page handler
@@ -35,19 +36,21 @@ func NewPageHandler(
 	db *sqlx.DB,
 	cfg *config.Config,
 	siteCache *core.SiteCache,
+	templateCache *core.TemplateCache,
 	htmlCache *core.HTMLCache,
 	dataManager *core.DataManager,
 	funcsManager *core.TemplateFuncsManager,
 ) *PageHandler {
 	return &PageHandler{
-		db:              db,
-		cfg:             cfg,
-		spiderDetector:  core.GetSpiderDetector(),
-		siteCache:       siteCache,
-		htmlCache:       htmlCache,
-		dataManager:     dataManager,
+		db:               db,
+		cfg:              cfg,
+		spiderDetector:   core.GetSpiderDetector(),
+		siteCache:        siteCache,
+		templateCache:    templateCache,
+		htmlCache:        htmlCache,
+		dataManager:      dataManager,
 		templateRenderer: core.NewTemplateRenderer(funcsManager),
-		funcsManager:    funcsManager,
+		funcsManager:     funcsManager,
 	}
 }
 
@@ -126,18 +129,24 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	}
 	siteTime := time.Since(t3)
 
-	// Get template content
+	// Get template content from cache (no DB query)
 	t4 := time.Now()
 	templateName := site.Template
 	if templateName == "" {
 		templateName = "download_site"
 	}
 
-	templateData, err := h.getTemplate(ctx, templateName, site.SiteGroupID)
-	if err != nil || templateData == nil || templateData.Content == "" {
-		log.Error().Err(err).Str("template", templateName).Msg("Template not found or empty")
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Template not found"})
-		return
+	// Use templateCache for fast lookup
+	templateData := h.templateCache.Get(templateName, site.SiteGroupID)
+	if templateData == nil || templateData.Content == "" {
+		// Fallback to DB query for newly added templates
+		var err error
+		templateData, err = h.templateCache.GetWithFallback(ctx, templateName, site.SiteGroupID)
+		if err != nil || templateData == nil || templateData.Content == "" {
+			log.Error().Err(err).Str("template", templateName).Msg("Template not found or empty")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Template not found"})
+			return
+		}
 	}
 
 	// Get article group ID
@@ -391,13 +400,17 @@ func (h *PageHandler) Health(c *gin.Context) {
 
 // Stats handles stats endpoint
 func (h *PageHandler) Stats(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"spider_detector": h.spiderDetector.GetStats(),
-		"site_cache":      h.siteCache.GetStats(),
-		"html_cache":      h.htmlCache.GetStats(),
-		"data_manager":    h.dataManager.GetStats(),
-		"template_cache":  h.templateRenderer.GetCacheStats(),
-	})
+	stats := gin.H{
+		"spider_detector":        h.spiderDetector.GetStats(),
+		"site_cache":             h.siteCache.GetStats(),
+		"html_cache":             h.htmlCache.GetStats(),
+		"data_manager":           h.dataManager.GetStats(),
+		"template_compiled_cache": h.templateRenderer.GetCacheStats(),
+	}
+	if h.templateCache != nil {
+		stats["template_cache"] = h.templateCache.GetStats()
+	}
+	c.JSON(http.StatusOK, stats)
 }
 
 // GetTemplateRenderer returns the template renderer for cache management

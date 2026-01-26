@@ -47,26 +47,26 @@ func (m *TemplateFuncsManager) SetEmojiManager(em *EmojiManager) {
 	m.emojiManager = em
 }
 
-// InitPools 初始化所有池子（支持500 QPS）
+// InitPools 初始化所有池子（支持500并发）
 func (m *TemplateFuncsManager) InitPools() {
-	// cls池：500K容量，支持500QPS
+	// cls池：800K容量，支持500并发
 	m.clsPool = NewObjectPool[string](PoolConfig{
 		Name:          "cls",
-		Size:          500000,
-		LowWatermark:  0.3,
-		RefillBatch:   100000,
-		NumWorkers:    16,
-		CheckInterval: 50 * time.Millisecond,
+		Size:          800000,
+		LowWatermark:  0.4,
+		RefillBatch:   150000,
+		NumWorkers:    20,
+		CheckInterval: 30 * time.Millisecond,
 	}, generateRandomCls)
 
-	// url池：300K容量
+	// url池：500K容量
 	m.urlPool = NewObjectPool[string](PoolConfig{
 		Name:          "url",
-		Size:          300000,
-		LowWatermark:  0.3,
-		RefillBatch:   80000,
-		NumWorkers:    12,
-		CheckInterval: 50 * time.Millisecond,
+		Size:          500000,
+		LowWatermark:  0.4,
+		RefillBatch:   100000,
+		NumWorkers:    16,
+		CheckInterval: 30 * time.Millisecond,
 	}, generateRandomURL)
 
 	// number池
@@ -84,14 +84,14 @@ func (m *TemplateFuncsManager) InitKeywordEmojiPool() {
 		return
 	}
 
-	// 500K 容量，与 clsPool 一致，支持 500 QPS
+	// 800K 容量，支持 500 并发
 	m.keywordEmojiPool = NewObjectPool[string](PoolConfig{
 		Name:          "keyword_emoji",
-		Size:          500000,
-		LowWatermark:  0.3,
-		RefillBatch:   100000,
-		NumWorkers:    16,
-		CheckInterval: 50 * time.Millisecond,
+		Size:          800000,
+		LowWatermark:  0.4,
+		RefillBatch:   150000,
+		NumWorkers:    20,
+		CheckInterval: 30 * time.Millisecond,
 	}, m.generateKeywordWithEmoji)
 
 	m.keywordEmojiPool.Start()

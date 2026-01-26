@@ -61,11 +61,25 @@ func main() {
 	// Initialize encoder
 	core.InitEncoder(0.5)
 
-	// Initialize components
-	siteCache := core.NewSiteCache(db, 5*time.Minute)
+	// Initialize components (permanent caching mode for 500 concurrent requests)
+	siteCache := core.NewSiteCache(db)
+	templateCache := core.NewTemplateCache(db)
 	htmlCache := core.NewHTMLCache(config.GetCacheDir(projectRoot), cfg.Cache.MaxSizeGB)
 	dataManager := core.NewDataManager(db, core.GetEncoder())
 	funcsManager := core.NewTemplateFuncsManager(core.GetEncoder())
+
+	// Load all sites into cache at startup
+	ctx := context.Background()
+	log.Info().Msg("Loading all sites into cache...")
+	if err := siteCache.LoadAll(ctx); err != nil {
+		log.Fatal().Err(err).Msg("Failed to load sites into cache")
+	}
+
+	// Load all templates into cache at startup
+	log.Info().Msg("Loading all templates into cache...")
+	if err := templateCache.LoadAll(ctx); err != nil {
+		log.Fatal().Err(err).Msg("Failed to load templates into cache")
+	}
 
 	// Initialize high-concurrency object pools (target: 500 QPS)
 	log.Info().Msg("Initializing high-concurrency object pools (target: 500 QPS)...")
@@ -91,7 +105,6 @@ func main() {
 	funcsManager.SetEmojiManager(emojiManager)
 
 	// Load initial data for default group
-	ctx := context.Background()
 	log.Info().Msg("Loading initial data...")
 
 	if err := dataManager.LoadAllForGroup(ctx, 1); err != nil {
@@ -124,6 +137,7 @@ func main() {
 		db,
 		cfg,
 		siteCache,
+		templateCache,
 		htmlCache,
 		dataManager,
 		funcsManager,
@@ -139,6 +153,7 @@ func main() {
 		htmlCache,
 		pageHandler.GetTemplateRenderer(),
 		siteCache,
+		templateCache,
 	)
 
 	// Setup Gin
@@ -183,6 +198,12 @@ func main() {
 		api.POST("/cache/clear", cacheHandler.ClearAllCache)
 		api.POST("/cache/clear/:domain", cacheHandler.ClearDomainCache)
 		api.POST("/cache/template/clear", cacheHandler.ClearTemplateCache)
+
+		// Cache reload routes (for permanent cache updates)
+		api.POST("/cache/site/reload", cacheHandler.ReloadAllSites)
+		api.POST("/cache/site/reload/:domain", cacheHandler.ReloadSite)
+		api.POST("/cache/template/reload", cacheHandler.ReloadAllTemplates)
+		api.POST("/cache/template/reload/:name", cacheHandler.ReloadTemplate)
 	}
 
 	// Create server

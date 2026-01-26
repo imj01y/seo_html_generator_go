@@ -31,10 +31,15 @@ func Init(cfg *config.DatabaseConfig) error {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(cfg.PoolSize)
-	db.SetMaxIdleConns(cfg.PoolSize / 2)
-	db.SetConnMaxLifetime(time.Duration(cfg.PoolRecycle) * time.Second)
+	// Configure connection pool for high concurrency (500 concurrent requests)
+	// Use at least 50 connections, or config value if higher
+	maxConns := cfg.PoolSize
+	if maxConns < 50 {
+		maxConns = 50
+	}
+	db.SetMaxOpenConns(maxConns)
+	db.SetMaxIdleConns(maxConns) // Keep all connections alive to avoid reconnection overhead
+	db.SetConnMaxLifetime(30 * time.Minute) // Shorter lifetime to avoid stale connections
 
 	// Test connection
 	if err := db.Ping(); err != nil {

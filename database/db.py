@@ -198,8 +198,8 @@ async def init_db_pool(
     password: str = "",
     database: str = "seo_generator",
     charset: str = "utf8mb4",
-    pool_size: int = 5,
-    pool_recycle: int = 3600,
+    pool_size: int = 30,
+    pool_recycle: int = 1800,
     **kwargs
 ) -> aiomysql.Pool:
     """
@@ -231,7 +231,7 @@ async def init_db_pool(
             password=password,
             db=database,
             charset=charset,
-            minsize=1,
+            minsize=10,
             maxsize=pool_size,
             pool_recycle=pool_recycle,
             autocommit=True,

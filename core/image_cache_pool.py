@@ -54,10 +54,10 @@ class ImageCachePool:
         self,
         image_manager: "SlidingWindowImageManager",
         redis_client: Any,
-        cache_size: int = 10000,
-        low_watermark_ratio: float = 0.2,
-        refill_batch_size: int = 2000,
-        check_interval: float = 1.0
+        cache_size: int = 100000,
+        low_watermark_ratio: float = 0.3,
+        refill_batch_size: int = 20000,
+        check_interval: float = 0.3
     ):
         """
         初始化缓存池
@@ -332,10 +332,10 @@ def get_image_cache_pool() -> Optional[ImageCachePool]:
 async def init_image_cache_pool(
     image_manager: "SlidingWindowImageManager",
     redis_client: Any,
-    cache_size: int = 10000,
-    low_watermark_ratio: float = 0.2,
-    refill_batch_size: int = 2000,
-    check_interval: float = 1.0
+    cache_size: int = 100000,
+    low_watermark_ratio: float = 0.3,
+    refill_batch_size: int = 20000,
+    check_interval: float = 0.3
 ) -> ImageCachePool:
     """
     初始化全局图片缓存池
