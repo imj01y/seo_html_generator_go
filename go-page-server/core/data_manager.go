@@ -109,6 +109,22 @@ func (m *DataManager) LoadContents(ctx context.Context, groupID int, limit int) 
 	return len(contents), nil
 }
 
+// GetImageURLs returns all image URLs for a group
+func (m *DataManager) GetImageURLs(groupID int) []string {
+	m.mu.RLock()
+	urls, ok := m.imageURLs[groupID]
+	m.mu.RUnlock()
+
+	if !ok || len(urls) == 0 {
+		return nil
+	}
+
+	// Return a copy to avoid external modification
+	result := make([]string, len(urls))
+	copy(result, urls)
+	return result
+}
+
 // GetRandomKeywords returns random pre-encoded keywords
 func (m *DataManager) GetRandomKeywords(groupID int, count int) []string {
 	m.mu.RLock()

@@ -106,6 +106,13 @@ func main() {
 		log.Info().Int("count", len(keywords)).Msg("Keywords loaded to funcs manager")
 	}
 
+	// Load image URLs into funcsManager
+	imageURLs := dataManager.GetImageURLs(1)
+	if len(imageURLs) > 0 {
+		funcsManager.LoadImageURLs(imageURLs)
+		log.Info().Int("count", len(imageURLs)).Msg("Image URLs loaded to funcs manager")
+	}
+
 	// Create page handler
 	pageHandler := handlers.NewPageHandler(
 		db,
