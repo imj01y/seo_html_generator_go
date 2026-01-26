@@ -225,6 +225,33 @@ class ClassStringPool:
             self._cursor2 += 1
             return result
 
+    def get_pair_sync(self) -> tuple:
+        """
+        一次性获取 part1 和 part2（减少锁竞争）
+
+        原来的 generate() 需要获取 2 次锁（part1 + part2），
+        现在合并为 1 次锁获取，减少锁竞争开销。
+
+        Returns:
+            (part1, part2) 元组
+        """
+        with self._consume_lock:
+            # 检查 part1 游标
+            if self._cursor1 >= len(self._buffer_part1):
+                self._cursor1 = 0
+            # 检查 part2 游标
+            if self._cursor2 >= len(self._buffer_part2):
+                self._cursor2 = 0
+
+            part1 = self._buffer_part1[self._cursor1]
+            part2 = self._buffer_part2[self._cursor2]
+
+            self._cursor1 += 1
+            self._cursor2 += 1
+            self._total_consumed += 1
+
+            return part1, part2
+
     def _get_remaining_unlocked(self) -> int:
         """内部方法：获取剩余数量（调用者需持有锁）"""
         return min(
@@ -384,6 +411,7 @@ class ClassGenerator:
         生成随机class名称
 
         优先使用全局字符串池（O(1)），降级到直接生成。
+        使用 get_pair_sync() 一次获取两个字符串，减少锁竞争。
 
         Args:
             semantic_name: 语义名称（如 header, footer, content等）
@@ -396,11 +424,10 @@ class ClassGenerator:
             if semantic_name in self._cache:
                 return self._cache[semantic_name]
 
-        # 优先从池获取预生成的随机字符串
+        # 优先从池获取预生成的随机字符串（一次获取，减少锁竞争）
         pool = get_class_string_pool()
         if pool:
-            part1 = pool.get_part1_sync()
-            part2 = pool.get_part2_sync()
+            part1, part2 = pool.get_pair_sync()
         else:
             # 降级：直接生成（池未初始化时）
             part1 = self._random_string(self.part1_length)

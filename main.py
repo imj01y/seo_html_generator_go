@@ -67,6 +67,7 @@ from core.keyword_cache_pool import init_keyword_cache_pool, stop_keyword_cache_
 from core.image_cache_pool import init_image_cache_pool, stop_image_cache_pool, get_image_cache_pool
 from core.class_generator import init_class_string_pool, stop_class_string_pool, get_class_string_pool
 from core.link_generator import init_url_pool, stop_url_pool, get_url_pool
+from core.random_number_pool import init_random_number_pool, stop_random_number_pool, get_random_number_pool
 from core.image_group_manager import init_image_group, get_image_group
 from core.emoji import get_emoji_manager
 from core.auth import ensure_default_admin
@@ -279,6 +280,43 @@ async def init_components():
     except Exception as e:
         logger.warning(f"URL pool initialization failed: {e}")
 
+    # 10.3 初始化随机数池（用于 random_number() 函数优化）
+    # 每个请求约调用 4000-5000 次 random_number，需要足够大的池
+    try:
+        await init_random_number_pool(
+            ranges={
+                # 版本号常用
+                "0-9": (0, 9),
+                "0-99": (0, 99),
+                "1-9": (1, 9),
+                "1-10": (1, 10),
+                "1-20": (1, 20),
+                "1-59": (1, 59),
+                # 百分比/评分
+                "5-10": (5, 10),
+                "10-20": (10, 20),
+                "10-99": (10, 99),
+                "10-100": (10, 100),
+                "10-200": (10, 200),
+                "30-90": (30, 90),
+                "50-200": (50, 200),
+                # ID/编号
+                "100-999": (100, 999),
+                "10000-99999": (10000, 99999),
+            },
+            pool_size=20000,           # 每个范围 20000 个随机数
+            low_watermark_ratio=0.3,   # 30% 时触发 refill
+            refill_batch_size=5000,    # 每次补充 5000 个
+            check_interval=0.3,        # 300ms 检查一次
+            num_workers=2              # 2 线程并行生成
+        )
+        pool = get_random_number_pool()
+        if pool:
+            stats = pool.get_stats()
+            logger.info(f"Random number pool initialized: {stats['ranges_count']} ranges, workers=2")
+    except Exception as e:
+        logger.warning(f"Random number pool initialization failed: {e}")
+
     # 11. 初始化关键词缓存池（生产者消费者模型，带预编码）
     # 允许空数据启动，新增数据后会自动加入缓存池
     # 传入 encoder 实现加载时预编码，避免每次调用时编码
@@ -449,6 +487,7 @@ async def cleanup_components():
     await _safe_stop(stop_image_cache_pool(), "Image cache pool")
     await _safe_stop(stop_class_string_pool(), "Class string pool")
     await _safe_stop(stop_url_pool(), "URL pool")
+    await _safe_stop(stop_random_number_pool(), "Random number pool")
 
     # 关闭连接
     await _safe_stop(close_redis_client(), "Redis client connection")

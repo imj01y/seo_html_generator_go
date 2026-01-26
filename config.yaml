@@ -15,7 +15,7 @@ default:
   # 服务器配置
   server:
     host: "0.0.0.0"
-    port: 8009
+    port: 8010
     workers: 1
     debug: false
 
@@ -110,7 +110,7 @@ development:
     port: 3306
     user: "root"
     password: "mysql_6yh7uJ"
-    database: "seo_html_generator"
+    database: "seo_generator"
     charset: "utf8mb4"
     pool_size: 5
     pool_recycle: 3600

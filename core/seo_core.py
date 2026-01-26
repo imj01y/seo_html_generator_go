@@ -39,6 +39,7 @@ from .keyword_group_manager import get_keyword_group
 from .keyword_cache_pool import get_keyword_cache_pool
 from .image_group_manager import get_image_group
 from .content_pool_manager import get_content_pool_manager
+from .random_number_pool import get_random_number_pool
 from loguru import logger
 
 
@@ -149,8 +150,8 @@ class SEOCore:
             'encode': self.encoder.encode_text,
             'encode_text': self.encoder.encode_text,
 
-            # Class生成函数
-            'cls': self.class_gen.generate,
+            # Class生成函数（带性能监控）
+            'cls': self._wrapped_cls,
 
             # 链接生成函数
             'random_url': self.link_gen.generate,
@@ -173,8 +174,51 @@ class SEOCore:
             'len': len,
             'str': str,
             'int': int,
-            'random_number': lambda min_val, max_val: random.randint(min_val, max_val),
+            'random_number': self._wrapped_random_number,
         }
+
+    def _wrapped_cls(self, name: str) -> str:
+        """
+        包装的 cls 函数（带性能监控）
+
+        Args:
+            name: 语义名称
+
+        Returns:
+            随机 class 名称
+        """
+        t0 = time_module.perf_counter()
+        result = self.class_gen.generate(name)
+        self._perf_cls_time += time_module.perf_counter() - t0
+        self._perf_cls_count += 1
+        return result
+
+    def _wrapped_random_number(self, min_val: int, max_val: int) -> int:
+        """
+        包装的 random_number 函数（带性能监控 + 池优化）
+
+        优先使用随机数池（O(1)），降级到直接生成。
+
+        Args:
+            min_val: 最小值
+            max_val: 最大值
+
+        Returns:
+            随机数
+        """
+        t0 = time_module.perf_counter()
+
+        # 优先使用随机数池
+        pool = get_random_number_pool()
+        if pool:
+            result = pool.get_sync(min_val, max_val)
+        else:
+            # 降级：直接生成
+            result = random.randint(min_val, max_val)
+
+        self._perf_rnd_time += time_module.perf_counter() - t0
+        self._perf_rnd_count += 1
+        return result
 
     def _random_keyword(self) -> Markup:
         """
@@ -412,6 +456,11 @@ class SEOCore:
         self._perf_img_count = 0
         self._perf_encode_time = 0.0
         self._perf_encode_count = 0
+        # cls 和 random_number 性能统计
+        self._perf_cls_time = 0.0
+        self._perf_cls_count = 0
+        self._perf_rnd_time = 0.0
+        self._perf_rnd_count = 0
 
     def set_preloaded_content(self, content: str) -> None:
         """
@@ -575,7 +624,8 @@ class SEOCore:
             logger.info(
                 f"[PERF-FUNC] kw={self._perf_kw_count}x/{self._perf_kw_time*1000:.1f}ms "
                 f"img={self._perf_img_count}x/{self._perf_img_time*1000:.1f}ms "
-                f"enc={self._perf_encode_count}x/{self._perf_encode_time*1000:.1f}ms"
+                f"cls={self._perf_cls_count}x/{self._perf_cls_time*1000:.1f}ms "
+                f"rnd={self._perf_rnd_count}x/{self._perf_rnd_time*1000:.1f}ms"
             )
 
             logger.debug(
