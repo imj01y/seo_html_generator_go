@@ -109,3 +109,31 @@ func Insert(table string, data map[string]interface{}) (int64, error) {
 
 	return result.LastInsertId()
 }
+
+// SystemSetting represents a system setting from the database
+type SystemSetting struct {
+	SettingKey   string `db:"setting_key"`
+	SettingValue string `db:"setting_value"`
+	SettingType  string `db:"setting_type"`
+}
+
+// GetSystemSetting retrieves a single system setting by key
+func GetSystemSetting(key string) (string, error) {
+	var setting SystemSetting
+	err := db.Get(&setting,
+		"SELECT setting_key, setting_value, setting_type FROM system_settings WHERE setting_key = ?",
+		key)
+	if err != nil {
+		return "", err
+	}
+	return setting.SettingValue, nil
+}
+
+// GetSystemSettingWithDefault retrieves a system setting, returning defaultVal if not found
+func GetSystemSettingWithDefault(key, defaultVal string) string {
+	val, err := GetSystemSetting(key)
+	if err != nil || val == "" {
+		return defaultVal
+	}
+	return val
+}

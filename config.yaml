@@ -22,6 +22,7 @@ default:
   # 缓存配置
   cache:
     enabled: true
+    dir: "./html_cache"      # 统一的缓存目录（容器内路径为 /app/html_cache）
     ttl_hours: 24
     max_size_gb: 10.0
     gzip_enabled: true

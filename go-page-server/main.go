@@ -62,9 +62,13 @@ func main() {
 	core.InitEncoder(0.5)
 
 	// Initialize components (permanent caching mode for 500 concurrent requests)
+	// 缓存目录直接从 config.yaml 的 cache.dir 读取
+	cacheDir := config.GetCacheDir(projectRoot, cfg.Cache.Dir)
+	log.Info().Str("cache_dir", cacheDir).Msg("Cache directory from config.yaml")
+
 	siteCache := core.NewSiteCache(db)
 	templateCache := core.NewTemplateCache(db)
-	htmlCache := core.NewHTMLCache(config.GetCacheDir(projectRoot), cfg.Cache.MaxSizeGB)
+	htmlCache := core.NewHTMLCache(cacheDir, cfg.Cache.MaxSizeGB)
 	dataManager := core.NewDataManager(db, core.GetEncoder())
 	funcsManager := core.NewTemplateFuncsManager(core.GetEncoder())
 
@@ -154,7 +158,11 @@ func main() {
 		pageHandler.GetTemplateRenderer(),
 		siteCache,
 		templateCache,
+		projectRoot,
 	)
+
+	// Create log handler (for Nginx Lua cache hit logging)
+	logHandler := handlers.NewLogHandler(db)
 
 	// Setup Gin
 	if !cfg.Server.Debug {
@@ -204,6 +212,12 @@ func main() {
 		api.POST("/cache/site/reload/:domain", cacheHandler.ReloadSite)
 		api.POST("/cache/template/reload", cacheHandler.ReloadAllTemplates)
 		api.POST("/cache/template/reload/:name", cacheHandler.ReloadTemplate)
+
+		// Cache config routes (for dynamic config reload)
+		api.POST("/cache/config/reload", cacheHandler.ReloadCacheConfig)
+
+		// Log routes (for Nginx Lua cache hit logging)
+		api.GET("/log/spider", logHandler.LogSpiderVisit)
 	}
 
 	// Create server

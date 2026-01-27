@@ -113,10 +113,10 @@ func Load(configPath string) (*Config, error) {
 		},
 		Cache: CacheConfig{
 			Enabled:     getBool(merged, "cache.enabled", true),
+			Dir:         getString(merged, "cache.dir", "./html_cache"),
 			TTLHours:    getInt(merged, "cache.ttl_hours", 24),
 			MaxSizeGB:   getFloat(merged, "cache.max_size_gb", 10.0),
 			GzipEnabled: getBool(merged, "cache.gzip_enabled", true),
-			Dir:         "./html_cache",
 		},
 		SpiderDetector: SpiderDetectorConfig{
 			Enabled:               getBool(merged, "spider_detector.enabled", true),
@@ -154,15 +154,18 @@ func Get() *Config {
 	return globalConfig
 }
 
-// GetCacheDir returns the cache directory path relative to the project root
-func GetCacheDir(projectRoot string) string {
-	if globalConfig != nil && globalConfig.Cache.Dir != "" {
-		if filepath.IsAbs(globalConfig.Cache.Dir) {
-			return globalConfig.Cache.Dir
-		}
-		return filepath.Join(projectRoot, globalConfig.Cache.Dir)
+// GetCacheDir returns the cache directory path
+// 从 config.yaml 的 cache.dir 配置获取，支持相对路径和绝对路径
+func GetCacheDir(projectRoot string, configDir string) string {
+	cacheDir := configDir
+	if cacheDir == "" {
+		cacheDir = "./html_cache"
 	}
-	return filepath.Join(projectRoot, "html_cache")
+
+	if filepath.IsAbs(cacheDir) {
+		return cacheDir
+	}
+	return filepath.Join(projectRoot, cacheDir)
 }
 
 // Helper functions for nested map access

@@ -5,15 +5,17 @@ services:
   # Nginx Reverse Proxy
   # ========================================
   nginx:
-    image: nginx:1.25-alpine
+    image: openresty/openresty:1.25.3.1-alpine
     container_name: seo-generator-nginx
     restart: unless-stopped
     ports:
       - "8009:8009"  # 页面服务（原80/443）
       - "8008:8008"  # 管理后台（原8080）
     volumes:
-      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./config.yaml:/app/config.yaml:ro  # 统一配置文件（供 Lua 读取缓存目录）
+      - ./docker/nginx/nginx.conf:/usr/local/openresty/nginx/conf/nginx.conf:ro
       - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./docker/nginx/lua:/etc/nginx/lua:ro
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
       - ./html_cache:/app/html_cache:ro
       - admin_dist:/app/admin-panel/dist:ro
@@ -107,6 +109,7 @@ services:
       - ./config.yaml:/app/config.yaml:ro
       - ./go-page-server/templates:/app/templates
       - ./data:/app/data:ro
+      - ./html_cache:/app/html_cache
     depends_on:
       mysql:
         condition: service_healthy

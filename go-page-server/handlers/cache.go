@@ -10,7 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
+	"go-page-server/config"
 	"go-page-server/core"
+	"go-page-server/database"
 )
 
 // CacheHandler 缓存管理处理器
@@ -19,6 +21,7 @@ type CacheHandler struct {
 	templateRenderer *core.TemplateRenderer
 	siteCache        *core.SiteCache
 	templateCache    *core.TemplateCache
+	projectRoot      string
 }
 
 // NewCacheHandler 创建缓存管理处理器
@@ -27,12 +30,14 @@ func NewCacheHandler(
 	templateRenderer *core.TemplateRenderer,
 	siteCache *core.SiteCache,
 	templateCache *core.TemplateCache,
+	projectRoot string,
 ) *CacheHandler {
 	return &CacheHandler{
 		htmlCache:        htmlCache,
 		templateRenderer: templateRenderer,
 		siteCache:        siteCache,
 		templateCache:    templateCache,
+		projectRoot:      projectRoot,
 	}
 }
 
@@ -271,3 +276,32 @@ func (h *CacheHandler) ReloadTemplate(c *gin.Context) {
 		"message":       "模板缓存已重新加载",
 	})
 }
+
+// ReloadCacheConfig 重载缓存配置
+// POST /api/cache/config/reload
+func (h *CacheHandler) ReloadCacheConfig(c *gin.Context) {
+	// 从数据库读取最新配置
+	dbCacheDir := database.GetSystemSettingWithDefault("file_cache_dir", "")
+
+	// 计算实际路径
+	newCacheDir := config.GetCacheDir(h.projectRoot, dbCacheDir)
+
+	// 调用 HTMLCache 重载方法
+	if err := h.htmlCache.ReloadCacheDir(newCacheDir); err != nil {
+		log.Error().Err(err).Str("new_dir", newCacheDir).Msg("Failed to reload cache directory")
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	log.Info().Str("cache_dir", newCacheDir).Msg("Cache config reloaded")
+
+	c.JSON(http.StatusOK, gin.H{
+		"success":   true,
+		"message":   "缓存目录配置已重载",
+		"cache_dir": newCacheDir,
+	})
+}
+
