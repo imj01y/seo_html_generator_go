@@ -41,13 +41,13 @@
           <div class="section-header">项目配置</div>
           <el-form :model="form" label-position="top" size="small">
             <el-form-item label="项目名称" required>
-              <el-input v-model="form.name" placeholder="请输入项目名称" />
+              <el-input v-model="form.name" placeholder="请输入项目名称" @input="onFormChange" />
             </el-form-item>
             <el-form-item label="描述">
-              <el-input v-model="form.description" type="textarea" :rows="2" placeholder="项目描述（可选）" />
+              <el-input v-model="form.description" type="textarea" :rows="2" placeholder="项目描述（可选）" @input="onFormChange" />
             </el-form-item>
             <el-form-item label="入口文件">
-              <el-select v-model="form.entry_file" style="width: 100%">
+              <el-select v-model="form.entry_file" style="width: 100%" @change="onFormChange">
                 <el-option
                   v-for="file in files"
                   :key="file.filename"
@@ -62,10 +62,11 @@
                 :min="1"
                 :max="10"
                 style="width: 100%"
+                @change="onFormChange"
               />
             </el-form-item>
             <el-form-item label="输出分组">
-              <el-select v-model="form.output_group_id" style="width: 100%">
+              <el-select v-model="form.output_group_id" style="width: 100%" @change="onFormChange">
                 <el-option
                   v-for="group in articleGroups"
                   :key="group.id"
@@ -75,7 +76,7 @@
               </el-select>
             </el-form-item>
             <el-form-item label="调度规则">
-              <ScheduleBuilder v-model="form.schedule" />
+              <ScheduleBuilder v-model="form.schedule" @update:modelValue="onFormChange" />
             </el-form-item>
           </el-form>
         </div>
@@ -116,7 +117,12 @@
         <div class="editor-section">
           <div class="editor-header">
             <span>{{ currentFile?.filename || '选择文件' }}</span>
-            <el-tag v-if="hasUnsavedChanges" type="warning" size="small">未保存</el-tag>
+            <span v-if="lastSaveTime" class="save-status">
+              <el-icon v-if="saving" class="is-loading"><Loading /></el-icon>
+              <el-icon v-else-if="hasChanges" color="#E6A23C"><Warning /></el-icon>
+              <el-icon v-else color="#67C23A"><CircleCheck /></el-icon>
+              <span>{{ saveStatusText }}</span>
+            </span>
           </div>
           <div class="editor-container">
             <MonacoEditor
@@ -202,7 +208,7 @@ import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useDebounceFn } from '@vueuse/core'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { ArrowLeft, Plus, Document, Delete, QuestionFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, Plus, Document, Delete, QuestionFilled, Loading, CircleCheck, Warning } from '@element-plus/icons-vue'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 import LogViewer from '@/components/LogViewer.vue'
 import SpiderGuide from '@/components/SpiderGuide.vue'
@@ -264,6 +270,8 @@ const editorOptions = {
 
 // 状态
 const saving = ref(false)
+const hasChanges = ref(false)              // 是否有未保存的更改
+const lastSaveTime = ref<Date | null>(null) // 上次保存时间
 const testing = ref(false)
 const showTestResult = ref(false)
 const activeTab = ref('logs')
@@ -280,9 +288,19 @@ const newFileName = ref('')
 // 测试 WebSocket 取消订阅函数
 let unsubscribeTest: (() => void) | null = null
 
-// 检测是否有未保存的更改
+// 检测是否有未保存的更改（用于切换文件时的检测）
 const hasUnsavedChanges = computed(() => {
   return currentCode.value !== originalCode.value
+})
+
+// 保存状态文字
+const saveStatusText = computed(() => {
+  if (saving.value) return '保存中...'
+  if (hasChanges.value) return '未保存'
+  if (lastSaveTime.value) {
+    return `已保存 ${lastSaveTime.value.toLocaleTimeString()}`
+  }
+  return ''
 })
 
 // ============================================
@@ -350,6 +368,53 @@ const autoSaveDraft = useDebounceFn(() => {
   saveDraft()
 }, 2000)
 
+// 自动保存到数据库（3秒防抖）- 仅对已存在的项目生效
+const autoSaveToDatabase = useDebounceFn(async () => {
+  if (isNew.value || !hasChanges.value || saving.value) return
+  await saveContentSilently()
+}, 3000)
+
+// 静默保存内容（不显示 Message）
+async function saveContentSilently() {
+  if (!projectId.value) return
+
+  if (currentFile.value) {
+    currentFile.value.content = currentCode.value
+  }
+
+  saving.value = true
+  try {
+    await updateProject(projectId.value, {
+      name: form.name,
+      description: form.description,
+      entry_file: form.entry_file,
+      concurrency: form.concurrency,
+      output_group_id: form.output_group_id,
+      schedule: form.schedule
+    })
+
+    const serverFiles = await getProjectFiles(projectId.value)
+    const serverFileNames = new Set(serverFiles.map(f => f.filename))
+
+    for (const file of files.value) {
+      if (serverFileNames.has(file.filename)) {
+        await updateProjectFile(projectId.value, file.filename, file.content)
+      } else {
+        await createProjectFile(projectId.value, { filename: file.filename, content: file.content })
+      }
+    }
+
+    hasChanges.value = false
+    lastSaveTime.value = new Date()
+    originalCode.value = currentCode.value
+    clearDraft()
+  } catch (e) {
+    console.error('自动保存失败:', e)
+  } finally {
+    saving.value = false
+  }
+}
+
 // 恢复草稿
 async function restoreDraft(draft: any) {
   // 恢复表单数据
@@ -405,6 +470,8 @@ async function loadProject() {
     currentFile.value = files.value[0]
     currentCode.value = currentFile.value.content
     originalCode.value = currentCode.value
+    hasChanges.value = false
+    lastSaveTime.value = null
     return
   }
 
@@ -452,6 +519,10 @@ async function loadProject() {
       const entryFile = files.value.find(f => f.filename === form.entry_file)
       selectFile(entryFile || files.value[0])
     }
+
+    // 初始化保存状态
+    hasChanges.value = false
+    lastSaveTime.value = null
   } catch (e: any) {
     ElMessage.error(e.message || '加载失败')
     router.push('/spiders/projects')
@@ -475,8 +546,16 @@ function handleCodeChange() {
   if (currentFile.value) {
     currentFile.value.content = currentCode.value
   }
-  // 触发自动保存草稿
-  autoSaveDraft()
+  hasChanges.value = true
+  saveDraft()  // 立即保存草稿
+  autoSaveToDatabase()  // 触发3秒防抖自动保存到数据库
+}
+
+// 表单变化处理
+function onFormChange() {
+  hasChanges.value = true
+  saveDraft()
+  autoSaveToDatabase()
 }
 
 // 添加文件
@@ -604,6 +683,10 @@ async function handleSave() {
       // 更新原始代码
       originalCode.value = currentCode.value
 
+      // 更新保存状态
+      hasChanges.value = false
+      lastSaveTime.value = new Date()
+
       // 保存成功后清除草稿
       clearDraft()
 
@@ -703,7 +786,7 @@ function showGuide() {
 
 // 返回列表
 function goBack() {
-  if (hasUnsavedChanges.value) {
+  if (hasChanges.value) {
     ElMessageBox.confirm('有未保存的更改，确定要离开吗？', '提示', {
       type: 'warning'
     }).then(() => {
@@ -775,9 +858,18 @@ function truncateText(text: string, maxLength: number) {
   return plainText.substring(0, maxLength) + '...'
 }
 
+// 页面离开保护
+const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+  if (hasChanges.value) {
+    e.preventDefault()
+    e.returnValue = ''
+  }
+}
+
 // 生命周期
 onMounted(() => {
   loadProject()
+  window.addEventListener('beforeunload', handleBeforeUnload)
 })
 
 onUnmounted(() => {
@@ -786,6 +878,7 @@ onUnmounted(() => {
     unsubscribeTest()
     unsubscribeTest = null
   }
+  window.removeEventListener('beforeunload', handleBeforeUnload)
 })
 </script>
 
@@ -1052,5 +1145,23 @@ onUnmounted(() => {
 
 .source-link:hover {
   text-decoration: underline;
+}
+
+.save-status {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #909399;
+  margin-left: auto;
+}
+
+.save-status .is-loading {
+  animation: rotating 2s linear infinite;
+}
+
+@keyframes rotating {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>
