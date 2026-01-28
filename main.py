@@ -22,7 +22,6 @@ import asyncio
 import logging
 import os
 import sys
-from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -57,454 +56,24 @@ logger.add(
     level="INFO"
 )
 
-from config import get_config, reload_config
-from core.seo_core import init_seo_core, get_seo_core
-from core.spider_detector import init_spider_detector
-from core.redis_client import init_redis_client, close_redis_client, get_redis_client
-from core.html_cache_manager import init_cache_manager, get_cache_manager
-from core.keyword_group_manager import init_keyword_group, get_keyword_group
-from core.keyword_cache_pool import init_keyword_cache_pool, stop_keyword_cache_pool, get_keyword_cache_pool
-from core.image_cache_pool import init_image_cache_pool, stop_image_cache_pool, get_image_cache_pool
-from core.class_generator import init_class_string_pool, stop_class_string_pool, get_class_string_pool
-from core.link_generator import init_url_pool, stop_url_pool, get_url_pool
-from core.random_number_pool import init_random_number_pool, stop_random_number_pool, get_random_number_pool
-from core.image_group_manager import init_image_group, get_image_group
-from core.emoji import get_emoji_manager
-from core.auth import ensure_default_admin
-from core.title_manager import init_title_manager, get_title_manager
-from core.content_manager import init_content_manager, get_content_manager
-from core.content_pool_manager import init_content_pool_manager, get_content_pool_manager
-from database.db import init_database, init_db_pool, close_db_pool, get_db_pool
-from api.routes import router as api_router
+from config import reload_config, get_config
+from core.lifecycle import lifespan
+# 核心路由（页面服务）
+from api.routes import router as page_router
+# 拆分后的 API 路由模块
+from api.auth_routes import router as auth_router
+from api.dashboard_routes import router as dashboard_router
+from api.site_routes import router as site_router
+from api.template_routes import router as template_router
+from api.keyword_routes import router as keyword_router
+from api.image_routes import router as image_router
+from api.article_routes import router as article_router
+from api.cache_routes import router as cache_router
+from api.settings_routes import router as settings_router
+# 其他已有路由
 from api.generator_routes import router as generator_router
 from api.log_routes import router as log_router
 from api.spider_routes import router as spider_router, stats_router
-
-# 全局变量：worker 引用（用于清理）
-_generator_worker = None
-_stats_worker = None
-_scheduler_worker = None
-
-
-def _parse_setting_value(value: str, setting_type: str):
-    """解析配置值为对应类型"""
-    if setting_type == 'boolean':
-        return value.lower() in ('true', '1', 'yes')
-    if setting_type == 'number':
-        return float(value) if '.' in value else int(value)
-    return value
-
-
-async def _load_file_cache_config() -> dict:
-    """从数据库加载文件缓存配置"""
-    if not get_db_pool():
-        return {}
-
-    try:
-        from database.db import fetch_all
-        settings = await fetch_all(
-            "SELECT setting_key, setting_value, setting_type FROM system_settings "
-            "WHERE setting_key LIKE 'file_cache%'"
-        )
-        return {
-            s['setting_key']: _parse_setting_value(s['setting_value'], s['setting_type'])
-            for s in (settings or [])
-        }
-    except Exception as e:
-        logger.warning(f"Failed to load file cache settings from database: {e}")
-        return {}
-
-
-async def _start_background_worker(worker_class, name: str, **kwargs):
-    """启动后台 worker 的通用函数"""
-    global _generator_worker, _stats_worker
-
-    try:
-        worker = worker_class(**kwargs)
-
-        if name == 'generator':
-            _generator_worker = worker
-            await worker.run_forever(group_id=1)
-        else:  # 'stats'
-            _stats_worker = worker
-            await worker.start()
-
-    except asyncio.CancelledError:
-        logger.info(f"{name.capitalize()} worker cancelled")
-    except Exception as e:
-        logger.error(f"{name.capitalize()} worker error: {e}")
-
-
-async def init_components():
-    """初始化所有组件"""
-    config = get_config()
-    logger.info("Initializing components...")
-
-    # 1. 初始化数据库（创建数据库和表）
-    try:
-        await init_database(
-            host=config.database.host,
-            port=config.database.port,
-            user=config.database.user,
-            password=config.database.password,
-            database=config.database.database,
-            charset=config.database.charset,
-            schema_file=str(project_root / "database" / "schema.sql")
-        )
-    except Exception as e:
-        logger.warning(f"Database schema initialization failed: {e}")
-
-    # 2. 初始化数据库连接池
-    try:
-        await init_db_pool(
-            host=config.database.host,
-            port=config.database.port,
-            user=config.database.user,
-            password=config.database.password,
-            database=config.database.database,
-            charset=config.database.charset,
-            pool_size=config.database.pool_size
-        )
-        logger.info("Database pool initialized")
-
-        # 2.1 确保默认管理员存在（从配置文件读取）
-        await ensure_default_admin()
-
-    except Exception as e:
-        logger.warning(f"Database pool initialization failed (non-critical): {e}")
-
-    # 3. 初始化文件缓存（HTML缓存使用文件系统）
-    file_cache_config = await _load_file_cache_config()
-
-    # 3.1 初始化文件缓存
-    try:
-        init_cache_manager(
-            cache_dir=file_cache_config.get('file_cache_dir', './html_cache'),
-            max_size_gb=file_cache_config.get('file_cache_max_size_gb', 50),
-            enable_gzip=not file_cache_config.get('file_cache_nginx_mode', True),
-            nginx_mode=file_cache_config.get('file_cache_nginx_mode', True)
-        )
-        logger.info(f"File HTML cache initialized: dir={file_cache_config.get('file_cache_dir', './html_cache')}, "
-                   f"nginx_mode={file_cache_config.get('file_cache_nginx_mode', True)}")
-    except Exception as e:
-        logger.error(f"Failed to initialize file cache: {e}")
-
-    # 3.2 初始化Redis客户端（用于队列、缓存池等功能，不用于HTML缓存）
-    redis_client = None
-    if hasattr(config, 'redis') and config.redis.enabled:
-        try:
-            redis_client = await init_redis_client(
-                host=config.redis.host,
-                port=config.redis.port,
-                db=config.redis.db,
-                password=config.redis.password or None,
-            )
-            logger.info("Redis client initialized (for queue operations)")
-        except Exception as e:
-            logger.warning(f"Redis initialization failed: {e}")
-
-    # 4. 初始化蜘蛛检测器
-    init_spider_detector(
-        enable_dns_verify=config.spider_detector.dns_verify_enabled,
-        dns_verify_types=config.spider_detector.dns_verify_types,
-        dns_timeout=config.spider_detector.dns_timeout
-    )
-    logger.info("Spider detector initialized")
-
-    # 5. 加载Emoji数据（get_emoji_manager 首次调用时自动加载）
-    emoji_manager = get_emoji_manager()
-    logger.info(f"Emoji manager initialized: {emoji_manager.count()} emojis")
-
-    # 6. 获取Redis客户端和数据库连接（用于后续池初始化）
-    redis_client = get_redis_client()
-    db_pool = get_db_pool()
-
-    # 7-9. 初始化各分组管理器（关键词、文章、图片）
-    if redis_client and db_pool:
-
-        # 关键词分组
-        try:
-            await init_keyword_group(db_pool)
-            logger.info("Keyword group initialized from MySQL")
-        except Exception as e:
-            logger.warning(f"Keyword group initialization failed: {e}")
-
-
-        # 图片分组
-        try:
-            await init_image_group(db_pool)
-            logger.info("Image group initialized from MySQL")
-        except Exception as e:
-            logger.warning(f"Image group initialization failed: {e}")
-    else:
-        logger.warning("Group managers not initialized (Redis client or DB not ready)")
-
-    # 10. 初始化SEO核心
-    templates_dir = Path(project_root) / "templates"
-    init_seo_core(
-        template_dir=str(templates_dir),
-        encoding_ratio=0.5
-    )
-    logger.info("SEO core initialized")
-
-    # 10.1 初始化随机字符串池（用于 cls() 函数优化）
-    # 每个请求约消费 5000+ 个 cls，需要足够大的池避免频繁 refill
-    try:
-        await init_class_string_pool(
-            pool_size=50000,           # 足够 10+ 个并发请求
-            low_watermark_ratio=0.3,   # 30% 时触发 refill
-            refill_batch_size=10000,   # 每次补充 10000 个
-            check_interval=0.3,        # 300ms 检查一次
-            num_workers=4              # 4 线程并行生成
-        )
-        pool = get_class_string_pool()
-        if pool:
-            stats = pool.get_stats()
-            logger.info(f"Class string pool initialized: {stats['buffer_size']} strings, workers=4")
-    except Exception as e:
-        logger.warning(f"Class string pool initialization failed: {e}")
-
-    # 10.2 初始化 URL 池（用于 random_url() 函数优化）
-    try:
-        await init_url_pool(
-            pool_size=20000,           # 足够多个并发请求
-            low_watermark_ratio=0.3,
-            refill_batch_size=5000,
-            check_interval=0.3,
-            num_workers=2
-        )
-        pool = get_url_pool()
-        if pool:
-            stats = pool.get_stats()
-            logger.info(f"URL pool initialized: {stats['buffer_size']} URLs, workers=2")
-    except Exception as e:
-        logger.warning(f"URL pool initialization failed: {e}")
-
-    # 10.3 初始化随机数池（用于 random_number() 函数优化）
-    # 每个请求约调用 4000-5000 次 random_number，需要足够大的池
-    try:
-        await init_random_number_pool(
-            ranges={
-                # 版本号常用
-                "0-9": (0, 9),
-                "0-99": (0, 99),
-                "1-9": (1, 9),
-                "1-10": (1, 10),
-                "1-20": (1, 20),
-                "1-59": (1, 59),
-                # 百分比/评分
-                "5-10": (5, 10),
-                "10-20": (10, 20),
-                "10-99": (10, 99),
-                "10-100": (10, 100),
-                "10-200": (10, 200),
-                "30-90": (30, 90),
-                "50-200": (50, 200),
-                # ID/编号
-                "100-999": (100, 999),
-                "10000-99999": (10000, 99999),
-            },
-            pool_size=20000,           # 每个范围 20000 个随机数
-            low_watermark_ratio=0.3,   # 30% 时触发 refill
-            refill_batch_size=5000,    # 每次补充 5000 个
-            check_interval=0.3,        # 300ms 检查一次
-            num_workers=2              # 2 线程并行生成
-        )
-        pool = get_random_number_pool()
-        if pool:
-            stats = pool.get_stats()
-            logger.info(f"Random number pool initialized: {stats['ranges_count']} ranges, workers=2")
-    except Exception as e:
-        logger.warning(f"Random number pool initialization failed: {e}")
-
-    # 11. 初始化关键词缓存池（生产者消费者模型，带预编码）
-    # 允许空数据启动，新增数据后会自动加入缓存池
-    # 传入 encoder 实现加载时预编码，避免每次调用时编码
-    keyword_group = get_keyword_group()
-    seo_core = get_seo_core()
-    if redis_client and keyword_group:
-        try:
-            await init_keyword_cache_pool(
-                keyword_manager=keyword_group,
-                redis_client=redis_client,
-                cache_size=10000,
-                low_watermark_ratio=0.2,
-                refill_batch_size=2000,
-                check_interval=1.0,
-                encoder=seo_core.encoder if seo_core else None  # 传入编码器
-            )
-            pool = get_keyword_cache_pool()
-            if pool:
-                stats = pool.get_stats()
-                if stats['cache_size'] == 0:
-                    logger.warning("Keyword cache pool started empty - will populate when data is added")
-                else:
-                    logger.info(f"Keyword cache pool initialized: {stats['cache_size']} pre-encoded keywords, low_watermark={stats['low_watermark']}")
-        except Exception as e:
-            logger.warning(f"Keyword cache pool initialization failed: {e}")
-
-    # 11.1 初始化图片缓存池（生产者消费者模型）
-    # 允许空数据启动，新增数据后会自动加入缓存池
-    # 每个请求约消费 888 张图片，需要足够大的池
-    image_group = get_image_group()
-    if redis_client and image_group:
-        try:
-            await init_image_cache_pool(
-                image_manager=image_group,
-                redis_client=redis_client,
-                cache_size=30000,          # 足够 30+ 个并发请求
-                low_watermark_ratio=0.3,   # 30% 时触发 refill
-                refill_batch_size=5000,    # 每次补充 5000 个
-                check_interval=0.5         # 500ms 检查一次
-            )
-            pool = get_image_cache_pool()
-            if pool:
-                stats = pool.get_stats()
-                if stats['cache_size'] == 0:
-                    logger.warning("Image cache pool started empty - will populate when data is added")
-                else:
-                    logger.info(f"Image cache pool initialized: {stats['cache_size']} URLs, low_watermark={stats['low_watermark']}")
-        except Exception as e:
-            logger.warning(f"Image cache pool initialization failed: {e}")
-
-    # 12. 预加载同步缓存到SEOCore（用于模板渲染，作为缓存池的降级方案）
-    seo_core = get_seo_core()
-    if seo_core:
-        image_group = get_image_group()
-
-        # 关键词同步缓存（降级方案，缓存池不可用时使用）
-        if keyword_group and keyword_group._loaded:
-            keywords = await keyword_group.get_random(1000)
-            seo_core.load_keywords_sync(keywords)
-            logger.info(f"Preloaded {len(keywords)} keywords to sync cache (fallback)")
-
-        if image_group and image_group._loaded:
-            # 从异步分组获取一批图片URL预填充同步缓存
-            urls = await image_group.get_random(1000)
-            seo_core.load_image_urls_sync(urls)
-            logger.info(f"Preloaded {len(urls)} image URLs to sync cache")
-
-    # 13-14. 初始化标题和正文管理器（预热默认分组，其他分组懒加载）
-    if redis_client and db_pool:
-        # 标题管理器（分层随机抽取）- 预热分组1
-        try:
-            await init_title_manager(redis_client, db_pool, group_id=1, max_size=500000)
-            title_manager = get_title_manager(group_id=1)
-            if title_manager:
-                stats = title_manager.get_stats()
-                logger.info(f"Title manager (group 1) initialized: {stats['total_loaded']} titles loaded")
-        except Exception as e:
-            logger.warning(f"Title manager initialization failed: {e}")
-
-        # 正文管理器（从contents表读取已处理好的正文）- 预热分组1
-        try:
-            await init_content_manager(redis_client, db_pool, group_id=1, max_size=50000)
-            content_manager = get_content_manager(group_id=1)
-            if content_manager:
-                stats = content_manager.get_stats()
-                logger.info(f"Content manager (group 1) initialized: {stats['total']} contents loaded")
-        except Exception as e:
-            logger.warning(f"Content manager initialization failed: {e}")
-
-        # 13.1 初始化段落池管理器（一次性消费模式）
-        try:
-            content_pool = await init_content_pool_manager(
-                redis_client, db_pool, group_id=1, auto_initialize=True
-            )
-            if content_pool:
-                stats = await content_pool.get_pool_stats()
-                logger.info(
-                    f"Content pool manager initialized: "
-                    f"{stats['pool_size']} available, {stats['used_size']} used"
-                )
-        except Exception as e:
-            logger.warning(f"Content pool manager initialization failed: {e}")
-
-        # 14. 启动正文生成器后台任务
-        try:
-            from core.workers.generator_worker import GeneratorWorker
-            asyncio.create_task(_start_background_worker(
-                GeneratorWorker, 'generator',
-                db_pool=db_pool, redis_client=redis_client
-            ))
-            logger.info("Generator worker started in background")
-        except Exception as e:
-            logger.warning(f"Generator worker start failed: {e}")
-
-        # 15. 启动爬虫统计归档后台任务
-        try:
-            from core.workers.stats_worker import SpiderStatsWorker
-            asyncio.create_task(_start_background_worker(
-                SpiderStatsWorker, 'stats',
-                db_pool=db_pool, redis=redis_client
-            ))
-            logger.info("Spider stats worker started in background")
-        except Exception as e:
-            logger.warning(f"Spider stats worker start failed: {e}")
-
-        # 16. 启动爬虫定时调度器
-        try:
-            from core.workers.spider_scheduler import SpiderSchedulerWorker
-            global _scheduler_worker
-            _scheduler_worker = SpiderSchedulerWorker(db_pool=db_pool, redis=redis_client)
-            await _scheduler_worker.start()
-            logger.info("Spider scheduler worker started")
-        except Exception as e:
-            logger.warning(f"Spider scheduler worker start failed: {e}")
-
-    logger.info("All components initialized successfully")
-
-
-async def _safe_stop(coro, name: str):
-    """安全停止组件的辅助函数"""
-    try:
-        await coro
-        logger.info(f"{name} stopped")
-    except Exception as e:
-        logger.warning(f"Error stopping {name}: {e}")
-
-
-async def cleanup_components():
-    """清理组件"""
-    global _generator_worker, _stats_worker, _scheduler_worker
-    logger.info("Cleaning up components...")
-
-    # 停止 workers
-    if _generator_worker:
-        await _safe_stop(_generator_worker.stop(), "Generator worker")
-        _generator_worker = None
-
-    if _stats_worker:
-        await _safe_stop(_stats_worker.stop(), "Spider stats worker")
-        _stats_worker = None
-
-    if _scheduler_worker:
-        await _safe_stop(_scheduler_worker.stop(), "Spider scheduler worker")
-        _scheduler_worker = None
-
-    # 停止缓存池
-    await _safe_stop(stop_keyword_cache_pool(), "Keyword cache pool")
-    await _safe_stop(stop_image_cache_pool(), "Image cache pool")
-    await _safe_stop(stop_class_string_pool(), "Class string pool")
-    await _safe_stop(stop_url_pool(), "URL pool")
-    await _safe_stop(stop_random_number_pool(), "Random number pool")
-
-    # 关闭连接
-    await _safe_stop(close_redis_client(), "Redis client connection")
-    await _safe_stop(close_db_pool(), "Database pool")
-
-    logger.info("Cleanup completed")
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """应用生命周期管理"""
-    # 启动时初始化
-    await init_components()
-    yield
-    # 关闭时清理
-    await cleanup_components()
-
 
 def create_app(config_path: Optional[str] = None) -> FastAPI:
     """
@@ -555,7 +124,19 @@ def create_app(config_path: Optional[str] = None) -> FastAPI:
     )
 
     # 挂载API路由
-    app.include_router(api_router)
+    # 核心页面服务路由
+    app.include_router(page_router)
+    # 拆分后的 API 路由模块
+    app.include_router(auth_router)
+    app.include_router(dashboard_router)
+    app.include_router(site_router)
+    app.include_router(template_router)
+    app.include_router(keyword_router)
+    app.include_router(image_router)
+    app.include_router(article_router)
+    app.include_router(cache_router)
+    app.include_router(settings_router)
+    # 其他已有路由
     app.include_router(generator_router)
     app.include_router(log_router)
     app.include_router(spider_router)
