@@ -16,7 +16,7 @@ from database.db import fetch_one, fetch_all, fetch_value, execute_query, insert
 router = APIRouter(prefix="/api/templates", tags=["模板管理"])
 
 
-@router.get("/")
+@router.get("")
 async def list_templates(
     page: int = 1,
     page_size: int = 20,
@@ -159,7 +159,7 @@ async def get_template_sites(template_id: int, _: dict = Depends(verify_token)):
         return {"sites": [], "error": str(e)}
 
 
-@router.post("/")
+@router.post("")
 async def create_template(
     data: TemplateCreate,
     _: dict = Depends(verify_token)
