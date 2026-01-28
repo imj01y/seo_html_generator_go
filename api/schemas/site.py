@@ -41,3 +41,4 @@ class SiteGroupUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[int] = None
+    is_default: Optional[int] = None

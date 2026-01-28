@@ -372,6 +372,12 @@ async def update_site_group(group_id: int, data: SiteGroupUpdate, _: dict = Depe
         if data.status is not None:
             update_fields.append("status = %s")
             update_values.append(data.status)
+        if data.is_default is not None:
+            if data.is_default == 1:
+                # 先将其他站群的 is_default 设为 0
+                await execute_query("UPDATE site_groups SET is_default = 0 WHERE is_default = 1")
+            update_fields.append("is_default = %s")
+            update_values.append(data.is_default)
 
         if not update_fields:
             return {"success": True, "message": "没有需要更新的字段"}

@@ -45,6 +45,7 @@ export interface SiteGroupUpdate {
   name?: string
   description?: string
   status?: number
+  is_default?: number
 }
 
 export interface SiteGroupStats {

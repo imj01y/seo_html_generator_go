@@ -227,7 +227,7 @@ export interface CachePoolsStatsResponse {
 }
 
 export const getCachePoolsStats = (): Promise<CachePoolsStatsResponse> =>
-  request.get('/cache-pools/stats')
+  request.get('/cache/pools/stats')
 
 // 文件缓存配置字段
 export interface FileCacheSettings {
