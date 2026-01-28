@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
@@ -16,11 +15,9 @@ import (
 
 // HTMLCache manages HTML file caching with hash-layered directory structure
 type HTMLCache struct {
-	cacheDir   string
-	maxSizeGB  float64
-	statsHit   int64
-	statsMiss  int64
-	mu         sync.RWMutex
+	cacheDir  string
+	maxSizeGB float64
+	mu        sync.RWMutex
 }
 
 // CacheMeta holds metadata for a cached file
@@ -114,20 +111,6 @@ func (c *HTMLCache) getMetaPath(domain, path string) string {
 	c.mu.RUnlock()
 
 	return filepath.Join(cacheDir, "_meta", domain, pathHash[:2], pathHash[2:4], cacheKey+".json")
-}
-
-// Get retrieves cached HTML content
-func (c *HTMLCache) Get(domain, path string) (string, bool) {
-	cachePath := c.getCachePath(domain, path)
-
-	data, err := os.ReadFile(cachePath)
-	if err != nil {
-		atomic.AddInt64(&c.statsMiss, 1)
-		return "", false
-	}
-
-	atomic.AddInt64(&c.statsHit, 1)
-	return string(data), true
 }
 
 // Set stores HTML content in the cache
@@ -250,16 +233,6 @@ func (c *HTMLCache) getDirSize(dir string) int64 {
 
 // GetStats returns cache statistics
 func (c *HTMLCache) GetStats() map[string]interface{} {
-	hits := atomic.LoadInt64(&c.statsHit)
-	misses := atomic.LoadInt64(&c.statsMiss)
-	total := hits + misses
-
-	hitRate := float64(0)
-	if total > 0 {
-		hitRate = float64(hits) / float64(total) * 100
-	}
-
-	// 需要读锁保护 cacheDir
 	c.mu.RLock()
 	cacheDir := c.cacheDir
 	c.mu.RUnlock()
@@ -270,9 +243,6 @@ func (c *HTMLCache) GetStats() map[string]interface{} {
 	return map[string]interface{}{
 		"total_entries": totalEntries,
 		"total_size_mb": float64(totalSize) / 1024 / 1024,
-		"hit_count":     hits,
-		"miss_count":    misses,
-		"hit_rate":      hitRate,
 	}
 }
 

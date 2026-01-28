@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"time"
 )
 
@@ -49,7 +49,7 @@ func NewNumberPool() *NumberPool {
 		// 使用闭包捕获min/max
 		generator := func(min, max int) func() int {
 			return func() int {
-				return rand.Intn(max-min+1) + min
+				return rand.IntN(max-min+1) + min
 			}
 		}(minVal, maxVal)
 
@@ -73,7 +73,7 @@ func (np *NumberPool) Get(min, max int) int {
 		return pool.Get()
 	}
 	// 降级到直接生成
-	return rand.Intn(max-min+1) + min
+	return rand.IntN(max-min+1) + min
 }
 
 // Stop 停止所有池

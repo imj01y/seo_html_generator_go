@@ -4,7 +4,7 @@
 # =============================================================================
 
 # 使用包含完整工具链的镜像（支持容器内编译）
-FROM golang:1.21-alpine AS builder
+FROM golang:1.22-alpine AS builder
 
 # 安装必要工具
 RUN apk add --no-cache git gcc musl-dev
@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server .
 # =============================================================================
 # 运行时镜像（包含编译工具以支持动态编译）
 # =============================================================================
-FROM golang:1.21-alpine
+FROM golang:1.22-alpine
 
 # 安装必要工具
 RUN apk add --no-cache \

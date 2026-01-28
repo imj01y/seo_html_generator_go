@@ -2,7 +2,7 @@ package core
 
 import (
 	"context"
-	"math/rand"
+	"math/rand/v2"
 	"sync"
 	"time"
 
@@ -145,15 +145,38 @@ func (m *DataManager) getSliceWithFallback(data map[int][]string, groupID int) [
 	return items
 }
 
-// getRandomItems 从切片中随机选取指定数量的元素
+// getRandomItems 从切片中随机选取指定数量的元素（Fisher-Yates 部分洗牌，O(count) 复杂度）
 func getRandomItems(items []string, count int) []string {
-	if len(items) == 0 {
+	n := len(items)
+	if n == 0 || count == 0 {
 		return nil
 	}
-	result := make([]string, 0, count)
-	indices := rand.Perm(len(items))
-	for i := 0; i < count && i < len(indices); i++ {
-		result = append(result, items[indices[i]])
+	if count > n {
+		count = n
+	}
+
+	// 使用 map 记录交换，避免 O(n) 空间分配
+	swapped := make(map[int]int, count)
+	result := make([]string, count)
+
+	for i := 0; i < count; i++ {
+		j := i + rand.IntN(n-i) // 从 [i, n) 随机选一个
+
+		// 获取实际索引（考虑之前的交换）
+		vi, oki := swapped[i]
+		if !oki {
+			vi = i
+		}
+		vj, okj := swapped[j]
+		if !okj {
+			vj = j
+		}
+
+		// 记录交换
+		swapped[i] = vj
+		swapped[j] = vi
+
+		result[i] = items[vj]
 	}
 	return result
 }
@@ -163,7 +186,7 @@ func getRandomItem(items []string) string {
 	if len(items) == 0 {
 		return ""
 	}
-	return items[rand.Intn(len(items))]
+	return items[rand.IntN(len(items))]
 }
 
 // GetRandomKeywords returns random pre-encoded keywords

@@ -2,7 +2,7 @@ package core
 
 import (
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -128,7 +128,7 @@ func (m *TemplateFuncsManager) generateKeywordWithEmoji() string {
 	// 5. 插入 emoji
 	exclude := make(map[string]bool)
 	for i := 0; i < emojiCount; i++ {
-		pos := rand.Intn(runeLen + 1) // 0 到 len，包含首尾
+		pos := rand.IntN(runeLen + 1) // 0 到 len，包含首尾
 		emoji := m.emojiManager.GetRandomExclude(exclude)
 		if emoji != "" {
 			exclude[emoji] = true
@@ -266,7 +266,7 @@ func (m *TemplateFuncsManager) RandomNumber(min, max int) int {
 		return m.numberPool.Get(min, max)
 	}
 	// 降级到直接生成
-	return rand.Intn(max-min+1) + min
+	return rand.IntN(max-min+1) + min
 }
 
 // Encode 编码文本
@@ -280,24 +280,24 @@ func generateRandomCls() string {
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	part1 := make([]byte, 13)
 	for i := range part1 {
-		part1[i] = chars[rand.Intn(len(chars))]
+		part1[i] = chars[rand.IntN(len(chars))]
 	}
 	part2 := make([]byte, 32)
 	for i := range part2 {
-		part2[i] = chars[rand.Intn(len(chars))]
+		part2[i] = chars[rand.IntN(len(chars))]
 	}
 	return string(part1) + " " + string(part2)
 }
 
 func generateRandomURL() string {
 	if rand.Float64() < 0.6 {
-		num := rand.Intn(900000000) + 100000000
+		num := rand.IntN(900000000) + 100000000
 		return fmt.Sprintf("/?%d.html", num)
 	}
-	daysAgo := rand.Intn(30)
+	daysAgo := rand.IntN(30)
 	date := time.Now().AddDate(0, 0, -daysAgo)
 	dateStr := date.Format("20060102")
-	num := rand.Intn(90000) + 10000
+	num := rand.IntN(90000) + 10000
 	return fmt.Sprintf("/?%s/%d.html", dateStr, num)
 }
 

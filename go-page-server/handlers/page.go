@@ -86,33 +86,6 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 		return
 	}
 
-	// Check HTML cache
-	t2 := time.Now()
-	if cached, found := h.htmlCache.Get(domain, path); found {
-		cacheTime := time.Since(t2)
-		elapsed := time.Since(startTime)
-
-		log.Info().
-			Str("domain", domain).
-			Str("path", path).
-			Str("spider", detection.SpiderType).
-			Dur("elapsed", elapsed).
-			Msg("Cache hit")
-
-		log.Debug().
-			Dur("spider_time", spiderTime).
-			Dur("cache_time", cacheTime).
-			Dur("total", elapsed).
-			Msg("Performance metrics (cache hit)")
-
-		// Log spider visit asynchronously
-		go h.logSpiderVisit(detection, clientIP, ua, domain, path, true, int(elapsed.Milliseconds()), 200)
-
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(cached))
-		return
-	}
-	cacheTime := time.Since(t2)
-
 	// Get site config
 	t3 := time.Now()
 	ctx := context.Background()
@@ -223,7 +196,6 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 
 	log.Debug().
 		Dur("spider_time", spiderTime).
-		Dur("cache_time", cacheTime).
 		Dur("site_time", siteTime).
 		Dur("fetch_time", fetchTime).
 		Dur("render_time", renderTime).

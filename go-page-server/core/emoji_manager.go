@@ -2,7 +2,7 @@ package core
 
 import (
 	"encoding/json"
-	"math/rand"
+	"math/rand/v2"
 	"os"
 	"sync"
 
@@ -53,7 +53,7 @@ func (m *EmojiManager) GetRandom() string {
 	if len(m.emojis) == 0 {
 		return ""
 	}
-	return m.emojis[rand.Intn(len(m.emojis))]
+	return m.emojis[rand.IntN(len(m.emojis))]
 }
 
 // GetRandomExclude 获取不在 exclude 中的随机 Emoji
@@ -68,7 +68,7 @@ func (m *EmojiManager) GetRandomExclude(exclude map[string]bool) string {
 
 	// 排除列表为空时直接返回随机 emoji
 	if len(exclude) == 0 {
-		return m.emojis[rand.Intn(n)]
+		return m.emojis[rand.IntN(n)]
 	}
 
 	// 如果排除的数量超过总数的一半，构建可用列表更高效
@@ -80,9 +80,9 @@ func (m *EmojiManager) GetRandomExclude(exclude map[string]bool) string {
 			}
 		}
 		if len(available) == 0 {
-			return m.emojis[rand.Intn(n)] // 回退到任意一个
+			return m.emojis[rand.IntN(n)] // 回退到任意一个
 		}
-		return available[rand.Intn(len(available))]
+		return available[rand.IntN(len(available))]
 	}
 
 	// 排除列表较小时，随机尝试更高效
@@ -93,13 +93,13 @@ func (m *EmojiManager) GetRandomExclude(exclude map[string]bool) string {
 	}
 
 	for i := 0; i < maxAttempts; i++ {
-		emoji := m.emojis[rand.Intn(n)]
+		emoji := m.emojis[rand.IntN(n)]
 		if !exclude[emoji] {
 			return emoji
 		}
 	}
 
-	return m.emojis[rand.Intn(n)]
+	return m.emojis[rand.IntN(n)]
 }
 
 // Count 返回已加载的 Emoji 数量
