@@ -7,6 +7,7 @@
 """
 
 import asyncio
+import json
 from typing import Optional, Dict, Any, AsyncGenerator, Callable, Iterator, TYPE_CHECKING
 from loguru import logger
 
@@ -170,10 +171,23 @@ class QueueConsumer:
 
             timeout = request.timeout or self.http_client.timeout
 
-            logger.info(f"Fetching: {request.url[:80]}")
+            # 处理 JSON 请求体
+            request_body = request.body
+            request_json = None
+            if request_body and request.headers.get('Content-Type') == 'application/json':
+                try:
+                    request_json = json.loads(request_body)
+                    request_body = None  # 使用 json 参数代替 body
+                except (json.JSONDecodeError, TypeError):
+                    pass  # 保持原始 body
+
+            logger.info(f"Fetching [{request.method}]: {request.url[:80]}")
             body = await self.http_client.fetch(
                 url=request.url,
+                method=request.method,
                 headers=headers,
+                body=request_body,
+                json=request_json,
                 timeout=timeout,
             )
 

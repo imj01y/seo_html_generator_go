@@ -9,7 +9,7 @@
 """
 
 import asyncio
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 from loguru import logger
 
 try:
@@ -70,7 +70,15 @@ class AsyncHttpClient:
         self.headers = {**self.DEFAULT_HEADERS, **(headers or {})}
         self.last_error: Optional[str] = None  # 保存最后的错误信息
 
-    async def fetch(self, url: str, headers: Optional[Dict[str, str]] = None, **kwargs) -> Optional[bytes]:
+    async def fetch(
+        self,
+        url: str,
+        method: str = 'GET',
+        headers: Optional[Dict[str, str]] = None,
+        body: Optional[str] = None,
+        json: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Optional[bytes]:
         """
         抓取页面内容
 
@@ -78,7 +86,10 @@ class AsyncHttpClient:
 
         Args:
             url: 目标URL
+            method: HTTP方法（GET/POST/PUT/DELETE等）
             headers: 请求头（与默认请求头合并）
+            body: 请求体（原始字符串）
+            json: JSON数据（自动序列化，会覆盖body）
             **kwargs: 传递给 httpx.AsyncClient 的额外参数
 
         Returns:
@@ -94,11 +105,24 @@ class AsyncHttpClient:
         if headers:
             merged_headers.update(headers)
 
+        # 处理请求体和 Content-Type
+        request_content = None
+        request_json = None
+        if json is not None:
+            # JSON 数据：httpx 会自动设置 Content-Type: application/json
+            request_json = json
+        elif body is not None:
+            # 原始请求体
+            request_content = body
+
         self.last_error = None  # 清除上次错误
         last_error = None
 
         # 从 kwargs 提取 timeout（如果有的话优先使用）
         timeout = kwargs.pop('timeout', self.timeout)
+
+        # 标准化 HTTP 方法
+        method = method.upper()
 
         for attempt in range(self.max_retries):
             try:
@@ -109,7 +133,12 @@ class AsyncHttpClient:
                     headers=merged_headers,
                     **kwargs
                 ) as client:
-                    response = await client.get(url)
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        content=request_content,
+                        json=request_json,
+                    )
                     response.raise_for_status()
                     return response.content
 
@@ -167,7 +196,10 @@ class AsyncHttpClient:
     async def fetch_with_encoding(
         self,
         url: str,
+        method: str = 'GET',
         encoding: str = 'utf-8',
+        body: Optional[str] = None,
+        json: Optional[Dict[str, Any]] = None,
         **kwargs
     ) -> Optional[str]:
         """
@@ -175,7 +207,10 @@ class AsyncHttpClient:
 
         Args:
             url: 目标URL
+            method: HTTP方法
             encoding: 字符编码
+            body: 请求体
+            json: JSON数据
             **kwargs: 额外参数
 
         Returns:
@@ -184,9 +219,20 @@ class AsyncHttpClient:
         if httpx is None:
             return None
 
+        # 处理请求体
+        request_content = None
+        request_json = None
+        if json is not None:
+            request_json = json
+        elif body is not None:
+            request_content = body
+
         # 从 kwargs 提取 timeout（如果有的话优先使用）
         timeout = kwargs.pop('timeout', self.timeout)
         last_error = None
+
+        # 标准化 HTTP 方法
+        method = method.upper()
 
         for attempt in range(self.max_retries):
             try:
@@ -197,7 +243,12 @@ class AsyncHttpClient:
                     headers=self.headers,
                     **kwargs
                 ) as client:
-                    response = await client.get(url)
+                    response = await client.request(
+                        method=method,
+                        url=url,
+                        content=request_content,
+                        json=request_json,
+                    )
                     response.raise_for_status()
                     return response.content.decode(encoding, errors='ignore')
 

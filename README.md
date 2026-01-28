@@ -140,7 +140,7 @@ docker-compose down
 docker-compose down -v
 
 # 重新构建并启动
-docker-compose up -d --build
+docker-compose up -d --build app
 
 # 强制重建所有容器（推荐）
 docker-compose up -d --build  --force-recreate

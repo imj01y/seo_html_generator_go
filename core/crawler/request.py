@@ -129,6 +129,120 @@ class Request:
                 setattr(new_request, key, value)
         return new_request
 
+    @classmethod
+    def post(
+        cls,
+        url: str,
+        callback: Optional[Any] = None,
+        body: Optional[str] = None,
+        json_data: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> 'Request':
+        """
+        创建 POST 请求的便捷方法
+
+        Args:
+            url: 请求URL
+            callback: 回调函数
+            body: 原始请求体
+            json_data: JSON 数据（会自动序列化并设置 Content-Type）
+            headers: 自定义请求头
+            **kwargs: 其他 Request 参数
+
+        Returns:
+            Request 对象
+
+        Example:
+            # 发送 JSON 数据
+            yield Request.post(
+                'https://api.example.com/data',
+                json_data={'key': 'value'},
+                callback=self.parse_api,
+            )
+
+            # 发送表单数据
+            yield Request.post(
+                'https://example.com/form',
+                body='name=test&value=123',
+                callback=self.parse_form,
+            )
+        """
+        request_headers = dict(headers) if headers else {}
+        request_body = body
+
+        if json_data is not None:
+            request_body = json.dumps(json_data, ensure_ascii=False)
+            request_headers['Content-Type'] = 'application/json'
+
+        return cls(
+            url=url,
+            callback=callback,
+            method='POST',
+            body=request_body,
+            headers=request_headers,
+            **kwargs
+        )
+
+    @classmethod
+    def get(
+        cls,
+        url: str,
+        callback: Optional[Any] = None,
+        params: Optional[Dict[str, Any]] = None,
+        headers: Optional[Dict[str, str]] = None,
+        **kwargs
+    ) -> 'Request':
+        """
+        创建 GET 请求的便捷方法
+
+        Args:
+            url: 请求URL
+            callback: 回调函数
+            params: URL 查询参数（会自动拼接到 URL）
+            headers: 自定义请求头
+            **kwargs: 其他 Request 参数
+
+        Returns:
+            Request 对象
+
+        Example:
+            # 基本用法
+            yield Request.get(
+                'https://example.com/api',
+                callback=self.parse_api,
+            )
+
+            # 带查询参数
+            yield Request.get(
+                'https://example.com/search',
+                params={'q': 'python', 'page': 1},
+                callback=self.parse_search,
+            )
+        """
+        request_url = url
+
+        # 处理查询参数
+        if params:
+            from urllib.parse import urlencode, urlparse, parse_qs, urlunparse
+            parsed = urlparse(url)
+            existing_params = parse_qs(parsed.query)
+            for key, value in params.items():
+                existing_params[key] = [str(value)]
+            new_query = urlencode(existing_params, doseq=True)
+            request_url = urlunparse((
+                parsed.scheme, parsed.netloc, parsed.path,
+                parsed.params, new_query, parsed.fragment
+            ))
+
+        return cls(
+            url=request_url,
+            callback=callback,
+            method='GET',
+            headers=headers,
+            **kwargs
+        )
+
     def to_dict(self) -> Dict[str, Any]:
         """
         序列化为字典（用于存储到 Redis）

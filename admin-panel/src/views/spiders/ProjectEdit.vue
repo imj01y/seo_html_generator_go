@@ -125,6 +125,7 @@
               height="100%"
               :options="editorOptions"
               @change="handleCodeChange"
+              @save="handleSave"
             />
           </div>
         </div>
