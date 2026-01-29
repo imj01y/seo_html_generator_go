@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 
 	"go-page-server/config"
@@ -26,12 +25,14 @@ func main() {
 	// Initialize random seed
 	rand.Seed(time.Now().UnixNano())
 
-	// Configure zerolog
-	zerolog.TimeFieldFormat = "2006-01-02 15:04:05"
-	log.Logger = log.Output(zerolog.ConsoleWriter{
-		Out:        os.Stderr,
-		TimeFormat: "2006-01-02 15:04:05",
-	})
+	// Configure logger using core.SetupLogger
+	logConfig := core.DefaultLogConfig()
+	logConfig.Format = "console" // 开发时用 console，生产用 json
+	logConfig.Output = "stdout"
+	if err := core.SetupLogger(logConfig); err != nil {
+		// Fallback: print to stderr and continue
+		fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
+	}
 
 	// Find project root directory
 	projectRoot := findProjectRoot()
@@ -242,9 +243,9 @@ func main() {
 
 	r := gin.New()
 
-	// Middleware
-	r.Use(gin.Recovery())
-	r.Use(requestLogger())
+	// Middleware - 使用 core 包的中间件
+	r.Use(core.RequestLogger()) // 使用 core.RequestLogger 替代本地 requestLogger
+	r.Use(core.Recovery())      // 使用 core.Recovery 替代 gin.Recovery
 
 	// CORS middleware for cross-origin requests from admin panel
 	r.Use(func(c *gin.Context) {
@@ -348,32 +349,6 @@ func main() {
 	}
 
 	log.Info().Msg("Server stopped")
-}
-
-// requestLogger returns a Gin middleware for request logging
-func requestLogger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		start := time.Now()
-		path := c.Request.URL.Path
-		query := c.Request.URL.RawQuery
-
-		c.Next()
-
-		latency := time.Since(start)
-		status := c.Writer.Status()
-
-		if query != "" {
-			path = path + "?" + query
-		}
-
-		log.Debug().
-			Int("status", status).
-			Dur("latency", latency).
-			Str("method", c.Request.Method).
-			Str("path", path).
-			Str("ip", c.ClientIP()).
-			Msg("Request")
-	}
 }
 
 // findProjectRoot 查找项目根目录（包含 config.yaml 的目录）
