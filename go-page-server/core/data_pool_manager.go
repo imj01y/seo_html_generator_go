@@ -575,3 +575,110 @@ func (m *DataPoolManager) Refresh(ctx context.Context, poolName string) error {
 		return fmt.Errorf("unknown pool name: %s", poolName)
 	}
 }
+
+// PoolRecommendation 数据池建议
+type PoolRecommendation struct {
+	DataType       string    `json:"data_type"`
+	CurrentCount   int       `json:"current_count"`
+	CallsPerPage   int       `json:"calls_per_page"`
+	RecommendedMin int       `json:"recommended_min"`
+	RepeatRate     float64   `json:"repeat_rate"`
+	Status         SEORating `json:"status"`
+	Action         string    `json:"action"`
+}
+
+// AnalyzeSEO 分析 SEO 友好度
+func (m *DataPoolManager) AnalyzeSEO(analyzer *TemplateAnalyzer) *DataPoolSEOAnalysis {
+	stats := m.GetStats()
+	currentPools := map[string]int{
+		"keywords": stats.Keywords,
+		"images":   stats.Images,
+		"titles":   stats.Titles,
+		"contents": stats.Contents,
+	}
+	seoAnalyzer := NewSEOAnalyzer(analyzer)
+	return seoAnalyzer.AnalyzeSEOFriendliness(currentPools)
+}
+
+// GetRecommendations 获取数据池优化建议
+func (m *DataPoolManager) GetRecommendations(analyzer *TemplateAnalyzer) map[string]PoolRecommendation {
+	stats := m.GetStats()
+	maxStats := analyzer.GetMaxStats()
+
+	recommendations := make(map[string]PoolRecommendation)
+
+	recommendations["keywords"] = getRecommendation(
+		"关键词",
+		stats.Keywords,
+		maxStats.RandomKeyword,
+	)
+
+	recommendations["images"] = getRecommendation(
+		"图片",
+		stats.Images,
+		maxStats.RandomImage,
+	)
+
+	recommendations["titles"] = getRecommendation(
+		"标题",
+		stats.Titles,
+		maxStats.RandomTitle,
+	)
+
+	recommendations["contents"] = getRecommendation(
+		"正文",
+		stats.Contents,
+		maxStats.RandomContent+maxStats.ContentWithPinyin,
+	)
+
+	return recommendations
+}
+
+func getRecommendation(dataType string, currentCount, callsPerPage int) PoolRecommendation {
+	rec := PoolRecommendation{
+		DataType:     dataType,
+		CurrentCount: currentCount,
+		CallsPerPage: callsPerPage,
+	}
+
+	if callsPerPage == 0 {
+		rec.Status = SEORatingExcellent
+		rec.Action = "无需操作（模板未使用）"
+		return rec
+	}
+
+	// 目标重复率 5%
+	rec.RecommendedMin = GetRecommendedPoolSize(callsPerPage, 5)
+	rec.RepeatRate = float64(callsPerPage) / float64(currentCount) * 100
+	if rec.RepeatRate > 100 {
+		rec.RepeatRate = 100
+	}
+
+	switch {
+	case rec.RepeatRate < 5:
+		rec.Status = SEORatingExcellent
+		rec.Action = "无需操作"
+	case rec.RepeatRate < 15:
+		rec.Status = SEORatingGood
+		rec.Action = "可选优化"
+	case rec.RepeatRate < 30:
+		rec.Status = SEORatingFair
+		rec.Action = fmt.Sprintf("建议增加到 %d 条", rec.RecommendedMin)
+	default:
+		rec.Status = SEORatingPoor
+		rec.Action = fmt.Sprintf("强烈建议增加到 %d 条", rec.RecommendedMin)
+	}
+
+	return rec
+}
+
+// GetRecommendedPoolSize 计算推荐的池大小
+// callsPerPage: 每页调用次数
+// targetRepeatRate: 目标重复率（百分比）
+func GetRecommendedPoolSize(callsPerPage int, targetRepeatRate float64) int {
+	if targetRepeatRate <= 0 {
+		targetRepeatRate = 5 // 默认 5%
+	}
+	// 推荐大小 = 每页调用次数 / (目标重复率 / 100)
+	return int(float64(callsPerPage) / (targetRepeatRate / 100))
+}
