@@ -2,6 +2,8 @@
 package api
 
 import (
+	"net/http"
+
 	"go-page-server/core"
 
 	"github.com/gin-gonic/gin"
@@ -27,6 +29,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		pool.GET("/stats", poolStatsHandler(deps))
 		pool.GET("/presets", poolPresetsHandler(deps))
 		pool.GET("/preset/:name", poolPresetByNameHandler(deps))
+		pool.POST("/preset/:name", poolPresetByNameHandler(deps))
 		pool.POST("/resize", poolResizeHandler(deps))
 		pool.POST("/warmup", poolWarmupHandler(deps))
 		pool.POST("/clear", poolClearHandler(deps))
@@ -71,61 +74,212 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 }
 
-// ============ Pool Management Handlers (placeholders) ============
+// ============ Pool Management Handlers ============
 
+// poolStatsHandler GET /stats - 获取池统计信息
 func poolStatsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateFuncs == nil {
+			core.FailWithCode(c, core.ErrPoolInvalid)
+			return
+		}
+		stats := deps.TemplateFuncs.GetPoolStats()
+		core.Success(c, stats)
 	}
 }
 
+// poolPresetsHandler GET /presets - 获取所有预设配置
 func poolPresetsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		presets := core.GetAllPoolPresets()
+		maxStats := deps.TemplateAnalyzer.GetMaxStats()
+
+		// 为每个预设计算池大小和内存估算
+		type presetDetail struct {
+			core.PoolPreset
+			Key            string `json:"key"`
+			PoolSizes      *core.PoolSizeConfig `json:"pool_sizes"`
+			MemoryEstimate int64                `json:"memory_estimate"`
+			MemoryHuman    string               `json:"memory_human"`
+		}
+
+		result := make([]presetDetail, 0, len(presets))
+		for key, preset := range presets {
+			poolSizes := core.CalculatePoolSizes(preset, *maxStats)
+			memoryEstimate := core.EstimateMemoryUsage(poolSizes)
+
+			result = append(result, presetDetail{
+				PoolPreset:     preset,
+				Key:            key,
+				PoolSizes:      poolSizes,
+				MemoryEstimate: memoryEstimate,
+				MemoryHuman:    core.FormatMemorySize(memoryEstimate),
+			})
+		}
+
+		core.Success(c, result)
 	}
 }
 
+// poolPresetByNameHandler GET/POST /preset/:name - 获取或应用预设
 func poolPresetByNameHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		name := c.Param("name")
+
+		preset, ok := core.GetPoolPreset(name)
+		if !ok {
+			core.FailWithCode(c, core.ErrNotFound)
+			return
+		}
+
+		maxStats := deps.TemplateAnalyzer.GetMaxStats()
+		poolSizes := core.CalculatePoolSizes(preset, *maxStats)
+		memoryEstimate := core.EstimateMemoryUsage(poolSizes)
+
+		if c.Request.Method == http.MethodGet {
+			// GET: 返回预设详情
+			core.Success(c, gin.H{
+				"preset":          preset,
+				"pool_sizes":      poolSizes,
+				"memory_estimate": memoryEstimate,
+				"memory_human":    core.FormatMemorySize(memoryEstimate),
+			})
+			return
+		}
+
+		// POST: 应用预设
+		if deps.TemplateFuncs == nil {
+			core.FailWithCode(c, core.ErrPoolInvalid)
+			return
+		}
+
+		deps.TemplateFuncs.ResizePools(poolSizes)
+		deps.TemplateFuncs.WarmupPools(0.5)
+
+		core.Success(c, gin.H{
+			"message":         "预设已应用",
+			"preset":          preset,
+			"pool_sizes":      poolSizes,
+			"memory_estimate": memoryEstimate,
+			"memory_human":    core.FormatMemorySize(memoryEstimate),
+		})
 	}
 }
 
+// poolResizeRequest 池调整大小请求
+type poolResizeRequest struct {
+	ClsSize          int `json:"cls_size"`
+	URLSize          int `json:"url_size"`
+	KeywordEmojiSize int `json:"keyword_emoji_size"`
+}
+
+// poolResizeHandler POST /resize - 调整池大小
 func poolResizeHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		var req poolResizeRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, err.Error())
+			return
+		}
+
+		if deps.TemplateFuncs == nil {
+			core.FailWithCode(c, core.ErrPoolInvalid)
+			return
+		}
+
+		config := &core.PoolSizeConfig{
+			ClsPoolSize:          req.ClsSize,
+			URLPoolSize:          req.URLSize,
+			KeywordEmojiPoolSize: req.KeywordEmojiSize,
+		}
+
+		deps.TemplateFuncs.ResizePools(config)
+
+		core.Success(c, gin.H{
+			"message":    "池大小已调整",
+			"pool_sizes": config,
+		})
 	}
 }
 
+// poolWarmupRequest 池预热请求
+type poolWarmupRequest struct {
+	Percent float64 `json:"percent"`
+}
+
+// poolWarmupHandler POST /warmup - 预热池
 func poolWarmupHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		var req poolWarmupRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			// 使用默认值 0.5
+			req.Percent = 0.5
+		}
+
+		// 验证百分比范围
+		if req.Percent <= 0 || req.Percent > 1 {
+			req.Percent = 0.5
+		}
+
+		if deps.TemplateFuncs == nil {
+			core.FailWithCode(c, core.ErrPoolInvalid)
+			return
+		}
+
+		deps.TemplateFuncs.WarmupPools(req.Percent)
+
+		core.Success(c, gin.H{
+			"message": "池预热已启动",
+			"percent": req.Percent,
+		})
 	}
 }
 
+// poolClearHandler POST /clear - 清空池
 func poolClearHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateFuncs == nil {
+			core.FailWithCode(c, core.ErrPoolInvalid)
+			return
+		}
+
+		deps.TemplateFuncs.ClearPools()
+
+		core.Success(c, gin.H{
+			"message": "池已清空",
+		})
 	}
 }
 
+// poolPauseHandler POST /pause - 暂停池补充
 func poolPauseHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateFuncs == nil {
+			core.FailWithCode(c, core.ErrPoolInvalid)
+			return
+		}
+
+		deps.TemplateFuncs.PausePools()
+
+		core.Success(c, gin.H{
+			"message": "池补充已暂停",
+		})
 	}
 }
 
+// poolResumeHandler POST /resume - 恢复池补充
 func poolResumeHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.2
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateFuncs == nil {
+			core.FailWithCode(c, core.ErrPoolInvalid)
+			return
+		}
+
+		deps.TemplateFuncs.ResumePools()
+
+		core.Success(c, gin.H{
+			"message": "池补充已恢复",
+		})
 	}
 }
 
