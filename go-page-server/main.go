@@ -126,6 +126,19 @@ func main() {
 	// Start auto-refresh
 	dataPoolManager.StartAutoRefresh()
 
+	// Initialize scheduler
+	log.Info().Msg("Initializing scheduler...")
+	scheduler := core.NewScheduler(db)
+
+	// Register task handlers
+	core.RegisterAllHandlers(scheduler, dataPoolManager, templateCache, htmlCache, siteCache)
+
+	// Start scheduler
+	schedCtx := context.Background()
+	if err := scheduler.Start(schedCtx); err != nil {
+		log.Warn().Err(err).Msg("Failed to start scheduler (tables may not exist)")
+	}
+
 	// SEO analysis
 	seoAnalysis := dataPoolManager.AnalyzeSEO(templateAnalyzer)
 	if seoAnalysis != nil {
@@ -317,6 +330,10 @@ func main() {
 	// Stop object pools
 	funcsManager.StopPools()
 	log.Info().Msg("Object pools stopped")
+
+	// Stop scheduler
+	scheduler.Stop()
+	log.Info().Msg("Scheduler stopped")
 
 	// Stop data pool auto-refresh
 	dataPoolManager.StopAutoRefresh()
