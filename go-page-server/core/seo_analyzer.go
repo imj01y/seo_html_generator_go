@@ -63,8 +63,8 @@ func (s *SEOAnalyzer) AnalyzeSEOFriendliness(currentPools map[string]int) *DataP
 	analysis := &DataPoolSEOAnalysis{
 		Pools:        make([]*DataPoolStats, 0),
 		Suggestions:  make([]string, 0),
-		TargetQPS:    s.templateAnalyzer.targetQPS,
-		SafetyFactor: s.templateAnalyzer.safetyFactor,
+		TargetQPS:    s.templateAnalyzer.GetTargetQPS(),
+		SafetyFactor: s.templateAnalyzer.GetSafetyFactor(),
 	}
 
 	// 分析各个数据池
@@ -173,10 +173,9 @@ func (s *SEOAnalyzer) GetRecommendedPoolSize(maxCallsPerRequest int) int {
 		return maxCallsPerRequest * 500 // 默认 500 QPS
 	}
 
-	s.templateAnalyzer.mu.RLock()
-	targetQPS := s.templateAnalyzer.targetQPS
-	safetyFactor := s.templateAnalyzer.safetyFactor
-	s.templateAnalyzer.mu.RUnlock()
+	// 使用公开的线程安全方法获取配置
+	targetQPS := s.templateAnalyzer.GetTargetQPS()
+	safetyFactor := s.templateAnalyzer.GetSafetyFactor()
 
 	return int(float64(maxCallsPerRequest) * float64(targetQPS) * safetyFactor)
 }

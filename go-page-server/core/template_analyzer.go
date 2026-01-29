@@ -181,21 +181,23 @@ func NewTemplateAnalyzer() *TemplateAnalyzer {
 func (a *TemplateAnalyzer) AnalyzeTemplate(name string, siteGroupID int, content string) *TemplateAnalysis {
 	// 计算内容哈希
 	hash := a.hashContent(content)
-
-	// 检查是否已分析且内容未变
 	key := a.cacheKey(name, siteGroupID)
-	a.mu.RLock()
+
+	// 使用写锁覆盖整个检查-分析-写入流程，避免 TOCTOU 竞态
+	a.mu.Lock()
+
+	// 检查是否已分析且内容未变（在锁内检查）
 	if existing, ok := a.analyses[key]; ok && existing.ContentHash == hash {
-		a.mu.RUnlock()
+		a.mu.Unlock()
 		log.Debug().
 			Str("template", name).
 			Int("site_group_id", siteGroupID).
 			Msg("Template content unchanged, skipping analysis")
 		return existing
 	}
-	a.mu.RUnlock()
+	a.mu.Unlock()
 
-	// 分析内容
+	// 分析内容（在锁外进行，避免长时间持有锁）
 	stats, loopCount, maxDepth := a.analyzeContent(content)
 
 	analysis := &TemplateAnalysis{
@@ -208,8 +210,17 @@ func (a *TemplateAnalyzer) AnalyzeTemplate(name string, siteGroupID int, content
 		AnalyzedAt:   currentTimestamp(),
 	}
 
-	// 更新缓存
+	// 再次获取锁并检查（双重检查锁定模式）
 	a.mu.Lock()
+	// 再次检查，防止在分析期间另一个 goroutine 已经更新
+	if existing, ok := a.analyses[key]; ok && existing.ContentHash == hash {
+		a.mu.Unlock()
+		log.Debug().
+			Str("template", name).
+			Int("site_group_id", siteGroupID).
+			Msg("Template already analyzed by another goroutine")
+		return existing
+	}
 	a.analyses[key] = analysis
 	a.mu.Unlock()
 
@@ -420,6 +431,20 @@ func (a *TemplateAnalyzer) GetMaxStats() *TemplateFuncStats {
 		RandomNumber:     a.maxStats.RandomNumber,
 		Now:              a.maxStats.Now,
 	}
+}
+
+// GetTargetQPS 获取目标 QPS（线程安全）
+func (a *TemplateAnalyzer) GetTargetQPS() int {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.targetQPS
+}
+
+// GetSafetyFactor 获取安全系数（线程安全）
+func (a *TemplateAnalyzer) GetSafetyFactor() float64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.safetyFactor
 }
 
 // GetStats 获取分析器统计信息
