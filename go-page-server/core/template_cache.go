@@ -15,10 +15,11 @@ import (
 // TemplateCache manages template content with permanent caching
 // Templates are loaded at startup and updated on-demand via API
 type TemplateCache struct {
-	db    *sqlx.DB
-	cache sync.Map // key: "name:groupID" -> *models.Template
-	count int64
-	mu    sync.RWMutex
+	db       *sqlx.DB
+	cache    sync.Map // key: "name:groupID" -> *models.Template
+	count    int64
+	mu       sync.RWMutex
+	analyzer *TemplateAnalyzer // 模板分析器
 }
 
 // NewTemplateCache creates a new template cache
@@ -44,11 +45,17 @@ func (tc *TemplateCache) LoadAll(ctx context.Context) error {
 
 	tc.mu.Lock()
 	tc.count = int64(len(templates))
+	analyzer := tc.analyzer
 	tc.mu.Unlock()
 
 	for i := range templates {
 		key := cacheKey(templates[i].Name, templates[i].SiteGroupID)
 		tc.cache.Store(key, &templates[i])
+
+		// 触发模板分析
+		if analyzer != nil {
+			tc.analyzeTemplate(&templates[i])
+		}
 	}
 
 	log.Info().
@@ -137,6 +144,15 @@ func (tc *TemplateCache) Reload(ctx context.Context, name string, siteGroupID in
 			// Template was deleted or disabled, remove from cache
 			key := cacheKey(name, siteGroupID)
 			tc.cache.Delete(key)
+
+			// 从分析器中移除
+			tc.mu.RLock()
+			analyzer := tc.analyzer
+			tc.mu.RUnlock()
+			if analyzer != nil {
+				analyzer.RemoveAnalysis(name, siteGroupID)
+			}
+
 			log.Info().
 				Str("name", name).
 				Int("site_group_id", siteGroupID).
@@ -148,6 +164,10 @@ func (tc *TemplateCache) Reload(ctx context.Context, name string, siteGroupID in
 
 	key := cacheKey(name, siteGroupID)
 	tc.cache.Store(key, tmpl)
+
+	// 触发模板分析
+	tc.analyzeTemplate(tmpl)
+
 	log.Info().
 		Str("name", name).
 		Int("site_group_id", siteGroupID).
@@ -178,6 +198,9 @@ func (tc *TemplateCache) ReloadByName(ctx context.Context, name string) error {
 	for i := range templates {
 		key := cacheKey(templates[i].Name, templates[i].SiteGroupID)
 		tc.cache.Store(key, &templates[i])
+
+		// 触发模板分析
+		tc.analyzeTemplate(&templates[i])
 	}
 
 	log.Info().
@@ -247,4 +270,40 @@ func (tc *TemplateCache) GetAllNames() []string {
 		result = append(result, name)
 	}
 	return result
+}
+
+// SetAnalyzer 设置模板分析器
+func (tc *TemplateCache) SetAnalyzer(analyzer *TemplateAnalyzer) {
+	tc.mu.Lock()
+	defer tc.mu.Unlock()
+	tc.analyzer = analyzer
+
+	log.Info().Msg("Template analyzer set on template cache")
+
+	// 分析所有已缓存的模板
+	tc.cache.Range(func(key, value interface{}) bool {
+		if tmpl, ok := value.(*models.Template); ok && tmpl != nil {
+			tc.analyzeTemplate(tmpl)
+		}
+		return true
+	})
+}
+
+// GetAnalyzer 获取模板分析器
+func (tc *TemplateCache) GetAnalyzer() *TemplateAnalyzer {
+	tc.mu.RLock()
+	defer tc.mu.RUnlock()
+	return tc.analyzer
+}
+
+// analyzeTemplate 分析单个模板（内部方法）
+func (tc *TemplateCache) analyzeTemplate(tmpl *models.Template) {
+	if tc.analyzer == nil || tmpl == nil {
+		return
+	}
+
+	// 在后台分析，避免阻塞
+	go func() {
+		tc.analyzer.AnalyzeTemplate(tmpl.Name, tmpl.SiteGroupID, tmpl.Content)
+	}()
 }

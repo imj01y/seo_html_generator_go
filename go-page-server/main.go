@@ -79,6 +79,15 @@ func main() {
 		log.Fatal().Err(err).Msg("Failed to load sites into cache")
 	}
 
+	// Initialize template analyzer
+	log.Info().Msg("Initializing template analyzer...")
+	templateAnalyzer := core.NewTemplateAnalyzer()
+	templateAnalyzer.SetTargetQPS(500)
+	templateAnalyzer.SetSafetyFactor(1.5)
+
+	// Set analyzer on template cache (before loading templates)
+	templateCache.SetAnalyzer(templateAnalyzer)
+
 	// Load all templates into cache at startup
 	log.Info().Msg("Loading all templates into cache...")
 	if err := templateCache.LoadAll(ctx); err != nil {
@@ -90,6 +99,18 @@ func main() {
 	startTime := time.Now()
 	funcsManager.InitPools()
 	log.Info().Dur("duration", time.Since(startTime)).Msg("Object pools initialized")
+
+	// Set up template analyzer callback for pool size recommendations
+	templateAnalyzer.OnConfigChanged(func(config *core.PoolSizeConfig) {
+		log.Info().
+			Int("cls_pool", config.ClsPoolSize).
+			Int("url_pool", config.URLPoolSize).
+			Int("keyword_emoji_pool", config.KeywordEmojiPoolSize).
+			Int("number_pool", config.NumberPoolSize).
+			Msg("Template analyzer recommends pool sizes")
+		// 注意：实际的池大小调整需要在 object_pool 中实现动态扩容功能
+		// 当前仅记录推荐值，用于监控和手动调整
+	})
 
 	// Load emojis from data/emojis.json
 	emojisPath := filepath.Join(projectRoot, "data", "emojis.json")
