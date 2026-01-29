@@ -28,9 +28,10 @@ type ObjectPool[T any] struct {
 	generator func() T
 
 	// 控制
-	stopCh chan struct{}
-	wg     sync.WaitGroup
-	paused atomic.Bool // 是否暂停补充
+	stopCh  chan struct{}
+	wg      sync.WaitGroup
+	paused  atomic.Bool // 是否暂停补充
+	stopped atomic.Bool // 是否已停止
 
 	// 统计
 	totalGenerated int64
@@ -83,17 +84,24 @@ func (p *ObjectPool[T]) Start() {
 // prefillParallel 并行预填充
 func (p *ObjectPool[T]) prefillParallel() {
 	var wg sync.WaitGroup
-	batchPerWorker := int(p.size) / p.numWorkers
+	size := int(p.size)
+	batchPerWorker := size / p.numWorkers
+	remainder := size % p.numWorkers
 
 	for w := 0; w < p.numWorkers; w++ {
 		wg.Add(1)
 		startIdx := w * batchPerWorker
-		go func(start int) {
+		workerBatch := batchPerWorker
+		// 最后一个 worker 处理剩余项
+		if w == p.numWorkers-1 {
+			workerBatch += remainder
+		}
+		go func(start, batch int) {
 			defer wg.Done()
-			for i := 0; i < batchPerWorker; i++ {
+			for i := 0; i < batch; i++ {
 				p.pool[start+i] = p.generator()
 			}
-		}(startIdx)
+		}(startIdx, workerBatch)
 	}
 
 	wg.Wait()
@@ -101,23 +109,32 @@ func (p *ObjectPool[T]) prefillParallel() {
 	atomic.AddInt64(&p.totalGenerated, p.size)
 }
 
-// Get 获取对象（无锁，O(1)）
+// Get 获取对象（加读锁保护，防止 Resize 期间数据竞争）
 func (p *ObjectPool[T]) Get() T {
+	p.mu.RLock()
+	pool := p.pool
+	size := p.size
+	p.mu.RUnlock()
+
 	idx := atomic.AddInt64(&p.head, 1) - 1
 	atomic.AddInt64(&p.totalConsumed, 1)
-	return p.pool[idx%p.size]
+	return pool[idx%size]
 }
 
 // Available 当前可用数量
 func (p *ObjectPool[T]) Available() int64 {
+	p.mu.RLock()
+	size := p.size
+	p.mu.RUnlock()
+
 	tail := atomic.LoadInt64(&p.tail)
 	head := atomic.LoadInt64(&p.head)
 	avail := tail - head
 	if avail < 0 {
 		avail = 0
 	}
-	if avail > p.size {
-		avail = p.size
+	if avail > size {
+		avail = size
 	}
 	return avail
 }
@@ -147,9 +164,11 @@ func (p *ObjectPool[T]) checkAndRefill() {
 	}
 
 	p.mu.RLock()
-	available := p.Available()
-	threshold := int64(float64(p.size) * p.lowWatermark)
+	size := p.size
 	p.mu.RUnlock()
+
+	available := p.Available()
+	threshold := int64(float64(size) * p.lowWatermark)
 
 	if available < threshold {
 		p.refillParallel()
@@ -161,33 +180,49 @@ func (p *ObjectPool[T]) checkAndRefill() {
 func (p *ObjectPool[T]) refillParallel() {
 	var wg sync.WaitGroup
 	batchPerWorker := p.refillBatch / p.numWorkers
+	remainder := p.refillBatch % p.numWorkers
 
 	for w := 0; w < p.numWorkers; w++ {
 		wg.Add(1)
-		go func() {
+		workerBatch := batchPerWorker
+		// 最后一个 worker 处理剩余项
+		if w == p.numWorkers-1 {
+			workerBatch += remainder
+		}
+		go func(batch int) {
 			defer wg.Done()
 
 			// 先生成到本地数组
-			items := make([]T, batchPerWorker)
-			for i := 0; i < batchPerWorker; i++ {
+			items := make([]T, batch)
+			for i := 0; i < batch; i++ {
 				items[i] = p.generator()
 			}
+
+			// 获取快照保护 Resize 期间的安全
+			p.mu.RLock()
+			pool := p.pool
+			size := p.size
+			p.mu.RUnlock()
 
 			// 批量写入池子
 			for _, item := range items {
 				idx := atomic.AddInt64(&p.tail, 1) - 1
-				p.pool[idx%p.size] = item
+				pool[idx%size] = item
 			}
 
-			atomic.AddInt64(&p.totalGenerated, int64(batchPerWorker))
-		}()
+			atomic.AddInt64(&p.totalGenerated, int64(batch))
+		}(workerBatch)
 	}
 
 	wg.Wait()
 }
 
-// Stop 停止池子
+// Stop 停止池子（安全支持重复调用）
 func (p *ObjectPool[T]) Stop() {
+	// 使用 CAS 确保只关闭一次
+	if !p.stopped.CompareAndSwap(false, true) {
+		return
+	}
 	close(p.stopCh)
 	p.wg.Wait()
 	log.Info().Str("pool", p.name).Msg("Object pool stopped")
@@ -249,14 +284,20 @@ func (p *ObjectPool[T]) Warmup(targetPercent float64) {
 	// 多协程并行预热
 	var wg sync.WaitGroup
 	batchPerWorker := int(needToGenerate) / p.numWorkers
+	remainder := int(needToGenerate) % p.numWorkers
 	if batchPerWorker < 1 {
 		batchPerWorker = 1
+		remainder = 0
 	}
 
 	for w := 0; w < p.numWorkers && int64(w*batchPerWorker) < needToGenerate; w++ {
 		wg.Add(1)
 		workerBatch := batchPerWorker
-		if int64((w+1)*batchPerWorker) > needToGenerate {
+		// 最后一个 worker 处理剩余项
+		if w == p.numWorkers-1 {
+			workerBatch += remainder
+		}
+		if int64((w+1)*batchPerWorker) > needToGenerate && w != p.numWorkers-1 {
 			workerBatch = int(needToGenerate) - w*batchPerWorker
 		}
 		go func(batch int) {
@@ -267,13 +308,15 @@ func (p *ObjectPool[T]) Warmup(targetPercent float64) {
 				items[i] = p.generator()
 			}
 
+			// 获取快照保护 Resize 期间的安全
 			p.mu.RLock()
+			pool := p.pool
 			currentSize := p.size
 			p.mu.RUnlock()
 
 			for _, item := range items {
 				idx := atomic.AddInt64(&p.tail, 1) - 1
-				p.pool[idx%currentSize] = item
+				pool[idx%currentSize] = item
 			}
 
 			atomic.AddInt64(&p.totalGenerated, int64(batch))
