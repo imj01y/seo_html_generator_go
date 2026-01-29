@@ -30,10 +30,15 @@ type ObjectPool[T any] struct {
 	// 控制
 	stopCh chan struct{}
 	wg     sync.WaitGroup
+	paused atomic.Bool // 是否暂停补充
 
 	// 统计
 	totalGenerated int64
 	totalConsumed  int64
+	refillCount    atomic.Int64 // 补充次数统计
+
+	// 用于 Resize 的互斥锁
+	mu sync.RWMutex
 }
 
 // PoolConfig 池配置
@@ -136,11 +141,19 @@ func (p *ObjectPool[T]) refillLoop() {
 
 // checkAndRefill 检查并补充
 func (p *ObjectPool[T]) checkAndRefill() {
+	// 如果暂停则跳过补充
+	if p.paused.Load() {
+		return
+	}
+
+	p.mu.RLock()
 	available := p.Available()
 	threshold := int64(float64(p.size) * p.lowWatermark)
+	p.mu.RUnlock()
 
 	if available < threshold {
 		p.refillParallel()
+		p.refillCount.Add(1)
 	}
 }
 
@@ -182,12 +195,178 @@ func (p *ObjectPool[T]) Stop() {
 
 // Stats 返回统计信息
 func (p *ObjectPool[T]) Stats() map[string]interface{} {
+	p.mu.RLock()
+	size := p.size
+	p.mu.RUnlock()
+
+	available := p.Available()
 	return map[string]interface{}{
 		"name":            p.name,
-		"size":            p.size,
-		"available":       p.Available(),
+		"size":            size,
+		"available":       available,
 		"total_generated": atomic.LoadInt64(&p.totalGenerated),
 		"total_consumed":  atomic.LoadInt64(&p.totalConsumed),
-		"utilization":     float64(p.Available()) / float64(p.size) * 100,
+		"utilization":     float64(available) / float64(size) * 100,
+		"paused":          p.paused.Load(),
+		"refill_count":    p.refillCount.Load(),
 	}
+}
+
+// Pause 暂停后台补充
+func (p *ObjectPool[T]) Pause() {
+	p.paused.Store(true)
+	log.Info().Str("pool", p.name).Msg("Object pool refill paused")
+}
+
+// Resume 恢复后台补充
+func (p *ObjectPool[T]) Resume() {
+	p.paused.Store(false)
+	log.Info().Str("pool", p.name).Msg("Object pool refill resumed")
+}
+
+// Warmup 预热到指定比例
+func (p *ObjectPool[T]) Warmup(targetPercent float64) {
+	if targetPercent <= 0 || targetPercent > 1 {
+		log.Warn().Str("pool", p.name).Float64("targetPercent", targetPercent).Msg("Invalid warmup target percent, should be between 0 and 1")
+		return
+	}
+
+	p.mu.RLock()
+	size := p.size
+	p.mu.RUnlock()
+
+	targetCount := int64(float64(size) * targetPercent)
+	currentAvailable := p.Available()
+
+	if currentAvailable >= targetCount {
+		log.Info().Str("pool", p.name).Int64("current", currentAvailable).Int64("target", targetCount).Msg("Pool already warmed up")
+		return
+	}
+
+	needToGenerate := targetCount - currentAvailable
+	log.Info().Str("pool", p.name).Int64("need", needToGenerate).Float64("targetPercent", targetPercent).Msg("Warming up pool")
+
+	// 多协程并行预热
+	var wg sync.WaitGroup
+	batchPerWorker := int(needToGenerate) / p.numWorkers
+	if batchPerWorker < 1 {
+		batchPerWorker = 1
+	}
+
+	for w := 0; w < p.numWorkers && int64(w*batchPerWorker) < needToGenerate; w++ {
+		wg.Add(1)
+		workerBatch := batchPerWorker
+		if int64((w+1)*batchPerWorker) > needToGenerate {
+			workerBatch = int(needToGenerate) - w*batchPerWorker
+		}
+		go func(batch int) {
+			defer wg.Done()
+
+			items := make([]T, batch)
+			for i := 0; i < batch; i++ {
+				items[i] = p.generator()
+			}
+
+			p.mu.RLock()
+			currentSize := p.size
+			p.mu.RUnlock()
+
+			for _, item := range items {
+				idx := atomic.AddInt64(&p.tail, 1) - 1
+				p.pool[idx%currentSize] = item
+			}
+
+			atomic.AddInt64(&p.totalGenerated, int64(batch))
+		}(workerBatch)
+	}
+
+	wg.Wait()
+	log.Info().Str("pool", p.name).Int64("available", p.Available()).Msg("Pool warmup completed")
+}
+
+// Clear 清空池（重置 head/tail）
+func (p *ObjectPool[T]) Clear() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	atomic.StoreInt64(&p.head, 0)
+	atomic.StoreInt64(&p.tail, 0)
+
+	log.Info().Str("pool", p.name).Msg("Object pool cleared")
+}
+
+// Resize 调整池大小，复制现有数据
+func (p *ObjectPool[T]) Resize(newSize int) {
+	if newSize <= 0 {
+		log.Warn().Str("pool", p.name).Int("newSize", newSize).Msg("Invalid resize size, must be positive")
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	oldSize := p.size
+	if int64(newSize) == oldSize {
+		return
+	}
+
+	log.Info().Str("pool", p.name).Int64("oldSize", oldSize).Int("newSize", newSize).Msg("Resizing pool")
+
+	// 创建新的池
+	newPool := make([]T, newSize)
+
+	// 获取当前有效数据
+	head := atomic.LoadInt64(&p.head)
+	tail := atomic.LoadInt64(&p.tail)
+	available := tail - head
+	if available < 0 {
+		available = 0
+	}
+	if available > oldSize {
+		available = oldSize
+	}
+
+	// 复制现有数据到新池
+	copyCount := available
+	if copyCount > int64(newSize) {
+		copyCount = int64(newSize)
+	}
+
+	for i := int64(0); i < copyCount; i++ {
+		srcIdx := (head + i) % oldSize
+		newPool[i] = p.pool[srcIdx]
+	}
+
+	// 更新池
+	p.pool = newPool
+	p.size = int64(newSize)
+	atomic.StoreInt64(&p.head, 0)
+	atomic.StoreInt64(&p.tail, copyCount)
+
+	log.Info().Str("pool", p.name).Int64("copied", copyCount).Int("newSize", newSize).Msg("Pool resize completed")
+}
+
+// Capacity 返回容量
+func (p *ObjectPool[T]) Capacity() int64 {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.size
+}
+
+// Count 返回当前数量（同 Available）
+func (p *ObjectPool[T]) Count() int64 {
+	return p.Available()
+}
+
+// UsagePercent 返回使用率百分比
+func (p *ObjectPool[T]) UsagePercent() float64 {
+	p.mu.RLock()
+	size := p.size
+	p.mu.RUnlock()
+
+	available := p.Available()
+	if size == 0 {
+		return 0
+	}
+	return float64(available) / float64(size) * 100
 }
