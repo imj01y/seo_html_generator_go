@@ -112,6 +112,43 @@ func main() {
 		// 当前仅记录推荐值，用于监控和手动调整
 	})
 
+	// Initialize data pool manager
+	log.Info().Msg("Initializing data pool manager...")
+	dataPoolManager := core.NewDataPoolManager(db.DB, 5*time.Minute)
+
+	// Load all data pools
+	loadCtx, loadCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := dataPoolManager.LoadAll(loadCtx); err != nil {
+		log.Warn().Err(err).Msg("Failed to load some data pools")
+	}
+	loadCancel()
+
+	// Start auto-refresh
+	dataPoolManager.StartAutoRefresh()
+
+	// SEO analysis
+	seoAnalysis := dataPoolManager.AnalyzeSEO(templateAnalyzer)
+	if seoAnalysis != nil {
+		log.Info().
+			Str("status", string(seoAnalysis.OverallRating)).
+			Msg("Data pool SEO analysis completed")
+
+		// Log recommendations
+		recommendations := dataPoolManager.GetRecommendations(templateAnalyzer)
+		for poolName, rec := range recommendations {
+			if rec.Status != core.SEORatingExcellent {
+				log.Info().
+					Str("pool", poolName).
+					Int("current", rec.CurrentCount).
+					Int("calls_per_page", rec.CallsPerPage).
+					Float64("repeat_rate", rec.RepeatRate).
+					Str("status", string(rec.Status)).
+					Str("action", rec.Action).
+					Msg("Pool recommendation")
+			}
+		}
+	}
+
 	// Load emojis from data/emojis.json
 	emojisPath := filepath.Join(projectRoot, "data", "emojis.json")
 	emojiManager := core.NewEmojiManager()
@@ -280,6 +317,10 @@ func main() {
 	// Stop object pools
 	funcsManager.StopPools()
 	log.Info().Msg("Object pools stopped")
+
+	// Stop data pool auto-refresh
+	dataPoolManager.StopAutoRefresh()
+	log.Info().Msg("Data pool auto-refresh stopped")
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
