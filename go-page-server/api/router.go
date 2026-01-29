@@ -91,6 +91,11 @@ func poolStatsHandler(deps *Dependencies) gin.HandlerFunc {
 // poolPresetsHandler GET /presets - 获取所有预设配置
 func poolPresetsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
 		presets := core.GetAllPoolPresets()
 		maxStats := deps.TemplateAnalyzer.GetMaxStats()
 
@@ -124,6 +129,11 @@ func poolPresetsHandler(deps *Dependencies) gin.HandlerFunc {
 // poolPresetByNameHandler GET/POST /preset/:name - 获取或应用预设
 func poolPresetByNameHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
 		name := c.Param("name")
 
 		preset, ok := core.GetPoolPreset(name)
