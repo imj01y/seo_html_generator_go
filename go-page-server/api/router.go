@@ -3,6 +3,7 @@ package api
 
 import (
 	"net/http"
+	"strconv"
 
 	"go-page-server/core"
 
@@ -293,33 +294,138 @@ func poolResumeHandler(deps *Dependencies) gin.HandlerFunc {
 	}
 }
 
-// ============ Template Analysis Handlers (placeholders) ============
+// ============ Template Analysis Handlers ============
 
+// templateAnalysisListHandler GET /analysis - 获取所有模板分析结果
 func templateAnalysisListHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.3
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		templates := deps.TemplateAnalyzer.GetAllAnalyses()
+		maxStats := deps.TemplateAnalyzer.GetMaxStats()
+		stats := deps.TemplateAnalyzer.GetStats()
+
+		core.Success(c, gin.H{
+			"templates": templates,
+			"max_stats": maxStats,
+			"stats":     stats,
+		})
 	}
 }
 
+// templateAnalysisByIDHandler GET /analysis/:id - 获取单个模板分析结果
+// :id 格式为 "templateName:siteGroupID"
 func templateAnalysisByIDHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.3
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		idParam := c.Param("id")
+
+		// 尝试解析为数字 ID (siteGroupID)
+		siteGroupID, err := strconv.Atoi(idParam)
+		if err != nil {
+			// 如果不是数字，可能是 "name:siteGroupID" 格式
+			// 这里假设 id 是 siteGroupID，需要从查询参数获取 name
+			name := c.Query("name")
+			if name == "" {
+				core.FailWithMessage(c, core.ErrInvalidParam, "需要提供模板名称 (name 查询参数) 或有效的站点组 ID")
+				return
+			}
+			// 尝试再次解析
+			siteGroupID, err = strconv.Atoi(idParam)
+			if err != nil {
+				core.FailWithMessage(c, core.ErrInvalidParam, "无效的站点组 ID")
+				return
+			}
+			analysis := deps.TemplateAnalyzer.GetAnalysis(name, siteGroupID)
+			if analysis == nil {
+				core.FailWithCode(c, core.ErrTemplateNotFound)
+				return
+			}
+			core.Success(c, analysis)
+			return
+		}
+
+		// id 是 siteGroupID，需要从查询参数获取 name
+		name := c.Query("name")
+		if name == "" {
+			core.FailWithMessage(c, core.ErrInvalidParam, "需要提供模板名称 (name 查询参数)")
+			return
+		}
+
+		analysis := deps.TemplateAnalyzer.GetAnalysis(name, siteGroupID)
+		if analysis == nil {
+			core.FailWithCode(c, core.ErrTemplateNotFound)
+			return
+		}
+
+		core.Success(c, analysis)
 	}
 }
 
+// templateAnalyzeHandler POST /analyze/:id - 分析指定模板
+// :id 是站点组 ID，需要查询参数 name
 func templateAnalyzeHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.3
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+		if deps.TemplateCache == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		idParam := c.Param("id")
+		siteGroupID, err := strconv.Atoi(idParam)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, "无效的站点组 ID")
+			return
+		}
+
+		name := c.Query("name")
+		if name == "" {
+			core.FailWithMessage(c, core.ErrInvalidParam, "需要提供模板名称 (name 查询参数)")
+			return
+		}
+
+		// 从缓存获取模板
+		tpl := deps.TemplateCache.Get(name, siteGroupID)
+		if tpl == nil {
+			core.FailWithCode(c, core.ErrTemplateNotFound)
+			return
+		}
+
+		// 执行分析
+		analysis := deps.TemplateAnalyzer.AnalyzeTemplate(tpl.Name, tpl.SiteGroupID, tpl.Content)
+
+		core.Success(c, analysis)
 	}
 }
 
+// templatePoolConfigHandler GET /pool-config - 获取推荐的池配置
 func templatePoolConfigHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.3
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		config := deps.TemplateAnalyzer.CalculatePoolSize()
+		memoryEstimate := core.EstimateMemoryUsage(config)
+		memoryHuman := core.FormatMemorySize(memoryEstimate)
+
+		core.Success(c, gin.H{
+			"config":          config,
+			"memory_estimate": memoryEstimate,
+			"memory_human":    memoryHuman,
+		})
 	}
 }
 
