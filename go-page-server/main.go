@@ -293,6 +293,11 @@ func main() {
 		apiGroup.GET("/log/spider", logHandler.LogSpiderVisit)
 	}
 
+	// 初始化监控服务
+	log.Info().Msg("Initializing monitor service...")
+	monitor := core.NewMonitor(10*time.Second, 360) // 10秒采集一次，保留1小时历史
+	monitor.Start()
+
 	// Configure Admin API routes
 	deps := &api.Dependencies{
 		TemplateAnalyzer: templateAnalyzer,
@@ -300,6 +305,7 @@ func main() {
 		DataPoolManager:  dataPoolManager,
 		Scheduler:        scheduler,
 		TemplateCache:    templateCache,
+		Monitor:          monitor,
 	}
 	api.SetupRouter(r, deps)
 
@@ -338,6 +344,10 @@ func main() {
 	}
 
 	log.Info().Msg("Shutting down server...")
+
+	// 停止监控服务
+	monitor.Stop()
+	log.Info().Msg("Monitor stopped")
 
 	// Stop object pools
 	funcsManager.StopPools()
