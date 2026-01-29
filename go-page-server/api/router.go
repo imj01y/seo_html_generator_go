@@ -23,6 +23,7 @@ type Dependencies struct {
 	DataPoolManager  *core.DataPoolManager
 	Scheduler        *core.Scheduler
 	TemplateCache    *core.TemplateCache
+	Monitor          *core.Monitor
 }
 
 // SetupRouter configures all API routes
@@ -78,6 +79,10 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	{
 		system.GET("/info", systemInfoHandler(deps))
 		system.GET("/health", systemHealthHandler(deps))
+		system.GET("/metrics", metricsHandler(deps))
+		system.GET("/metrics/history", metricsHistoryHandler(deps))
+		system.GET("/alerts", alertsHandler(deps))
+		system.GET("/monitor", monitorStatsHandler(deps))
 	}
 }
 
@@ -819,5 +824,94 @@ func systemHealthHandler(deps *Dependencies) gin.HandlerFunc {
 			"time":    time.Now().Format(time.RFC3339),
 			"version": "1.0.0",
 		})
+	}
+}
+
+// ============ Monitor Handlers ============
+
+// metricsHandler GET /metrics - 获取实时指标
+func metricsHandler(deps *Dependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if deps.Monitor == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		snapshot := deps.Monitor.GetCurrentSnapshot()
+		core.Success(c, snapshot)
+	}
+}
+
+// metricsHistoryHandler GET /metrics/history - 获取历史指标
+func metricsHistoryHandler(deps *Dependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if deps.Monitor == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		// 获取 limit 参数，默认 60
+		limit := 60
+		if limitParam := c.Query("limit"); limitParam != "" {
+			if l, err := strconv.Atoi(limitParam); err == nil && l > 0 {
+				limit = l
+			}
+		}
+
+		history := deps.Monitor.GetHistory(limit)
+		core.Success(c, gin.H{
+			"history": history,
+			"total":   len(history),
+			"limit":   limit,
+		})
+	}
+}
+
+// alertsHandler GET /alerts - 获取告警列表
+func alertsHandler(deps *Dependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if deps.Monitor == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		// 获取 limit 参数，默认 50
+		limit := 50
+		if limitParam := c.Query("limit"); limitParam != "" {
+			if l, err := strconv.Atoi(limitParam); err == nil && l > 0 {
+				limit = l
+			}
+		}
+
+		// 检查是否只获取未解决的告警
+		var alerts []core.Alert
+		if c.Query("unresolved") == "true" {
+			alerts = deps.Monitor.GetUnresolvedAlerts()
+			// 如果需要限制数量
+			if limit > 0 && len(alerts) > limit {
+				alerts = alerts[:limit]
+			}
+		} else {
+			alerts = deps.Monitor.GetAlerts(limit)
+		}
+
+		core.Success(c, gin.H{
+			"alerts": alerts,
+			"total":  len(alerts),
+			"limit":  limit,
+		})
+	}
+}
+
+// monitorStatsHandler GET /monitor - 获取监控统计
+func monitorStatsHandler(deps *Dependencies) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if deps.Monitor == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		stats := deps.Monitor.GetStats()
+		core.Success(c, stats)
 	}
 }
