@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"net/http"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -11,6 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+// startTime 记录服务启动时间
+var startTime = time.Now()
 
 // Dependencies holds all dependencies required by the API handlers
 type Dependencies struct {
@@ -676,18 +680,144 @@ func taskDisableHandler(deps *Dependencies) gin.HandlerFunc {
 	}
 }
 
-// ============ System Info Handlers (placeholders) ============
+// ============ System Info Handlers ============
 
+// systemInfoHandler GET /info - 获取系统信息
 func systemInfoHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.6
-		c.JSON(200, gin.H{"message": "not implemented"})
+		// 获取内存统计
+		var mem runtime.MemStats
+		runtime.ReadMemStats(&mem)
+
+		// 计算运行时长
+		uptime := time.Since(startTime)
+
+		// 构建响应数据
+		info := gin.H{
+			"runtime": gin.H{
+				"go_version":   runtime.Version(),
+				"num_goroutine": runtime.NumGoroutine(),
+				"num_cpu":      runtime.NumCPU(),
+				"gomaxprocs":   runtime.GOMAXPROCS(0),
+			},
+			"memory": gin.H{
+				"alloc":       core.FormatMemorySize(int64(mem.Alloc)),
+				"total_alloc": core.FormatMemorySize(int64(mem.TotalAlloc)),
+				"sys":         core.FormatMemorySize(int64(mem.Sys)),
+				"heap_alloc":  core.FormatMemorySize(int64(mem.HeapAlloc)),
+				"heap_sys":    core.FormatMemorySize(int64(mem.HeapSys)),
+				"gc_cycles":   mem.NumGC,
+			},
+			"uptime": gin.H{
+				"start_time": startTime.Format(time.RFC3339),
+				"duration":   uptime.String(),
+				"seconds":    int64(uptime.Seconds()),
+			},
+		}
+
+		// 获取对象池统计
+		if deps.TemplateFuncs != nil {
+			info["pools"] = deps.TemplateFuncs.GetPoolStats()
+		}
+
+		// 获取数据池统计
+		if deps.DataPoolManager != nil {
+			info["data"] = deps.DataPoolManager.GetStats()
+		}
+
+		// 获取模板分析统计
+		if deps.TemplateAnalyzer != nil {
+			info["templates"] = deps.TemplateAnalyzer.GetStats()
+		}
+
+		core.Success(c, info)
 	}
 }
 
+// systemHealthHandler GET /health - 获取系统健康状态
 func systemHealthHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.6
-		c.JSON(200, gin.H{"message": "not implemented"})
+		status := "healthy"
+		checks := make(map[string]gin.H)
+
+		// 检查对象池
+		if deps.TemplateFuncs != nil {
+			poolStats := deps.TemplateFuncs.GetPoolStats()
+			if poolStats == nil {
+				checks["object_pool"] = gin.H{
+					"status":  "unhealthy",
+					"message": "对象池统计为空",
+				}
+				status = "degraded"
+			} else {
+				checks["object_pool"] = gin.H{
+					"status":  "healthy",
+					"message": "对象池正常运行",
+				}
+			}
+		} else {
+			checks["object_pool"] = gin.H{
+				"status":  "unhealthy",
+				"message": "对象池管理器未初始化",
+			}
+			status = "degraded"
+		}
+
+		// 检查数据池
+		if deps.DataPoolManager != nil {
+			dataStats := deps.DataPoolManager.GetStats()
+			if dataStats.Keywords == 0 && dataStats.Images == 0 {
+				checks["data_pool"] = gin.H{
+					"status":  "degraded",
+					"message": "数据池为空（关键词和图片数量为 0）",
+				}
+				status = "degraded"
+			} else {
+				checks["data_pool"] = gin.H{
+					"status":  "healthy",
+					"message": "数据池正常运行",
+					"keywords": dataStats.Keywords,
+					"images":   dataStats.Images,
+				}
+			}
+		} else {
+			checks["data_pool"] = gin.H{
+				"status":  "unhealthy",
+				"message": "数据池管理器未初始化",
+			}
+			status = "degraded"
+		}
+
+		// 检查模板分析器
+		if deps.TemplateAnalyzer != nil {
+			templateStats := deps.TemplateAnalyzer.GetStats()
+			templatesAnalyzed, ok := templateStats["templates_analyzed"].(int)
+			if !ok || templatesAnalyzed == 0 {
+				checks["templates"] = gin.H{
+					"status":  "degraded",
+					"message": "未分析任何模板",
+				}
+				status = "degraded"
+			} else {
+				checks["templates"] = gin.H{
+					"status":  "healthy",
+					"message": "模板分析器正常运行",
+					"count":   templatesAnalyzed,
+				}
+			}
+		} else {
+			checks["templates"] = gin.H{
+				"status":  "unhealthy",
+				"message": "模板分析器未初始化",
+			}
+			status = "degraded"
+		}
+
+		core.Success(c, gin.H{
+			"status":  status,
+			"checks":  checks,
+			"time":    time.Now().Format(time.RFC3339),
+			"version": "1.0.0",
+		})
 	}
 }
