@@ -1,0 +1,110 @@
+# Spider Detection Configuration
+# This file defines spider/crawler detection rules with hot-reload support
+
+# Cache configuration for User-Agent detection results
+cache:
+  enabled: true
+  max_size: 10000      # Maximum number of cached entries
+  ttl_seconds: 3600    # Time-to-live for cache entries (1 hour)
+
+# Spider definitions
+# Each spider has:
+#   - name: Display name (Chinese name for display)
+#   - patterns: List of regex patterns to match User-Agent
+#   - enabled: Whether this spider detection is active
+#   - dns_domains: Domains for DNS reverse verification (optional)
+spiders:
+  baidu:
+    name: "百度蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)Baiduspider"
+      - "(?i)Baidu-YunGuanCe"
+    dns_domains:
+      - "baidu.com"
+      - "baidu.jp"
+
+  google:
+    name: "谷歌蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)Googlebot"
+      - "(?i)Google-InspectionTool"
+      - "(?i)Mediapartners-Google"
+      - "(?i)AdsBot-Google"
+    dns_domains:
+      - "googlebot.com"
+      - "google.com"
+
+  bing:
+    name: "必应蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)bingbot"
+      - "(?i)msnbot"
+      - "(?i)BingPreview"
+    dns_domains:
+      - "search.msn.com"
+
+  sogou:
+    name: "搜狗蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)Sogou\\s*(web\\s*)?spider"
+      - "(?i)Sogou\\s*inst\\s*spider"
+    dns_domains:
+      - "sogou.com"
+
+  360:
+    name: "360蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)360Spider"
+      - "(?i)HaosouSpider"
+      - "(?i)360JK"
+    dns_domains:
+      - "360.cn"
+      - "so.com"
+
+  shenma:
+    name: "神马蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)YisouSpider"
+      - "(?i)Yisouspider"
+    dns_domains:
+      - "sm.cn"
+
+  bytedance:
+    name: "字节跳动蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)Bytespider"
+      - "(?i)Bytedance"
+    dns_domains:
+      - "bytedance.com"
+
+  yandex:
+    name: "Yandex蜘蛛"
+    enabled: true
+    patterns:
+      - "(?i)YandexBot"
+      - "(?i)YandexImages"
+      - "(?i)YandexMobileBot"
+    dns_domains:
+      - "yandex.ru"
+      - "yandex.com"
+      - "yandex.net"
+
+  other:
+    name: "其他爬虫"
+    enabled: true
+    patterns:
+      - "(?i)Applebot"
+      - "(?i)DuckDuckBot"
+      - "(?i)facebookexternalhit"
+      - "(?i)Twitterbot"
+      - "(?i)LinkedInBot"
+      - "(?i)Slurp"
+      - "(?i)ia_archiver"
+    dns_domains: []
