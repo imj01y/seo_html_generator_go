@@ -2,8 +2,10 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strconv"
+	"time"
 
 	"go-page-server/core"
 
@@ -408,33 +410,91 @@ func templatePoolConfigHandler(deps *Dependencies) gin.HandlerFunc {
 	}
 }
 
-// ============ Data Pool Handlers (placeholders) ============
+// ============ Data Pool Handlers ============
 
+// dataStatsHandler GET /stats - 获取数据池详细统计
 func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.4
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.DataPoolManager == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		stats := deps.DataPoolManager.GetDetailedStats()
+		core.Success(c, stats)
 	}
 }
 
+// dataSEOHandler GET /seo - 获取 SEO 分析结果
 func dataSEOHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.4
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.DataPoolManager == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		analysis := deps.DataPoolManager.AnalyzeSEO(deps.TemplateAnalyzer)
+		core.Success(c, analysis)
 	}
 }
 
+// dataRecommendationsHandler GET /recommendations - 获取数据池优化建议
 func dataRecommendationsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.4
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.DataPoolManager == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+		if deps.TemplateAnalyzer == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		recommendations := deps.DataPoolManager.GetRecommendations(deps.TemplateAnalyzer)
+		core.Success(c, recommendations)
 	}
 }
 
+// dataRefreshRequest 数据刷新请求
+type dataRefreshRequest struct {
+	Pool string `json:"pool" binding:"required,oneof=all keywords images titles contents"`
+}
+
+// dataRefreshHandler POST /refresh - 刷新数据池
 func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.4
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.DataPoolManager == nil {
+			core.FailWithCode(c, core.ErrInternalServer)
+			return
+		}
+
+		var req dataRefreshRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, err.Error())
+			return
+		}
+
+		// 创建带超时的上下文
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		defer cancel()
+
+		// 执行刷新
+		if err := deps.DataPoolManager.Refresh(ctx, req.Pool); err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+			return
+		}
+
+		// 获取最新统计并返回
+		stats := deps.DataPoolManager.GetStats()
+		core.Success(c, gin.H{
+			"message": "数据池刷新成功",
+			"pool":    req.Pool,
+			"stats":   stats,
+		})
 	}
 }
 
