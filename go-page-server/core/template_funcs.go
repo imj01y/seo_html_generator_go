@@ -406,6 +406,7 @@ func (m *TemplateFuncsManager) WarmupPools(targetPercent float64) {
 	if m.keywordEmojiPool != nil {
 		m.keywordEmojiPool.Warmup(targetPercent)
 	}
+	log.Info().Float64("target_percent", targetPercent).Msg("All pools warmup started")
 }
 
 // ClearPools 清空所有池
@@ -433,6 +434,7 @@ func (m *TemplateFuncsManager) PausePools() {
 	if m.keywordEmojiPool != nil {
 		m.keywordEmojiPool.Pause()
 	}
+	log.Info().Msg("All pools paused")
 }
 
 // ResumePools 恢复所有池的补充
@@ -446,6 +448,7 @@ func (m *TemplateFuncsManager) ResumePools() {
 	if m.keywordEmojiPool != nil {
 		m.keywordEmojiPool.Resume()
 	}
+	log.Info().Msg("All pools resumed")
 }
 
 // GetPoolStats 获取所有池的统计信息
