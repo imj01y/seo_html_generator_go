@@ -133,6 +133,8 @@ func buildFileWriter(cfg *LogConfig) (io.Writer, error) {
 
 // RequestLogger returns a gin middleware for request logging
 func RequestLogger() gin.HandlerFunc {
+	metrics := GetMetrics() // 获取全局指标实例
+
 	return func(c *gin.Context) {
 		// Generate request ID
 		requestID := generateRequestID()
@@ -153,6 +155,11 @@ func RequestLogger() gin.HandlerFunc {
 
 		// Calculate latency
 		latency := time.Since(startTime)
+
+		// 记录指标
+		status := c.Writer.Status()
+		success := status < 400
+		metrics.RecordRequest(success, latency.Nanoseconds())
 
 		// Get status code
 		statusCode := c.Writer.Status()
