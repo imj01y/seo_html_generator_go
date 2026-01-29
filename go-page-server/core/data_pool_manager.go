@@ -649,9 +649,15 @@ func getRecommendation(dataType string, currentCount, callsPerPage int) PoolReco
 
 	// 目标重复率 5%
 	rec.RecommendedMin = GetRecommendedPoolSize(callsPerPage, 5)
-	rec.RepeatRate = float64(callsPerPage) / float64(currentCount) * 100
-	if rec.RepeatRate > 100 {
+
+	// 计算重复率，处理 currentCount=0 的边界情况
+	if currentCount == 0 {
 		rec.RepeatRate = 100
+	} else {
+		rec.RepeatRate = float64(callsPerPage) / float64(currentCount) * 100
+		if rec.RepeatRate > 100 {
+			rec.RepeatRate = 100
+		}
 	}
 
 	switch {
