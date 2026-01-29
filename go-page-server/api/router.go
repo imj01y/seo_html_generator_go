@@ -317,7 +317,7 @@ func templateAnalysisListHandler(deps *Dependencies) gin.HandlerFunc {
 }
 
 // templateAnalysisByIDHandler GET /analysis/:id - 获取单个模板分析结果
-// :id 格式为 "templateName:siteGroupID"
+// :id 是站点组 ID，需要查询参数 name
 func templateAnalysisByIDHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if deps.TemplateAnalyzer == nil {
@@ -326,33 +326,12 @@ func templateAnalysisByIDHandler(deps *Dependencies) gin.HandlerFunc {
 		}
 
 		idParam := c.Param("id")
-
-		// 尝试解析为数字 ID (siteGroupID)
 		siteGroupID, err := strconv.Atoi(idParam)
 		if err != nil {
-			// 如果不是数字，可能是 "name:siteGroupID" 格式
-			// 这里假设 id 是 siteGroupID，需要从查询参数获取 name
-			name := c.Query("name")
-			if name == "" {
-				core.FailWithMessage(c, core.ErrInvalidParam, "需要提供模板名称 (name 查询参数) 或有效的站点组 ID")
-				return
-			}
-			// 尝试再次解析
-			siteGroupID, err = strconv.Atoi(idParam)
-			if err != nil {
-				core.FailWithMessage(c, core.ErrInvalidParam, "无效的站点组 ID")
-				return
-			}
-			analysis := deps.TemplateAnalyzer.GetAnalysis(name, siteGroupID)
-			if analysis == nil {
-				core.FailWithCode(c, core.ErrTemplateNotFound)
-				return
-			}
-			core.Success(c, analysis)
+			core.FailWithMessage(c, core.ErrInvalidParam, "无效的站点组 ID")
 			return
 		}
 
-		// id 是 siteGroupID，需要从查询参数获取 name
 		name := c.Query("name")
 		if name == "" {
 			core.FailWithMessage(c, core.ErrInvalidParam, "需要提供模板名称 (name 查询参数)")
