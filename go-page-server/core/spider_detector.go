@@ -21,6 +21,7 @@ type SpiderInfo struct {
 // cacheEntry represents a cached detection result with TTL
 type cacheEntry struct {
 	spiderType string
+	spiderName string // Store spider name to avoid re-querying rules after hot-reload
 	expireAt   time.Time
 }
 
@@ -92,25 +93,10 @@ func (sd *SpiderDetector) onConfigChange(newConfig *SpiderConfig) {
 	sd.cacheEnabled = newConfig.Cache.Enabled
 	sd.cacheTTL = time.Duration(newConfig.Cache.TTLSeconds) * time.Second
 
-	// Recreate cache if size changed
-	if sd.cacheEnabled && sd.cache != nil {
-		newSize := newConfig.Cache.MaxSize
-		if newSize <= 0 {
-			newSize = 10000
-		}
-		// Only recreate if size changed significantly
-		if newSize != sd.cache.Len() {
-			newCache, err := lru.New[string, *cacheEntry](newSize)
-			if err != nil {
-				log.Error().Err(err).Msg("Failed to recreate cache on config change")
-				return
-			}
-			sd.cache = newCache
-			log.Info().Int("new_size", newSize).Msg("Cache recreated with new size")
-		}
-	}
-
 	// Clear cache on config change to ensure new rules take effect
+	// Note: We always purge the cache when configuration changes, rather than trying to
+	// compare cache capacity (golang-lru doesn't expose a Cap() method). This ensures
+	// that any changes to spider rules are immediately reflected in detection results.
 	if sd.cache != nil {
 		sd.cache.Purge()
 		log.Info().Msg("Cache purged due to configuration change")
@@ -159,14 +145,13 @@ func (sd *SpiderDetector) Detect(userAgent string) *models.DetectionResult {
 						UserAgent: userAgent,
 					}
 				}
-				rule := sd.configLoader.GetRuleByType(entry.spiderType)
-				if rule != nil {
-					return &models.DetectionResult{
-						IsSpider:   true,
-						SpiderType: entry.spiderType,
-						SpiderName: rule.Name,
-						UserAgent:  userAgent,
-					}
+				// Use cached spiderName directly to avoid nil pointer risk after hot-reload
+				// The cache is purged when configuration changes, so we don't need to re-query rules
+				return &models.DetectionResult{
+					IsSpider:   true,
+					SpiderType: entry.spiderType,
+					SpiderName: entry.spiderName,
+					UserAgent:  userAgent,
 				}
 			}
 			// Entry expired, remove it
@@ -186,10 +171,11 @@ func (sd *SpiderDetector) Detect(userAgent string) *models.DetectionResult {
 		}
 		for _, pattern := range rule.Patterns {
 			if pattern.MatchString(userAgent) {
-				// Cache the result
+				// Cache the result with spider name to avoid re-querying rules later
 				if cacheEnabled && cache != nil {
 					cache.Add(userAgent, &cacheEntry{
 						spiderType: rule.Type,
+						spiderName: rule.Name,
 						expireAt:   time.Now().Add(cacheTTL),
 					})
 				}
@@ -397,7 +383,14 @@ func GetSpiderDetector() *SpiderDetector {
 	return globalSpiderDetector
 }
 
-// ResetSpiderDetector resets the global spider detector (mainly for testing)
+// ResetSpiderDetector resets the global spider detector.
+// WARNING: This function is intended for testing only. It resets the sync.Once
+// by assigning a new zero value, which is safe only when:
+// 1. No concurrent calls to GetSpiderDetector() are in progress
+// 2. The mutex (spiderDetectorMu) is held during the entire reset operation
+//
+// In production code, prefer creating new SpiderDetector instances directly
+// rather than using the global singleton pattern if you need reset capability.
 func ResetSpiderDetector() {
 	spiderDetectorMu.Lock()
 	defer spiderDetectorMu.Unlock()
@@ -406,6 +399,7 @@ func ResetSpiderDetector() {
 		globalSpiderDetector.StopWatching()
 	}
 	globalSpiderDetector = nil
+	// Reset sync.Once - safe here because we hold the mutex and this is for testing only
 	spiderDetectorOnce = sync.Once{}
 	globalConfigPath = ""
 }
