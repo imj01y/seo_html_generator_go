@@ -15,6 +15,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
+	"go-page-server/api"
 	"go-page-server/config"
 	"go-page-server/core"
 	"go-page-server/database"
@@ -267,30 +268,40 @@ func main() {
 	r.GET("/stats", pageHandler.Stats)
 
 	// Routes - Template compilation API
-	api := r.Group("/api")
+	apiGroup := r.Group("/api")
 	{
-		api.POST("/template/compile", compileHandler.CompileTemplate)
-		api.POST("/template/validate", compileHandler.ValidateTemplate)
-		api.POST("/template/preview", compileHandler.PreviewTemplate)
-		api.GET("/template/compile/status", compileHandler.CompileStatus)
+		apiGroup.POST("/template/compile", compileHandler.CompileTemplate)
+		apiGroup.POST("/template/validate", compileHandler.ValidateTemplate)
+		apiGroup.POST("/template/preview", compileHandler.PreviewTemplate)
+		apiGroup.GET("/template/compile/status", compileHandler.CompileStatus)
 
 		// Cache management routes
-		api.POST("/cache/clear", cacheHandler.ClearAllCache)
-		api.POST("/cache/clear/:domain", cacheHandler.ClearDomainCache)
-		api.POST("/cache/template/clear", cacheHandler.ClearTemplateCache)
+		apiGroup.POST("/cache/clear", cacheHandler.ClearAllCache)
+		apiGroup.POST("/cache/clear/:domain", cacheHandler.ClearDomainCache)
+		apiGroup.POST("/cache/template/clear", cacheHandler.ClearTemplateCache)
 
 		// Cache reload routes (for permanent cache updates)
-		api.POST("/cache/site/reload", cacheHandler.ReloadAllSites)
-		api.POST("/cache/site/reload/:domain", cacheHandler.ReloadSite)
-		api.POST("/cache/template/reload", cacheHandler.ReloadAllTemplates)
-		api.POST("/cache/template/reload/:name", cacheHandler.ReloadTemplate)
+		apiGroup.POST("/cache/site/reload", cacheHandler.ReloadAllSites)
+		apiGroup.POST("/cache/site/reload/:domain", cacheHandler.ReloadSite)
+		apiGroup.POST("/cache/template/reload", cacheHandler.ReloadAllTemplates)
+		apiGroup.POST("/cache/template/reload/:name", cacheHandler.ReloadTemplate)
 
 		// Cache config routes (for dynamic config reload)
-		api.POST("/cache/config/reload", cacheHandler.ReloadCacheConfig)
+		apiGroup.POST("/cache/config/reload", cacheHandler.ReloadCacheConfig)
 
 		// Log routes (for Nginx Lua cache hit logging)
-		api.GET("/log/spider", logHandler.LogSpiderVisit)
+		apiGroup.GET("/log/spider", logHandler.LogSpiderVisit)
 	}
+
+	// Configure Admin API routes
+	deps := &api.Dependencies{
+		TemplateAnalyzer: templateAnalyzer,
+		TemplateFuncs:    funcsManager,
+		DataPoolManager:  dataPoolManager,
+		Scheduler:        scheduler,
+		TemplateCache:    templateCache,
+	}
+	api.SetupRouter(r, deps)
 
 	// Create server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
