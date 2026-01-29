@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 // TemplateFuncsManager 模板函数管理器（高并发版）
@@ -370,4 +372,95 @@ func BuildArticleContent(titles []string, content string) string {
 	sb.WriteString("\n\nadmin】")
 
 	return sb.String()
+}
+
+// ========== 池管理方法 ==========
+
+// ResizePools 根据配置调整所有池大小
+func (m *TemplateFuncsManager) ResizePools(config *PoolSizeConfig) {
+	if config.ClsPoolSize > 0 && m.clsPool != nil {
+		m.clsPool.Resize(config.ClsPoolSize)
+	}
+	if config.URLPoolSize > 0 && m.urlPool != nil {
+		m.urlPool.Resize(config.URLPoolSize)
+	}
+	if config.KeywordEmojiPoolSize > 0 && m.keywordEmojiPool != nil {
+		m.keywordEmojiPool.Resize(config.KeywordEmojiPoolSize)
+	}
+
+	log.Info().
+		Int("cls", config.ClsPoolSize).
+		Int("url", config.URLPoolSize).
+		Int("keyword_emoji", config.KeywordEmojiPoolSize).
+		Msg("Pools resized")
+}
+
+// WarmupPools 预热所有池
+func (m *TemplateFuncsManager) WarmupPools(targetPercent float64) {
+	if m.clsPool != nil {
+		m.clsPool.Warmup(targetPercent)
+	}
+	if m.urlPool != nil {
+		m.urlPool.Warmup(targetPercent)
+	}
+	if m.keywordEmojiPool != nil {
+		m.keywordEmojiPool.Warmup(targetPercent)
+	}
+}
+
+// ClearPools 清空所有池
+func (m *TemplateFuncsManager) ClearPools() {
+	if m.clsPool != nil {
+		m.clsPool.Clear()
+	}
+	if m.urlPool != nil {
+		m.urlPool.Clear()
+	}
+	if m.keywordEmojiPool != nil {
+		m.keywordEmojiPool.Clear()
+	}
+	log.Info().Msg("All pools cleared")
+}
+
+// PausePools 暂停所有池的补充
+func (m *TemplateFuncsManager) PausePools() {
+	if m.clsPool != nil {
+		m.clsPool.Pause()
+	}
+	if m.urlPool != nil {
+		m.urlPool.Pause()
+	}
+	if m.keywordEmojiPool != nil {
+		m.keywordEmojiPool.Pause()
+	}
+}
+
+// ResumePools 恢复所有池的补充
+func (m *TemplateFuncsManager) ResumePools() {
+	if m.clsPool != nil {
+		m.clsPool.Resume()
+	}
+	if m.urlPool != nil {
+		m.urlPool.Resume()
+	}
+	if m.keywordEmojiPool != nil {
+		m.keywordEmojiPool.Resume()
+	}
+}
+
+// GetPoolStats 获取所有池的统计信息
+func (m *TemplateFuncsManager) GetPoolStats() map[string]interface{} {
+	stats := make(map[string]interface{})
+
+	if m.clsPool != nil {
+		stats["cls"] = m.clsPool.Stats()
+	}
+	if m.urlPool != nil {
+		stats["url"] = m.urlPool.Stats()
+	}
+	if m.keywordEmojiPool != nil {
+		stats["keyword_emoji"] = m.keywordEmojiPool.Stats()
+	}
+
+	return stats
 }
