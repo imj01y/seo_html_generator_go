@@ -2,6 +2,8 @@
 package core
 
 import (
+	"crypto/rand"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -205,9 +207,12 @@ func generateRequestID() string {
 func randomString(n int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		// fallback to timestamp
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
 	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
-		time.Sleep(time.Nanosecond) // Ensure different values
+		b[i] = charset[b[i]%byte(len(charset))]
 	}
 	return string(b)
 }
