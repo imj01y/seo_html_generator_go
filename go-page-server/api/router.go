@@ -498,47 +498,181 @@ func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 	}
 }
 
-// ============ Task Management Handlers (placeholders) ============
+// ============ Task Management Handlers ============
 
+// taskListHandler GET /list - 获取所有任务
 func taskListHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.5
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.Scheduler == nil {
+			core.FailWithCode(c, core.ErrSchedulerNotRunning)
+			return
+		}
+
+		tasks, err := deps.Scheduler.GetTasks(c.Request.Context())
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+			return
+		}
+
+		core.Success(c, gin.H{
+			"tasks": tasks,
+			"total": len(tasks),
+		})
 	}
 }
 
+// taskByIDHandler GET /:id - 获取单个任务
 func taskByIDHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.5
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.Scheduler == nil {
+			core.FailWithCode(c, core.ErrSchedulerNotRunning)
+			return
+		}
+
+		idParam := c.Param("id")
+		taskID, err := strconv.Atoi(idParam)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, "无效的任务 ID")
+			return
+		}
+
+		// 从任务列表中查找指定任务
+		tasks, err := deps.Scheduler.GetTasks(c.Request.Context())
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+			return
+		}
+
+		for _, task := range tasks {
+			if task.ID == int64(taskID) {
+				core.Success(c, task)
+				return
+			}
+		}
+
+		core.FailWithCode(c, core.ErrSchedulerTaskNotFound)
 	}
 }
 
+// taskLogsHandler GET /:id/logs - 获取任务日志
 func taskLogsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.5
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.Scheduler == nil {
+			core.FailWithCode(c, core.ErrSchedulerNotRunning)
+			return
+		}
+
+		idParam := c.Param("id")
+		taskID, err := strconv.Atoi(idParam)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, "无效的任务 ID")
+			return
+		}
+
+		// 获取 limit 参数，默认 20，最大 100
+		limit := 20
+		if limitParam := c.Query("limit"); limitParam != "" {
+			if l, err := strconv.Atoi(limitParam); err == nil && l > 0 {
+				limit = l
+				if limit > 100 {
+					limit = 100
+				}
+			}
+		}
+
+		logs, err := deps.Scheduler.GetTaskLogs(c.Request.Context(), int64(taskID), limit)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+			return
+		}
+
+		core.Success(c, gin.H{
+			"logs":    logs,
+			"total":   len(logs),
+			"task_id": taskID,
+			"limit":   limit,
+		})
 	}
 }
 
+// taskTriggerHandler POST /:id/trigger - 手动触发任务
 func taskTriggerHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.5
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.Scheduler == nil {
+			core.FailWithCode(c, core.ErrSchedulerNotRunning)
+			return
+		}
+
+		idParam := c.Param("id")
+		taskID, err := strconv.Atoi(idParam)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, "无效的任务 ID")
+			return
+		}
+
+		if err := deps.Scheduler.TriggerTask(int64(taskID)); err != nil {
+			core.FailWithMessage(c, core.ErrSchedulerExecFailed, err.Error())
+			return
+		}
+
+		core.Success(c, gin.H{
+			"message": "任务已触发",
+			"task_id": taskID,
+		})
 	}
 }
 
+// taskEnableHandler POST /:id/enable - 启用任务
 func taskEnableHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.5
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.Scheduler == nil {
+			core.FailWithCode(c, core.ErrSchedulerNotRunning)
+			return
+		}
+
+		idParam := c.Param("id")
+		taskID, err := strconv.Atoi(idParam)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, "无效的任务 ID")
+			return
+		}
+
+		if err := deps.Scheduler.EnableTask(c.Request.Context(), int64(taskID)); err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+			return
+		}
+
+		core.Success(c, gin.H{
+			"message": "任务已启用",
+			"task_id": taskID,
+		})
 	}
 }
 
+// taskDisableHandler POST /:id/disable - 禁用任务
 func taskDisableHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// TODO: Implement in Task 7.5
-		c.JSON(200, gin.H{"message": "not implemented"})
+		if deps.Scheduler == nil {
+			core.FailWithCode(c, core.ErrSchedulerNotRunning)
+			return
+		}
+
+		idParam := c.Param("id")
+		taskID, err := strconv.Atoi(idParam)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInvalidParam, "无效的任务 ID")
+			return
+		}
+
+		if err := deps.Scheduler.DisableTask(c.Request.Context(), int64(taskID)); err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+			return
+		}
+
+		core.Success(c, gin.H{
+			"message": "任务已禁用",
+			"task_id": taskID,
+		})
 	}
 }
 
