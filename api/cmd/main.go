@@ -362,6 +362,18 @@ func main() {
 	}
 	api.SetupRouter(r, deps)
 
+	// Initialize and start StatsArchiver (requires Redis)
+	var statsArchiver *core.StatsArchiver
+	if redisClient != nil {
+		statsArchiver = core.NewStatsArchiver(db, redisClient)
+		archiverCtx, archiverCancel := context.WithCancel(context.Background())
+		go statsArchiver.Start(archiverCtx)
+		defer archiverCancel()
+		log.Info().Msg("StatsArchiver initialized and started")
+	} else {
+		log.Info().Msg("StatsArchiver skipped (Redis not available)")
+	}
+
 	// Create server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{
@@ -405,6 +417,12 @@ func main() {
 		} else {
 			log.Info().Msg("Redis connection closed")
 		}
+	}
+
+	// Stop StatsArchiver
+	if statsArchiver != nil {
+		statsArchiver.Stop()
+		log.Info().Msg("StatsArchiver stopped")
 	}
 
 	// 停止监控服务
