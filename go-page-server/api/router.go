@@ -72,6 +72,20 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		logsGroup.DELETE("/clear", logsHandler.Clear)
 	}
 
+	// Templates routes (require JWT)
+	templatesHandler := NewTemplatesHandler(deps.DB)
+	templatesGroup := r.Group("/api/templates")
+	templatesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		templatesGroup.GET("", templatesHandler.List)
+		templatesGroup.GET("/options", templatesHandler.Options)
+		templatesGroup.GET("/:id", templatesHandler.Get)
+		templatesGroup.GET("/:id/sites", templatesHandler.GetSites)
+		templatesGroup.POST("", templatesHandler.Create)
+		templatesGroup.PUT("/:id", templatesHandler.Update)
+		templatesGroup.DELETE("/:id", templatesHandler.Delete)
+	}
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
