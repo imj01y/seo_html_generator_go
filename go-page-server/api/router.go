@@ -151,6 +151,34 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		imagesGroup.POST("/cache/clear", imagesHandler.ClearCache)
 	}
 
+	// Articles routes (require JWT)
+	articlesHandler := NewArticlesHandler(deps.DB)
+	articlesGroup := r.Group("/api/articles")
+	articlesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		// 分组管理
+		articlesGroup.GET("/groups", articlesHandler.ListGroups)
+		articlesGroup.POST("/groups", articlesHandler.CreateGroup)
+		articlesGroup.PUT("/groups/:id", articlesHandler.UpdateGroup)
+		articlesGroup.DELETE("/groups/:id", articlesHandler.DeleteGroup)
+
+		// 文章 CRUD
+		articlesGroup.GET("/list", articlesHandler.List)
+		articlesGroup.GET("/:id", articlesHandler.Get)
+		articlesGroup.PUT("/:id", articlesHandler.Update)
+		articlesGroup.DELETE("/:id", articlesHandler.Delete)
+
+		// 批量操作
+		articlesGroup.DELETE("/batch/delete", articlesHandler.BatchDelete)
+		articlesGroup.DELETE("/delete-all", articlesHandler.DeleteAll)
+		articlesGroup.PUT("/batch/status", articlesHandler.BatchUpdateStatus)
+		articlesGroup.PUT("/batch/move", articlesHandler.BatchMove)
+
+		// 添加文章
+		articlesGroup.POST("/add", articlesHandler.Add)
+		articlesGroup.POST("/batch", articlesHandler.BatchAdd)
+	}
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
