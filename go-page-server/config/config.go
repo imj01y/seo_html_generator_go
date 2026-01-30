@@ -15,6 +15,7 @@ type Config struct {
 	Database       DatabaseConfig       `yaml:"database"`
 	Cache          CacheConfig          `yaml:"cache"`
 	SpiderDetector SpiderDetectorConfig `yaml:"spider_detector"`
+	Auth           AuthConfig           `yaml:"auth"`
 }
 
 // ServerConfig holds server configuration
@@ -53,6 +54,17 @@ type SpiderDetectorConfig struct {
 	DNSVerifyEnabled       bool     `yaml:"dns_verify_enabled"`
 	DNSVerifyTypes         []string `yaml:"dns_verify_types"`
 	DNSTimeout             float64  `yaml:"dns_timeout"`
+}
+
+// AuthConfig holds authentication configuration
+type AuthConfig struct {
+	SecretKey                string `yaml:"secret_key"`
+	Algorithm                string `yaml:"algorithm"`
+	AccessTokenExpireMinutes int    `yaml:"access_token_expire_minutes"`
+	DefaultAdmin             struct {
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	} `yaml:"default_admin"`
 }
 
 // RawConfig represents the raw YAML structure with environments
@@ -124,6 +136,11 @@ func Load(configPath string) (*Config, error) {
 			DNSVerifyEnabled:      getBool(merged, "spider_detector.dns_verify_enabled", false),
 			DNSVerifyTypes:        []string{"baidu", "google", "bing"},
 			DNSTimeout:            getFloat(merged, "spider_detector.dns_timeout", 2.0),
+		},
+		Auth: AuthConfig{
+			SecretKey:                getString(merged, "auth.secret_key", "default-secret-key-change-in-production"),
+			Algorithm:                getString(merged, "auth.algorithm", "HS256"),
+			AccessTokenExpireMinutes: getInt(merged, "auth.access_token_expire_minutes", 1440),
 		},
 	}
 
