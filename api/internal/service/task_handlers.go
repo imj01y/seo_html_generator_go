@@ -11,13 +11,13 @@ import (
 
 // RefreshDataHandler 刷新数据池处理器
 type RefreshDataHandler struct {
-	dataPoolManager *DataPoolManager
+	dataManager *DataManager
 }
 
 // NewRefreshDataHandler 创建刷新数据池处理器
-func NewRefreshDataHandler(manager *DataPoolManager) *RefreshDataHandler {
+func NewRefreshDataHandler(manager *DataManager) *RefreshDataHandler {
 	return &RefreshDataHandler{
-		dataPoolManager: manager,
+		dataManager: manager,
 	}
 }
 
@@ -47,14 +47,13 @@ func (h *RefreshDataHandler) Handle(task *ScheduledTask) TaskResult {
 		Int("site_id", params.SiteID).
 		Msg("Refreshing data pool")
 
-	var refreshErr error
+	// 使用分组 ID（默认为 1）
+	groupID := 1
 	if params.SiteID > 0 {
-		// 刷新站点专属数据
-		refreshErr = h.dataPoolManager.LoadSiteData(ctx, params.SiteID)
-	} else {
-		// 刷新全局数据池
-		refreshErr = h.dataPoolManager.Refresh(ctx, params.PoolName)
+		groupID = params.SiteID // 如果指定了 site_id，用作 group_id
 	}
+
+	refreshErr := h.dataManager.Refresh(ctx, groupID, params.PoolName)
 
 	if refreshErr != nil {
 		return TaskResult{
@@ -64,7 +63,7 @@ func (h *RefreshDataHandler) Handle(task *ScheduledTask) TaskResult {
 		}
 	}
 
-	stats := h.dataPoolManager.GetStats()
+	stats := h.dataManager.GetPoolStats()
 	return TaskResult{
 		Success:  true,
 		Message:  fmt.Sprintf("refreshed %s, keywords=%d, images=%d, titles=%d, contents=%d", params.PoolName, stats.Keywords, stats.Images, stats.Titles, stats.Contents),
@@ -260,10 +259,10 @@ func (h *PushURLsHandler) Handle(task *ScheduledTask) TaskResult {
 }
 
 // RegisterAllHandlers 注册所有任务处理器
-func RegisterAllHandlers(scheduler *Scheduler, dataPoolManager *DataPoolManager, templateCache *TemplateCache, htmlCache *HTMLCache, siteCache *SiteCache) {
+func RegisterAllHandlers(scheduler *Scheduler, dataManager *DataManager, templateCache *TemplateCache, htmlCache *HTMLCache, siteCache *SiteCache) {
 	// 注册刷新数据池处理器
-	if dataPoolManager != nil {
-		scheduler.RegisterHandler(NewRefreshDataHandler(dataPoolManager))
+	if dataManager != nil {
+		scheduler.RegisterHandler(NewRefreshDataHandler(dataManager))
 	}
 
 	// 注册刷新模板缓存处理器

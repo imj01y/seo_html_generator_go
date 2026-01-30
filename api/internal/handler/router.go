@@ -8,11 +8,12 @@ import (
 	"strconv"
 	"time"
 
-	"seo-generator/api/pkg/config"
-	"seo-generator/api/internal/service"
-
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
+
+	"seo-generator/api/pkg/config"
+	core "seo-generator/api/internal/service"
 )
 
 // startTime 记录服务启动时间
@@ -21,10 +22,11 @@ var startTime = time.Now()
 // Dependencies holds all dependencies required by the API handlers
 type Dependencies struct {
 	DB               *sqlx.DB
+	Redis            *redis.Client
 	Config           *config.Config
 	TemplateAnalyzer *core.TemplateAnalyzer
 	TemplateFuncs    *core.TemplateFuncsManager
-	DataPoolManager  *core.DataPoolManager
+	DataManager      *core.DataManager
 	Scheduler        *core.Scheduler
 	TemplateCache    *core.TemplateCache
 	Monitor          *core.Monitor
@@ -32,6 +34,10 @@ type Dependencies struct {
 
 // SetupRouter configures all API routes
 func SetupRouter(r *gin.Engine, deps *Dependencies) {
+	// 全局依赖注入中间件：将 db、redis 和 config 注入到 context 中
+	// 供使用 c.Get("db")、c.Get("redis") 和 c.Get("config") 的 Handler 使用
+	r.Use(DependencyInjectionMiddleware(deps.DB, deps.Redis, deps.Config))
+
 	// Auth routes (public - no middleware required)
 	authGroup := r.Group("/api/auth")
 	{
@@ -135,6 +141,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		imagesGroup.GET("/urls/list", imagesHandler.ListURLs)
 		imagesGroup.POST("/urls/add", imagesHandler.AddURL)
 		imagesGroup.POST("/urls/batch", imagesHandler.BatchAddURLs)
+		imagesGroup.POST("/upload", imagesHandler.Upload)
 		imagesGroup.PUT("/urls/:id", imagesHandler.UpdateURL)
 		imagesGroup.DELETE("/urls/:id", imagesHandler.DeleteURL)
 
@@ -325,9 +332,11 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	// WebSocket routes (不需要认证)
 	wsHandler := &WebSocketHandler{}
 	r.GET("/ws/spider-logs/:id", wsHandler.SpiderLogs)
+	r.GET("/api/logs/ws", wsHandler.SystemLogs)
 
-	// Admin API group
+	// Admin API group (require JWT)
 	admin := r.Group("/api/admin")
+	admin.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 
 	// Pool management routes
 	pool := admin.Group("/pool")
@@ -722,12 +731,12 @@ func templatePoolConfigHandler(deps *Dependencies) gin.HandlerFunc {
 // dataStatsHandler GET /stats - 获取数据池详细统计
 func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if deps.DataPoolManager == nil {
+		if deps.DataManager == nil {
 			core.FailWithCode(c, core.ErrInternalServer)
 			return
 		}
 
-		stats := deps.DataPoolManager.GetDetailedStats()
+		stats := deps.DataManager.GetDetailedStats()
 		core.Success(c, stats)
 	}
 }
@@ -735,34 +744,16 @@ func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 // dataSEOHandler GET /seo - 获取 SEO 分析结果
 func dataSEOHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if deps.DataPoolManager == nil {
-			core.FailWithCode(c, core.ErrInternalServer)
-			return
-		}
-		if deps.TemplateAnalyzer == nil {
-			core.FailWithCode(c, core.ErrInternalServer)
-			return
-		}
-
-		analysis := deps.DataPoolManager.AnalyzeSEO(deps.TemplateAnalyzer)
-		core.Success(c, analysis)
+		// TODO: 重新实现 SEO 分析功能
+		core.Success(c, gin.H{"message": "SEO analysis temporarily disabled during refactoring"})
 	}
 }
 
 // dataRecommendationsHandler GET /recommendations - 获取数据池优化建议
 func dataRecommendationsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if deps.DataPoolManager == nil {
-			core.FailWithCode(c, core.ErrInternalServer)
-			return
-		}
-		if deps.TemplateAnalyzer == nil {
-			core.FailWithCode(c, core.ErrInternalServer)
-			return
-		}
-
-		recommendations := deps.DataPoolManager.GetRecommendations(deps.TemplateAnalyzer)
-		core.Success(c, recommendations)
+		// TODO: 重新实现推荐功能
+		core.Success(c, gin.H{"message": "Recommendations temporarily disabled during refactoring"})
 	}
 }
 
@@ -774,7 +765,7 @@ type dataRefreshRequest struct {
 // dataRefreshHandler POST /refresh - 刷新数据池
 func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if deps.DataPoolManager == nil {
+		if deps.DataManager == nil {
 			core.FailWithCode(c, core.ErrInternalServer)
 			return
 		}
@@ -785,20 +776,18 @@ func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		// 创建带超时的上下文
-		ctx, cancel := context.WithTimeout(c.Request.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		// 执行刷新
-		if err := deps.DataPoolManager.Refresh(ctx, req.Pool); err != nil {
+		// 刷新默认分组（group_id=1）的数据
+		if err := deps.DataManager.Refresh(ctx, 1, req.Pool); err != nil {
 			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
 			return
 		}
 
-		// 获取最新统计并返回
-		stats := deps.DataPoolManager.GetStats()
+		stats := deps.DataManager.GetPoolStats()
 		core.Success(c, gin.H{
-			"message": "数据池刷新成功",
+			"success": true,
 			"pool":    req.Pool,
 			"stats":   stats,
 		})
@@ -1024,8 +1013,8 @@ func systemInfoHandler(deps *Dependencies) gin.HandlerFunc {
 		}
 
 		// 获取数据池统计
-		if deps.DataPoolManager != nil {
-			info["data"] = deps.DataPoolManager.GetStats()
+		if deps.DataManager != nil {
+			info["data"] = deps.DataManager.GetPoolStats()
 		}
 
 		// 获取模板分析统计
@@ -1067,8 +1056,8 @@ func systemHealthHandler(deps *Dependencies) gin.HandlerFunc {
 		}
 
 		// 检查数据池
-		if deps.DataPoolManager != nil {
-			dataStats := deps.DataPoolManager.GetStats()
+		if deps.DataManager != nil {
+			dataStats := deps.DataManager.GetPoolStats()
 			if dataStats.Keywords == 0 && dataStats.Images == 0 {
 				checks["data_pool"] = gin.H{
 					"status":  "degraded",

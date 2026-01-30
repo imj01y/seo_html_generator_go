@@ -4,7 +4,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"math/rand"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,18 +12,17 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/handler"
-	"seo-generator/api/internal/repository"
+	api "seo-generator/api/internal/handler"
+	database "seo-generator/api/internal/repository"
 	core "seo-generator/api/internal/service"
 	"seo-generator/api/pkg/config"
-	handlers "seo-generator/api/internal/handler"
 )
 
 func main() {
-	// Initialize random seed
-	rand.Seed(time.Now().UnixNano())
+	// Note: rand.Seed is deprecated in Go 1.20+, global random is auto-seeded
 
 	// Configure logger using core.SetupLogger
 	logConfig := core.DefaultLogConfig()
@@ -60,6 +58,31 @@ func main() {
 
 	db := database.GetDB()
 
+	// Initialize Redis connection (optional)
+	var redisClient *redis.Client
+	if cfg.Redis.Enabled {
+		redisClient = redis.NewClient(&redis.Options{
+			Addr:     fmt.Sprintf("%s:%d", cfg.Redis.Host, cfg.Redis.Port),
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+
+		// Test connection
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			log.Warn().Err(err).Msg("Failed to connect to Redis, some features will be disabled")
+			redisClient = nil
+		} else {
+			log.Info().
+				Str("host", cfg.Redis.Host).
+				Int("port", cfg.Redis.Port).
+				Msg("Redis connected")
+		}
+		cancel()
+	} else {
+		log.Info().Msg("Redis is disabled in configuration")
+	}
+
 	// Initialize encoder
 	core.InitEncoder(0.5)
 
@@ -71,7 +94,7 @@ func main() {
 	siteCache := core.NewSiteCache(db)
 	templateCache := core.NewTemplateCache(db)
 	htmlCache := core.NewHTMLCache(cacheDir, cfg.Cache.MaxSizeGB)
-	dataManager := core.NewDataManager(db, core.GetEncoder())
+	dataManager := core.NewDataManager(db, core.GetEncoder(), 5*time.Minute)
 	funcsManager := core.NewTemplateFuncsManager(core.GetEncoder())
 
 	// Load all sites into cache at startup
@@ -114,54 +137,17 @@ func main() {
 		// 当前仅记录推荐值，用于监控和手动调整
 	})
 
-	// Initialize data pool manager
-	log.Info().Msg("Initializing data pool manager...")
-	dataPoolManager := core.NewDataPoolManager(db.DB, 5*time.Minute)
-
-	// Load all data pools
-	loadCtx, loadCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	if err := dataPoolManager.LoadAll(loadCtx); err != nil {
-		log.Warn().Err(err).Msg("Failed to load some data pools")
-	}
-	loadCancel()
-
-	// Start auto-refresh
-	dataPoolManager.StartAutoRefresh()
-
 	// Initialize scheduler
 	log.Info().Msg("Initializing scheduler...")
 	scheduler := core.NewScheduler(db)
 
 	// Register task handlers
-	core.RegisterAllHandlers(scheduler, dataPoolManager, templateCache, htmlCache, siteCache)
+	core.RegisterAllHandlers(scheduler, dataManager, templateCache, htmlCache, siteCache)
 
 	// Start scheduler
 	schedCtx := context.Background()
 	if err := scheduler.Start(schedCtx); err != nil {
 		log.Warn().Err(err).Msg("Failed to start scheduler (tables may not exist)")
-	}
-
-	// SEO analysis
-	seoAnalysis := dataPoolManager.AnalyzeSEO(templateAnalyzer)
-	if seoAnalysis != nil {
-		log.Info().
-			Str("status", string(seoAnalysis.OverallRating)).
-			Msg("Data pool SEO analysis completed")
-
-		// Log recommendations
-		recommendations := dataPoolManager.GetRecommendations(templateAnalyzer)
-		for poolName, rec := range recommendations {
-			if rec.Status != core.SEORatingExcellent {
-				log.Info().
-					Str("pool", poolName).
-					Int("current", rec.CurrentCount).
-					Int("calls_per_page", rec.CallsPerPage).
-					Float64("repeat_rate", rec.RepeatRate).
-					Str("status", string(rec.Status)).
-					Str("action", rec.Action).
-					Msg("Pool recommendation")
-			}
-		}
 	}
 
 	// Load emojis from data/emojis.json
@@ -181,12 +167,67 @@ func main() {
 	// Set emoji manager on funcsManager for keyword+emoji generation
 	funcsManager.SetEmojiManager(emojiManager)
 
-	// Load initial data for default group
-	log.Info().Msg("Loading initial data...")
+	// Load initial data for all groups
+	log.Info().Msg("Loading initial data for all groups...")
 
-	if err := dataManager.LoadAllForGroup(ctx, 1); err != nil {
-		log.Warn().Err(err).Msg("Failed to load initial data for default group")
+	// 查询所有关键词分组 ID
+	var keywordGroupIDs []int
+	if err := db.SelectContext(ctx, &keywordGroupIDs, "SELECT DISTINCT id FROM keyword_groups"); err != nil {
+		log.Warn().Err(err).Msg("Failed to query keyword groups, loading default group only")
+		keywordGroupIDs = []int{1}
 	}
+
+	// 查询所有图片分组 ID
+	var imageGroupIDs []int
+	if err := db.SelectContext(ctx, &imageGroupIDs, "SELECT DISTINCT id FROM image_groups"); err != nil {
+		log.Warn().Err(err).Msg("Failed to query image groups, loading default group only")
+		imageGroupIDs = []int{1}
+	}
+
+	// 查询所有文章分组 ID
+	var articleGroupIDs []int
+	if err := db.SelectContext(ctx, &articleGroupIDs, "SELECT DISTINCT id FROM article_groups"); err != nil {
+		log.Warn().Err(err).Msg("Failed to query article groups, loading default group only")
+		articleGroupIDs = []int{1}
+	}
+
+	// 加载所有关键词分组
+	for _, gid := range keywordGroupIDs {
+		if _, err := dataManager.LoadKeywords(ctx, gid, 50000); err != nil {
+			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load keywords for group")
+		}
+	}
+
+	// 加载所有图片分组
+	for _, gid := range imageGroupIDs {
+		if _, err := dataManager.LoadImageURLs(ctx, gid, 50000); err != nil {
+			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load images for group")
+		}
+	}
+
+	// 加载所有文章分组（标题和内容）
+	for _, gid := range articleGroupIDs {
+		if _, err := dataManager.LoadTitles(ctx, gid, 10000); err != nil {
+			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load titles for group")
+		}
+		if _, err := dataManager.LoadContents(ctx, gid, 5000); err != nil {
+			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load contents for group")
+		}
+	}
+
+	log.Info().
+		Int("keyword_groups", len(keywordGroupIDs)).
+		Int("image_groups", len(imageGroupIDs)).
+		Int("article_groups", len(articleGroupIDs)).
+		Msg("Initial data loaded for all groups")
+
+	// 启动自动刷新
+	allGroupIDs := make([]int, 0)
+	for _, gid := range keywordGroupIDs {
+		allGroupIDs = append(allGroupIDs, gid)
+	}
+	dataManager.StartAutoRefresh(allGroupIDs)
+	log.Info().Int("groups", len(allGroupIDs)).Msg("DataManager auto refresh started")
 
 	// Also load data into funcsManager for template rendering
 	// This connects funcsManager to dataManager for keywords and images
@@ -210,7 +251,7 @@ func main() {
 	}
 
 	// Create page handler
-	pageHandler := handlers.NewPageHandler(
+	pageHandler := api.NewPageHandler(
 		db,
 		cfg,
 		siteCache,
@@ -223,10 +264,10 @@ func main() {
 	// Create compile handler
 	cwd, _ := os.Getwd()
 	templatesDir := filepath.Join(cwd, "templates")
-	compileHandler := handlers.NewCompileHandler(pageHandler, templatesDir)
+	compileHandler := api.NewCompileHandler(pageHandler, templatesDir)
 
 	// Create cache handler
-	cacheHandler := handlers.NewCacheHandler(
+	cacheHandler := api.NewCacheHandler(
 		htmlCache,
 		pageHandler.GetTemplateRenderer(),
 		siteCache,
@@ -235,7 +276,7 @@ func main() {
 	)
 
 	// Create log handler (for Nginx Lua cache hit logging)
-	logHandler := handlers.NewLogHandler(db)
+	logHandler := api.NewLogHandler(db)
 
 	// Setup Gin
 	if !cfg.Server.Debug {
@@ -289,8 +330,17 @@ func main() {
 		// Cache config routes (for dynamic config reload)
 		apiGroup.POST("/cache/config/reload", cacheHandler.ReloadCacheConfig)
 
+		// Cache stats routes
+		apiGroup.GET("/cache/stats", cacheHandler.GetCacheStats)
+		apiGroup.GET("/cache/pools/stats", cacheHandler.GetPoolsStats)
+
 		// Log routes (for Nginx Lua cache hit logging)
 		apiGroup.GET("/log/spider", logHandler.LogSpiderVisit)
+
+		// Alerts routes
+		alertsHandler := api.NewAlertsHandler()
+		apiGroup.GET("/alerts/content-pool", alertsHandler.GetContentPoolAlert)
+		apiGroup.POST("/alerts/content-pool/reset", alertsHandler.ResetContentPool)
 	}
 
 	// 初始化监控服务
@@ -301,10 +351,11 @@ func main() {
 	// Configure Admin API routes
 	deps := &api.Dependencies{
 		DB:               db,
+		Redis:            redisClient,
 		Config:           cfg,
 		TemplateAnalyzer: templateAnalyzer,
 		TemplateFuncs:    funcsManager,
-		DataPoolManager:  dataPoolManager,
+		DataManager:      dataManager,
 		Scheduler:        scheduler,
 		TemplateCache:    templateCache,
 		Monitor:          monitor,
@@ -347,6 +398,15 @@ func main() {
 
 	log.Info().Msg("Shutting down server...")
 
+	// Close Redis connection
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			log.Error().Err(err).Msg("Failed to close Redis connection")
+		} else {
+			log.Info().Msg("Redis connection closed")
+		}
+	}
+
 	// 停止监控服务
 	monitor.Stop()
 	log.Info().Msg("Monitor stopped")
@@ -359,9 +419,9 @@ func main() {
 	scheduler.Stop()
 	log.Info().Msg("Scheduler stopped")
 
-	// Stop data pool auto-refresh
-	dataPoolManager.StopAutoRefresh()
-	log.Info().Msg("Data pool auto-refresh stopped")
+	// Stop data manager auto-refresh
+	dataManager.StopAutoRefresh()
+	log.Info().Msg("DataManager auto-refresh stopped")
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
