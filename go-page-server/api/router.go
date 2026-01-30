@@ -272,11 +272,54 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		genRoutes.GET("", generatorsHandler.List)
 		genRoutes.POST("", generatorsHandler.Create)
 		genRoutes.GET("/templates/list", generatorsHandler.GetTemplates)
+		genRoutes.POST("/test", generatorsHandler.Test)
 		genRoutes.GET("/:id", generatorsHandler.Get)
 		genRoutes.PUT("/:id", generatorsHandler.Update)
 		genRoutes.DELETE("/:id", generatorsHandler.Delete)
 		genRoutes.POST("/:id/set-default", generatorsHandler.SetDefault)
 		genRoutes.POST("/:id/toggle", generatorsHandler.Toggle)
+		genRoutes.POST("/:id/reload", generatorsHandler.Reload)
+	}
+
+	// Settings routes (require JWT)
+	settingsHandler := &SettingsHandler{}
+	settingsRoutes := r.Group("/api/settings")
+	settingsRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		settingsRoutes.GET("", settingsHandler.Get)
+		settingsRoutes.GET("/cache", settingsHandler.GetCacheSettings)
+		settingsRoutes.PUT("/cache", settingsHandler.UpdateCacheSettings)
+		settingsRoutes.POST("/cache/apply", settingsHandler.ApplyCacheSettings)
+		settingsRoutes.GET("/database", settingsHandler.GetDatabaseStatus)
+		settingsRoutes.GET("/api-token", settingsHandler.GetAPIToken)
+		settingsRoutes.PUT("/api-token", settingsHandler.UpdateAPIToken)
+		settingsRoutes.POST("/api-token/generate", settingsHandler.GenerateAPIToken)
+	}
+
+	// Generator Queue routes (require JWT)
+	genQueueHandler := &GeneratorQueueHandler{}
+	genQueueRoutes := r.Group("/api/generator")
+	genQueueRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		genQueueRoutes.GET("/queue/stats", genQueueHandler.GetQueueStats)
+		genQueueRoutes.POST("/queue/push", genQueueHandler.PushToQueue)
+		genQueueRoutes.POST("/queue/clear", genQueueHandler.ClearQueue)
+		genQueueRoutes.GET("/worker/status", genQueueHandler.GetWorkerStatus)
+		genQueueRoutes.GET("/stats", genQueueHandler.GetGeneratorStats)
+	}
+
+	// Spider Detector routes (require JWT)
+	spiderDetectorHandler := &SpiderDetectorHandler{}
+	spiderDetectorRoutes := r.Group("/api/spiders")
+	spiderDetectorRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		spiderDetectorRoutes.GET("/config", spiderDetectorHandler.GetSpiderConfig)
+		spiderDetectorRoutes.POST("/test", spiderDetectorHandler.TestSpiderDetection)
+		spiderDetectorRoutes.GET("/logs", spiderDetectorHandler.GetSpiderLogs)
+		spiderDetectorRoutes.GET("/stats", spiderDetectorHandler.GetSpiderStats)
+		spiderDetectorRoutes.GET("/daily-stats", spiderDetectorHandler.GetSpiderDailyStats)
+		spiderDetectorRoutes.GET("/hourly-stats", spiderDetectorHandler.GetSpiderHourlyStats)
+		spiderDetectorRoutes.DELETE("/logs/clear", spiderDetectorHandler.ClearSpiderLogs)
 	}
 
 	// WebSocket routes (不需要认证)

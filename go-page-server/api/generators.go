@@ -1,12 +1,15 @@
 package api
 
 import (
+	"context"
+	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 )
 
 // Generator 生成器
@@ -360,4 +363,123 @@ func (h *GeneratorsHandler) GetTemplates(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"success": true, "data": templates})
+}
+
+// TestGeneratorRequest 测试生成器请求
+type TestGeneratorRequest struct {
+	Code       string   `json:"code" binding:"required"`
+	Paragraphs []string `json:"paragraphs" binding:"required"`
+	Titles     []string `json:"titles"`
+}
+
+// Test 测试生成器代码（通过 Redis 发送给 Python Worker）
+func (h *GeneratorsHandler) Test(c *gin.Context) {
+	rdb, exists := c.Get("redis")
+	if !exists {
+		c.JSON(500, gin.H{"success": false, "message": "Redis 未连接，无法执行测试"})
+		return
+	}
+	redisClient := rdb.(*redis.Client)
+
+	var req TestGeneratorRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"success": false, "message": "参数错误: " + err.Error()})
+		return
+	}
+
+	if len(req.Paragraphs) < 3 {
+		c.JSON(400, gin.H{"success": false, "message": "至少需要 3 个段落"})
+		return
+	}
+
+	ctx := context.Background()
+
+	// 生成唯一请求 ID
+	requestID := strconv.FormatInt(time.Now().UnixNano(), 10)
+
+	// 构建测试命令
+	testCmd := map[string]interface{}{
+		"action":     "test_generator",
+		"request_id": requestID,
+		"code":       req.Code,
+		"paragraphs": req.Paragraphs,
+		"titles":     req.Titles,
+		"timestamp":  time.Now().Unix(),
+	}
+
+	cmdJSON, _ := json.Marshal(testCmd)
+
+	// 发送到 Python Worker
+	err := redisClient.Publish(ctx, "generator:commands", cmdJSON).Err()
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "message": "发送测试命令失败: " + err.Error()})
+		return
+	}
+
+	// 等待结果（最多 10 秒）
+	resultKey := "generator:test:result:" + requestID
+	var result string
+
+	for i := 0; i < 100; i++ { // 100 * 100ms = 10s
+		time.Sleep(100 * time.Millisecond)
+		result, err = redisClient.Get(ctx, resultKey).Result()
+		if err == nil && result != "" {
+			break
+		}
+	}
+
+	// 清理结果 key
+	redisClient.Del(ctx, resultKey)
+
+	if result == "" {
+		c.JSON(500, gin.H{
+			"success": false,
+			"message": "测试超时，请检查 Python Worker 是否运行",
+		})
+		return
+	}
+
+	// 解析结果
+	var testResult map[string]interface{}
+	if err := json.Unmarshal([]byte(result), &testResult); err != nil {
+		c.JSON(500, gin.H{"success": false, "message": "解析结果失败"})
+		return
+	}
+
+	c.JSON(200, testResult)
+}
+
+// Reload 重新加载生成器
+func (h *GeneratorsHandler) Reload(c *gin.Context) {
+	db, exists := c.Get("db")
+	if !exists {
+		c.JSON(500, gin.H{"success": false, "message": "数据库未连接"})
+		return
+	}
+	sqlxDB := db.(*sqlx.DB)
+
+	id, _ := strconv.Atoi(c.Param("id"))
+
+	var name string
+	err := sqlxDB.Get(&name, "SELECT name FROM content_generators WHERE id = ?", id)
+	if err != nil {
+		c.JSON(404, gin.H{"success": false, "message": "生成器不存在"})
+		return
+	}
+
+	// 如果有 Redis，发送重载命令
+	if rdb, exists := c.Get("redis"); exists {
+		redisClient := rdb.(*redis.Client)
+		ctx := context.Background()
+
+		reloadCmd := map[string]interface{}{
+			"action":       "reload_generator",
+			"generator_id": id,
+			"timestamp":    time.Now().Unix(),
+		}
+		cmdJSON, _ := json.Marshal(reloadCmd)
+		redisClient.Publish(ctx, "generator:commands", cmdJSON)
+	}
+
+	c.JSON(200, gin.H{"success": true, "message": "生成器已重新加载"})
 }
