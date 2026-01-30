@@ -9,9 +9,15 @@
 - Redis BRPOP 取待处理ID：O(1)
 - MySQL 主键查询原文：O(1)
 - 无论表多大都是毫秒级响应
+
+重试机制：
+- 处理失败的文章放入重试队列
+- 超过最大重试次数放入死信队列
 """
 
 import asyncio
+import time
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from loguru import logger
 
@@ -25,11 +31,17 @@ class GeneratorWorker:
     正文生成工作进程（高性能版）
 
     工作流程：
-    1. 从 Redis 队列 pending:articles:{group_id} 取文章ID（BRPOP，O(1)）
+    1. 从 Redis 队列 pending:articles 取文章ID（BRPOP，O(1)）
     2. 按主键查询 original_articles 表获取原始数据（O(1)）
     3. 提取标题 → 写入 titles 表
     4. 拆分正文 → 拼音标注 → 写入 contents 表
+    5. 失败时放入重试队列，超过重试次数放入死信队列
     """
+
+    # 队列键名
+    QUEUE_PENDING = "pending:articles"
+    QUEUE_RETRY = "pending:articles:retry"
+    QUEUE_DEAD = "pending:articles:dead"
 
     def __init__(
         self,
@@ -37,7 +49,8 @@ class GeneratorWorker:
         redis_client,
         dedup: Optional[ContentDeduplicator] = None,
         batch_size: int = 50,
-        min_paragraph_length: int = 20
+        min_paragraph_length: int = 20,
+        retry_max: int = 3,
     ):
         """
         初始化正文生成工作进程
@@ -48,17 +61,19 @@ class GeneratorWorker:
             dedup: 内容去重器（可选，用于标题去重）
             batch_size: 批量写入大小
             min_paragraph_length: 段落最小长度
+            retry_max: 最大重试次数
         """
         self.db_pool = db_pool
         self.redis = redis_client
-        self.dedup = dedup or ContentDeduplicator(redis_client)
+        self.dedup = dedup
         self.batch_size = batch_size
+        self.min_paragraph_length = min_paragraph_length
+        self.retry_max = retry_max
 
-        # 文本处理器
-        self.annotator = PinyinAnnotator()
-        self.cleaner = TextCleaner(min_length=min_paragraph_length)
+        # 文本处理器（延迟初始化）
+        self.annotator = None
+        self.cleaner = None
 
-        self._stop_event = asyncio.Event()
         self._running = False
         self._title_buffer: List[Dict[str, Any]] = []
         self._content_buffer: List[Dict[str, Any]] = []
@@ -66,6 +81,8 @@ class GeneratorWorker:
         # 统计
         self._processed_count = 0
         self._failed_count = 0
+        self._retried_count = 0
+        self._total_processing_time_ms = 0.0  # 累计处理时间（毫秒）
 
     async def start(self):
         """启动工作进程"""
@@ -73,16 +90,22 @@ class GeneratorWorker:
             return
 
         self._running = True
-        self._stop_event.clear()
+
+        # 延迟初始化处理器
+        if self.annotator is None:
+            self.annotator = PinyinAnnotator()
+        if self.cleaner is None:
+            self.cleaner = TextCleaner(min_length=self.min_paragraph_length)
 
         # 初始化去重器
+        if self.dedup is None:
+            self.dedup = ContentDeduplicator(self.redis)
         await self.dedup.init()
 
         logger.info("Generator worker started")
 
     async def stop(self):
         """停止工作进程"""
-        self._stop_event.set()
         self._running = False
 
         # 刷新缓冲区
@@ -90,9 +113,10 @@ class GeneratorWorker:
         await self._flush_content_buffer()
 
         # 清理去重器
-        await self.dedup.cleanup()
+        if self.dedup:
+            await self.dedup.cleanup()
 
-        logger.info(f"Generator worker stopped (processed: {self._processed_count}, failed: {self._failed_count})")
+        logger.info(f"Generator worker stopped (processed: {self._processed_count}, failed: {self._failed_count}, retried: {self._retried_count})")
 
     # ============================================
     # 核心方法：从 Redis 队列获取待处理文章
@@ -133,22 +157,26 @@ class GeneratorWorker:
             logger.error(f"Failed to get article {article_id}: {e}")
             return None
 
-    async def pop_article_id(self, group_id: int, timeout: int = 5) -> Optional[int]:
+    async def pop_article_id(self, timeout: int = 5) -> Optional[int]:
         """
         从 Redis 队列取出待处理文章ID（BRPOP，O(1)）
 
+        优先从主队列取，主队列为空时尝试从重试队列取
+
         Args:
-            group_id: 分组ID
             timeout: 等待超时（秒）
 
         Returns:
             文章ID 或 None（超时）
         """
-        queue_key = f"pending:articles:{group_id}"
         try:
-            result = await self.redis.brpop(queue_key, timeout=timeout)
+            # 优先从主队列取
+            result = await self.redis.brpop(
+                [self.QUEUE_PENDING, self.QUEUE_RETRY],
+                timeout=timeout
+            )
             if result:
-                _, article_id = result
+                queue_name, article_id = result
                 if isinstance(article_id, bytes):
                     article_id = article_id.decode('utf-8')
                 return int(article_id)
@@ -160,14 +188,62 @@ class GeneratorWorker:
             logger.error(f"Failed to pop article from queue: {e}")
             return None
 
-    async def get_pending_count(self, group_id: int) -> int:
+    async def get_pending_count(self) -> int:
         """获取待处理队列长度"""
-        queue_key = f"pending:articles:{group_id}"
         try:
-            return await self.redis.llen(queue_key)
+            return await self.redis.llen(self.QUEUE_PENDING)
         except Exception as e:
             logger.error(f"Failed to get queue size: {e}")
             return 0
+
+    # ============================================
+    # 重试逻辑
+    # ============================================
+
+    async def get_retry_count(self, article_id: int) -> int:
+        """获取文章的重试次数"""
+        try:
+            key = f"processor:retry:{article_id}"
+            count = await self.redis.get(key)
+            return int(count) if count else 0
+        except Exception:
+            return 0
+
+    async def incr_retry_count(self, article_id: int) -> int:
+        """增加文章的重试次数"""
+        try:
+            key = f"processor:retry:{article_id}"
+            count = await self.redis.incr(key)
+            # 设置过期时间（1天）
+            await self.redis.expire(key, 86400)
+            return count
+        except Exception:
+            return 0
+
+    async def clear_retry_count(self, article_id: int):
+        """清除文章的重试计数"""
+        try:
+            key = f"processor:retry:{article_id}"
+            await self.redis.delete(key)
+        except Exception:
+            pass
+
+    async def handle_failure(self, article_id: int, error: str):
+        """处理失败的文章"""
+        retry_count = await self.get_retry_count(article_id)
+
+        if retry_count < self.retry_max:
+            # 放入重试队列
+            await self.incr_retry_count(article_id)
+            await self.redis.lpush(self.QUEUE_RETRY, article_id)
+            self._retried_count += 1
+            logger.warning(f"Article {article_id} failed (retry {retry_count + 1}/{self.retry_max}): {error}")
+        else:
+            # 超过重试次数，放入死信队列
+            await self.redis.lpush(self.QUEUE_DEAD, article_id)
+            await self.clear_retry_count(article_id)
+            self._failed_count += 1
+            logger.error(f"Article {article_id} moved to dead queue after {self.retry_max} retries: {error}")
 
     # ============================================
     # 数据写入方法
@@ -208,7 +284,7 @@ class GeneratorWorker:
             return False
 
         # 去重检查
-        if not self.dedup.should_save_title(title):
+        if self.dedup and not self.dedup.should_save_title(title):
             return False
 
         # 添加到缓冲区
@@ -356,6 +432,8 @@ class GeneratorWorker:
         Returns:
             是否处理成功
         """
+        start_time = time.perf_counter()
+
         group_id = article.get('group_id', 1)
         title = article.get('title', '')
         content = article.get('content', '')
@@ -379,24 +457,70 @@ class GeneratorWorker:
                     await self.save_content(annotated, group_id)
 
             self._processed_count += 1
+
+            # 记录处理时间
+            elapsed_ms = (time.perf_counter() - start_time) * 1000
+            self._total_processing_time_ms += elapsed_ms
+
+            # 清除重试计数（如果有）
+            await self.clear_retry_count(article['id'])
+
+            # 更新今日处理量
+            await self._update_daily_stats()
+
             return True
 
         except Exception as e:
             logger.error(f"Failed to process article {article.get('id')}: {e}")
-            self._failed_count += 1
             return False
+
+    async def _update_daily_stats(self):
+        """更新今日处理量"""
+        try:
+            today_key = f"processor:processed:{datetime.now().strftime('%Y%m%d')}"
+            await self.redis.incr(today_key)
+            # 设置过期时间（2天）
+            await self.redis.expire(today_key, 172800)
+        except Exception:
+            pass
 
     # ============================================
     # 运行方法
     # ============================================
 
-    async def run_once(self, count: int = 100, group_id: int = 1) -> int:
+    async def process_with_retry(self, article_id: int) -> bool:
+        """
+        处理文章，带重试逻辑
+
+        Args:
+            article_id: 文章ID
+
+        Returns:
+            是否处理成功
+        """
+        try:
+            article = await self.get_article_by_id(article_id)
+            if article is None:
+                logger.warning(f"Article {article_id} not found in database")
+                return False
+
+            success = await self.process_article(article)
+            if not success:
+                await self.handle_failure(article_id, "Processing failed")
+                return False
+
+            return True
+
+        except Exception as e:
+            await self.handle_failure(article_id, str(e))
+            return False
+
+    async def run_once(self, count: int = 100) -> int:
         """
         执行一次处理
 
         Args:
             count: 要处理的文章数量
-            group_id: 分组ID
 
         Returns:
             成功处理的数量
@@ -406,20 +530,14 @@ class GeneratorWorker:
         processed = 0
         try:
             for _ in range(count):
-                if self._stop_event.is_set():
-                    break
-
                 # 从队列取文章ID
-                article_id = await self.pop_article_id(group_id, timeout=1)
+                article_id = await self.pop_article_id(timeout=1)
                 if article_id is None:
                     # 队列为空，退出
                     break
 
-                # 按主键查询原文
-                article = await self.get_article_by_id(article_id)
-                if article:
-                    if await self.process_article(article):
-                        processed += 1
+                if await self.process_with_retry(article_id):
+                    processed += 1
 
             # 刷新缓冲区
             await self._flush_title_buffer()
@@ -430,7 +548,7 @@ class GeneratorWorker:
 
         return processed
 
-    async def run_forever(self, group_id: int = 1, wait_interval: float = 5.0):
+    async def run_forever(self, wait_interval: float = 5.0, stop_event: Optional[asyncio.Event] = None):
         """
         持续运行（高性能版）
 
@@ -438,27 +556,26 @@ class GeneratorWorker:
         无论表多大，都是 O(1) 毫秒级响应。
 
         Args:
-            group_id: 分组ID
             wait_interval: 队列为空时的等待间隔（秒）
+            stop_event: 外部停止事件（可选）
         """
         await self.start()
 
         try:
-            while not self._stop_event.is_set():
+            while self._running:
+                # 检查外部停止事件
+                if stop_event and stop_event.is_set():
+                    break
+
                 try:
                     # 从 Redis 队列取文章ID（BRPOP 阻塞等待）
-                    article_id = await self.pop_article_id(group_id, timeout=int(wait_interval))
+                    article_id = await self.pop_article_id(timeout=int(wait_interval))
 
                     if article_id is not None:
-                        # 按主键查询原文（O(1)）
-                        article = await self.get_article_by_id(article_id)
-                        if article:
-                            await self.process_article(article)
-                        else:
-                            logger.warning(f"Article {article_id} not found in database")
+                        await self.process_with_retry(article_id)
                     else:
                         # 超时，队列为空
-                        logger.debug(f"Waiting for articles (queue empty)")
+                        logger.debug("Waiting for articles (queue empty)")
 
                 except asyncio.CancelledError:
                     break
@@ -471,9 +588,16 @@ class GeneratorWorker:
 
     def get_stats(self) -> dict:
         """获取统计信息"""
+        avg_ms = 0.0
+        if self._processed_count > 0:
+            avg_ms = self._total_processing_time_ms / self._processed_count
+
         return {
             'processed': self._processed_count,
             'failed': self._failed_count,
+            'retried': self._retried_count,
+            'total_processing_time_ms': self._total_processing_time_ms,
+            'avg_processing_ms': avg_ms,
             'title_buffer_size': len(self._title_buffer),
             'content_buffer_size': len(self._content_buffer),
             'running': self._running
