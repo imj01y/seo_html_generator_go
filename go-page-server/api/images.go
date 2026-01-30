@@ -1,8 +1,6 @@
 package api
 
 import (
-	"database/sql"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -101,13 +99,167 @@ type ImageBatchAddRequest struct {
 	GroupID int      `json:"group_id"`
 }
 
-// 确保导入包被使用
-var (
-	_ = sql.ErrNoRows
-	_ = fmt.Sprintf
-	_ = strconv.Atoi
-	_ = strings.TrimSpace
-	_ = log.Info
-	_ = core.Success
-	_ gin.HandlerFunc
-)
+// ListGroups 获取分组列表
+// GET /api/images/groups
+func (h *ImagesHandler) ListGroups(c *gin.Context) {
+	siteGroupID := c.Query("site_group_id")
+
+	if h.db == nil {
+		core.Success(c, gin.H{"groups": []ImageGroup{}})
+		return
+	}
+
+	where := "status = 1"
+	args := []interface{}{}
+
+	if siteGroupID != "" {
+		where += " AND site_group_id = ?"
+		args = append(args, siteGroupID)
+	}
+
+	query := `SELECT id, site_group_id, name, description, is_default, status, created_at
+	          FROM image_groups WHERE ` + where + ` ORDER BY is_default DESC, name`
+
+	var groups []ImageGroup
+	if err := h.db.Select(&groups, query, args...); err != nil {
+		log.Warn().Err(err).Msg("Failed to list image groups")
+		groups = []ImageGroup{}
+	}
+
+	core.Success(c, gin.H{"groups": groups})
+}
+
+// CreateGroup 创建分组
+// POST /api/images/groups
+func (h *ImagesHandler) CreateGroup(c *gin.Context) {
+	var req ImageGroupCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	if req.IsDefault {
+		h.db.Exec("UPDATE image_groups SET is_default = 0 WHERE is_default = 1")
+	}
+
+	isDefault := 0
+	if req.IsDefault {
+		isDefault = 1
+	}
+
+	result, err := h.db.Exec(
+		`INSERT INTO image_groups (site_group_id, name, description, is_default)
+		 VALUES (?, ?, ?, ?)`,
+		req.SiteGroupID, req.Name, req.Description, isDefault)
+
+	if err != nil {
+		if strings.Contains(err.Error(), "Duplicate") {
+			core.Success(c, gin.H{"success": false, "message": "分组名称已存在"})
+			return
+		}
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	core.Success(c, gin.H{"success": true, "id": id})
+}
+
+// UpdateGroup 更新分组
+// PUT /api/images/groups/:id
+func (h *ImagesHandler) UpdateGroup(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的分组 ID")
+		return
+	}
+
+	var req ImageGroupUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	var exists int
+	if err := h.db.Get(&exists, "SELECT 1 FROM image_groups WHERE id = ? AND status = 1", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "分组不存在"})
+		return
+	}
+
+	updates := []string{}
+	args := []interface{}{}
+
+	if req.Name != nil {
+		updates = append(updates, "name = ?")
+		args = append(args, *req.Name)
+	}
+	if req.Description != nil {
+		updates = append(updates, "description = ?")
+		args = append(args, *req.Description)
+	}
+	if req.IsDefault != nil {
+		if *req.IsDefault == 1 {
+			h.db.Exec("UPDATE image_groups SET is_default = 0 WHERE is_default = 1")
+		}
+		updates = append(updates, "is_default = ?")
+		args = append(args, *req.IsDefault)
+	}
+
+	if len(updates) == 0 {
+		core.Success(c, gin.H{"success": true, "message": "无需更新"})
+		return
+	}
+
+	args = append(args, id)
+	query := "UPDATE image_groups SET " + strings.Join(updates, ", ") + " WHERE id = ?"
+
+	if _, err := h.db.Exec(query, args...); err != nil {
+		if strings.Contains(err.Error(), "Duplicate") {
+			core.Success(c, gin.H{"success": false, "message": "分组名称已存在"})
+			return
+		}
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
+
+// DeleteGroup 删除分组
+// DELETE /api/images/groups/:id
+func (h *ImagesHandler) DeleteGroup(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的分组 ID")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	var isDefault int
+	h.db.Get(&isDefault, "SELECT is_default FROM image_groups WHERE id = ?", id)
+	if isDefault == 1 {
+		core.Success(c, gin.H{"success": false, "message": "不能删除默认分组"})
+		return
+	}
+
+	if _, err := h.db.Exec("UPDATE image_groups SET status = 0 WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
