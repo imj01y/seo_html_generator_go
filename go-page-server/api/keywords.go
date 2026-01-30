@@ -277,3 +277,136 @@ func (h *KeywordsHandler) DeleteGroup(c *gin.Context) {
 
 	core.Success(c, gin.H{"success": true})
 }
+
+// List 获取关键词列表
+// GET /api/keywords/list
+func (h *KeywordsHandler) List(c *gin.Context) {
+	groupID, _ := strconv.Atoi(c.DefaultQuery("group_id", "1"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	search := c.Query("search")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	if h.db == nil {
+		core.SuccessPaged(c, []KeywordListItem{}, 0, page, pageSize)
+		return
+	}
+
+	where := "group_id = ? AND status = 1"
+	args := []interface{}{groupID}
+
+	if search != "" {
+		where += " AND keyword LIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+
+	// 获取总数
+	var total int64
+	h.db.Get(&total, "SELECT COUNT(*) FROM keywords WHERE "+where, args...)
+
+	// 获取列表
+	args = append(args, pageSize, offset)
+	query := `SELECT id, group_id, keyword, status, created_at
+	          FROM keywords WHERE ` + where + ` ORDER BY id DESC LIMIT ? OFFSET ?`
+
+	var items []KeywordListItem
+	if err := h.db.Select(&items, query, args...); err != nil {
+		log.Warn().Err(err).Msg("Failed to list keywords")
+		items = []KeywordListItem{}
+	}
+
+	core.SuccessPaged(c, items, total, page, pageSize)
+}
+
+// Update 更新关键词
+// PUT /api/keywords/:id
+func (h *KeywordsHandler) Update(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的关键词 ID")
+		return
+	}
+
+	var req KeywordUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	// 检查是否存在
+	var exists int
+	if err := h.db.Get(&exists, "SELECT 1 FROM keywords WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "关键词不存在"})
+		return
+	}
+
+	updates := []string{}
+	args := []interface{}{}
+
+	if req.Keyword != nil && *req.Keyword != "" {
+		updates = append(updates, "keyword = ?")
+		args = append(args, *req.Keyword)
+	}
+	if req.GroupID != nil {
+		updates = append(updates, "group_id = ?")
+		args = append(args, *req.GroupID)
+	}
+	if req.Status != nil {
+		updates = append(updates, "status = ?")
+		args = append(args, *req.Status)
+	}
+
+	if len(updates) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "没有要更新的字段"})
+		return
+	}
+
+	args = append(args, id)
+	query := "UPDATE keywords SET " + strings.Join(updates, ", ") + " WHERE id = ?"
+
+	if _, err := h.db.Exec(query, args...); err != nil {
+		if strings.Contains(err.Error(), "Duplicate") {
+			core.Success(c, gin.H{"success": false, "message": "关键词已存在"})
+			return
+		}
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
+
+// Delete 删除关键词
+// DELETE /api/keywords/:id
+func (h *KeywordsHandler) Delete(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的关键词 ID")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	// 软删除
+	if _, err := h.db.Exec("UPDATE keywords SET status = 0 WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
