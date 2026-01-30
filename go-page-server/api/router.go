@@ -52,6 +52,16 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		}
 	}
 
+	// Dashboard routes (require JWT)
+	dashboardHandler := NewDashboardHandler(deps.DB, deps.Monitor)
+	dashboardGroup := r.Group("/api/dashboard")
+	dashboardGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		dashboardGroup.GET("/stats", dashboardHandler.Stats)
+		dashboardGroup.GET("/spider-visits", dashboardHandler.SpiderVisits)
+		dashboardGroup.GET("/cache-stats", dashboardHandler.CacheStats)
+	}
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
