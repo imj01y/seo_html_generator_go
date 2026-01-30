@@ -62,6 +62,16 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		dashboardGroup.GET("/cache-stats", dashboardHandler.CacheStats)
 	}
 
+	// Logs routes (require JWT)
+	logsHandler := NewLogsHandler(deps.DB)
+	logsGroup := r.Group("/api/logs")
+	logsGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		logsGroup.GET("/history", logsHandler.History)
+		logsGroup.GET("/stats", logsHandler.Stats)
+		logsGroup.DELETE("/clear", logsHandler.Clear)
+	}
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
