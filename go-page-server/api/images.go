@@ -646,3 +646,94 @@ func (h *ImagesHandler) BatchMove(c *gin.Context) {
 
 	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
 }
+
+// Stats 获取统计信息
+// GET /api/images/urls/stats
+func (h *ImagesHandler) Stats(c *gin.Context) {
+	if h.db == nil {
+		core.Success(c, gin.H{"total": 0, "groups": []interface{}{}})
+		return
+	}
+
+	type GroupStat struct {
+		GroupID   int    `db:"group_id" json:"group_id"`
+		GroupName string `db:"group_name" json:"group_name"`
+		Count     int    `db:"count" json:"count"`
+	}
+
+	var stats []GroupStat
+	h.db.Select(&stats, `
+		SELECT ig.id as group_id, ig.name as group_name, COUNT(i.id) as count
+		FROM image_groups ig
+		LEFT JOIN images i ON i.group_id = ig.id AND i.status = 1
+		WHERE ig.status = 1
+		GROUP BY ig.id, ig.name
+		ORDER BY ig.is_default DESC, ig.name
+	`)
+
+	var total int64
+	h.db.Get(&total, "SELECT COUNT(*) FROM images WHERE status = 1")
+
+	core.Success(c, gin.H{
+		"total":  total,
+		"groups": stats,
+	})
+}
+
+// Random 随机获取图片URL
+// GET /api/images/urls/random
+func (h *ImagesHandler) Random(c *gin.Context) {
+	count, _ := strconv.Atoi(c.DefaultQuery("count", "10"))
+	groupID := c.Query("group_id")
+
+	if count < 1 {
+		count = 10
+	}
+	if count > 100 {
+		count = 100
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"urls": []string{}, "count": 0})
+		return
+	}
+
+	where := "status = 1"
+	args := []interface{}{}
+
+	if groupID != "" {
+		where += " AND group_id = ?"
+		args = append(args, groupID)
+	}
+
+	args = append(args, count)
+	query := `SELECT url FROM images WHERE ` + where + ` ORDER BY RAND() LIMIT ?`
+
+	var urls []string
+	if err := h.db.Select(&urls, query, args...); err != nil {
+		log.Warn().Err(err).Msg("Failed to get random images")
+		urls = []string{}
+	}
+
+	core.Success(c, gin.H{"urls": urls, "count": len(urls)})
+}
+
+// Reload 重新加载
+// POST /api/images/urls/reload
+func (h *ImagesHandler) Reload(c *gin.Context) {
+	if h.db == nil {
+		core.Success(c, gin.H{"success": true, "total": 0})
+		return
+	}
+
+	var total int64
+	h.db.Get(&total, "SELECT COUNT(*) FROM images WHERE status = 1")
+
+	core.Success(c, gin.H{"success": true, "total": total})
+}
+
+// ClearCache 清理缓存
+// POST /api/images/cache/clear
+func (h *ImagesHandler) ClearCache(c *gin.Context) {
+	core.Success(c, gin.H{"success": true, "cleared": 0, "message": "缓存已清理"})
+}
