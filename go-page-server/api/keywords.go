@@ -2,9 +2,7 @@
 package api
 
 import (
-	"database/sql"
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -103,16 +101,179 @@ type KeywordBatchAddRequest struct {
 	GroupID  int      `json:"group_id"`
 }
 
-// 临时变量来确保导入包被使用（后续实现会用到）
-var (
-	_ = sql.ErrNoRows
-	_ = fmt.Sprintf
-	_ = io.EOF
-	_ = strconv.Atoi
-	_ = strings.TrimSpace
-	_ = log.Info
-	_ = core.Success
-)
+// ListGroups 获取分组列表
+// GET /api/keywords/groups
+func (h *KeywordsHandler) ListGroups(c *gin.Context) {
+	siteGroupID := c.Query("site_group_id")
 
-// 临时使用 gin.Context 确保导入
-var _ *gin.Context
+	if h.db == nil {
+		core.Success(c, gin.H{"groups": []KeywordGroup{}})
+		return
+	}
+
+	where := "status = 1"
+	args := []interface{}{}
+
+	if siteGroupID != "" {
+		where += " AND site_group_id = ?"
+		args = append(args, siteGroupID)
+	}
+
+	query := `SELECT id, site_group_id, name, description, is_default, status, created_at
+	          FROM keyword_groups WHERE ` + where + ` ORDER BY is_default DESC, name`
+
+	var groups []KeywordGroup
+	if err := h.db.Select(&groups, query, args...); err != nil {
+		log.Warn().Err(err).Msg("Failed to list keyword groups")
+		groups = []KeywordGroup{}
+	}
+
+	core.Success(c, gin.H{"groups": groups})
+}
+
+// CreateGroup 创建分组
+// POST /api/keywords/groups
+func (h *KeywordsHandler) CreateGroup(c *gin.Context) {
+	var req GroupCreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	// 如果设为默认，先取消其他默认
+	if req.IsDefault {
+		h.db.Exec("UPDATE keyword_groups SET is_default = 0 WHERE is_default = 1")
+	}
+
+	isDefault := 0
+	if req.IsDefault {
+		isDefault = 1
+	}
+
+	result, err := h.db.Exec(
+		`INSERT INTO keyword_groups (site_group_id, name, description, is_default)
+		 VALUES (?, ?, ?, ?)`,
+		req.SiteGroupID, req.Name, req.Description, isDefault)
+
+	if err != nil {
+		if strings.Contains(err.Error(), "Duplicate") {
+			core.Success(c, gin.H{"success": false, "message": "分组名称已存在"})
+			return
+		}
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	core.Success(c, gin.H{"success": true, "id": id})
+}
+
+// UpdateGroup 更新分组
+// PUT /api/keywords/groups/:id
+func (h *KeywordsHandler) UpdateGroup(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的分组 ID")
+		return
+	}
+
+	var req GroupUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	// 检查分组是否存在
+	var exists int
+	if err := h.db.Get(&exists, "SELECT 1 FROM keyword_groups WHERE id = ? AND status = 1", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "分组不存在"})
+		return
+	}
+
+	updates := []string{}
+	args := []interface{}{}
+
+	if req.Name != nil {
+		updates = append(updates, "name = ?")
+		args = append(args, *req.Name)
+	}
+	if req.Description != nil {
+		updates = append(updates, "description = ?")
+		args = append(args, *req.Description)
+	}
+	if req.IsDefault != nil {
+		if *req.IsDefault == 1 {
+			h.db.Exec("UPDATE keyword_groups SET is_default = 0 WHERE is_default = 1")
+		}
+		updates = append(updates, "is_default = ?")
+		args = append(args, *req.IsDefault)
+	}
+
+	if len(updates) == 0 {
+		core.Success(c, gin.H{"success": true, "message": "无需更新"})
+		return
+	}
+
+	args = append(args, id)
+	query := "UPDATE keyword_groups SET " + strings.Join(updates, ", ") + " WHERE id = ?"
+
+	if _, err := h.db.Exec(query, args...); err != nil {
+		if strings.Contains(err.Error(), "Duplicate") {
+			core.Success(c, gin.H{"success": false, "message": "分组名称已存在"})
+			return
+		}
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
+
+// DeleteGroup 删除分组
+// DELETE /api/keywords/groups/:id
+func (h *KeywordsHandler) DeleteGroup(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的分组 ID")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	// 检查是否有站点在使用
+	var sitesCount int
+	h.db.Get(&sitesCount, "SELECT COUNT(*) FROM sites WHERE keyword_group_id = ?", id)
+	if sitesCount > 0 {
+		core.Success(c, gin.H{"success": false, "message": fmt.Sprintf("无法删除：有 %d 个站点正在使用此分组", sitesCount)})
+		return
+	}
+
+	// 检查是否是默认分组
+	var isDefault int
+	h.db.Get(&isDefault, "SELECT is_default FROM keyword_groups WHERE id = ?", id)
+	if isDefault == 1 {
+		core.Success(c, gin.H{"success": false, "message": "不能删除默认分组"})
+		return
+	}
+
+	// 软删除
+	if _, err := h.db.Exec("UPDATE keyword_groups SET status = 0 WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
