@@ -26,6 +26,7 @@ class RedisLogger:
 
     async def _publish(self, level: str, message: str):
         log = {
+            "type": "log",  # 前端 switch 需要此字段
             "level": level,
             "message": message,
             "timestamp": datetime.now().isoformat()
@@ -47,6 +48,15 @@ class RedisLogger:
     async def debug(self, msg: str):
         await self._publish("DEBUG", msg)
         logger.debug(msg)
+
+    async def item(self, data: dict):
+        """发送数据项，前端会解析并展示"""
+        await self._publish("ITEM", json.dumps(data, ensure_ascii=False))
+
+    async def end(self):
+        """发送测试结束信号"""
+        msg = {"type": "end", "timestamp": datetime.now().isoformat()}
+        await self.rdb.publish(self.channel, json.dumps(msg, ensure_ascii=False))
 
 
 class CommandListener:
@@ -165,6 +175,7 @@ class CommandListener:
                 redis=self.rdb,
                 db_pool=get_db_pool(),
                 concurrency=row.get('concurrency', 3),
+                log=log,
             )
 
             await log.info("开始执行 Spider...")
@@ -319,6 +330,7 @@ class CommandListener:
                 concurrency=row.get('concurrency', 3),
                 is_test=True,
                 max_items=max_items,
+                log=log,
             )
 
             items_count = 0
@@ -342,16 +354,22 @@ class CommandListener:
                 else:
                     await log.info(f"[{items_count}] {title}")
 
+                # 发送数据项供前端展示
+                await log.item(item)
+
                 if max_items > 0 and items_count >= max_items:
                     break
 
             await log.info(f"测试完成：共 {items_count} 条数据")
+            await log.end()  # 发送结束信号
 
         except asyncio.CancelledError:
             await log.info("测试已被取消")
+            await log.end()
 
         except Exception as e:
             await log.error(f"测试异常: {str(e)}")
+            await log.end()
 
         finally:
             self.running_tasks.pop(project_id, None)

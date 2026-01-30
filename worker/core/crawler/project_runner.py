@@ -15,6 +15,7 @@ from loguru import logger
 if TYPE_CHECKING:
     from redis.asyncio import Redis
     from aiomysql import Pool
+    from core.workers.logger_protocol import LoggerProtocol
 
 from .spider import Spider
 from .request import Request
@@ -37,6 +38,7 @@ class ProjectRunner:
         concurrency: int = 3,
         is_test: bool = False,
         max_items: int = 0,
+        log: Optional['LoggerProtocol'] = None,
     ):
         """
         初始化运行器
@@ -61,6 +63,7 @@ class ProjectRunner:
         self.max_items = max_items
         self._stop_flag = False
         self._spider_instance: Optional[Spider] = None
+        self.log = log
 
     def _get_spider_class(self) -> type:
         """
@@ -128,6 +131,8 @@ class ProjectRunner:
 
         spider_name = spider.name or spider_cls.__name__
         logger.info(f"Spider '{spider_name}' starting")
+        if self.log:
+            await self.log.info(f"Spider '{spider_name}' 启动，并发数: {self.concurrency}")
 
         # 初始化队列
         queue = RequestQueue(self.redis, self.project_id, is_test=self.is_test)
@@ -147,6 +152,7 @@ class ProjectRunner:
                 is_test=self.is_test,
                 max_items=self.max_items,
                 start_requests_iter=start_requests_iter,
+                log=self.log,
             )
 
             logger.info(f"Starting queue consumer with {self.concurrency} workers")

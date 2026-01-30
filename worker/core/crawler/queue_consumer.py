@@ -13,6 +13,7 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
+    from core.workers.logger_protocol import LoggerProtocol
 
 from .spider import Spider
 from .request import Request
@@ -52,6 +53,7 @@ class QueueConsumer:
         is_test: bool = False,
         max_items: int = 0,
         start_requests_iter: Optional[Iterator] = None,
+        log: Optional['LoggerProtocol'] = None,
     ):
         """
         初始化消费器
@@ -83,6 +85,9 @@ class QueueConsumer:
 
         # 运行状态
         self._running = False
+
+        # 日志（可选，用于推送到前端）
+        self.log = log
 
     def _get_callback(self, callback_name: str) -> Callable:
         """
@@ -181,6 +186,11 @@ class QueueConsumer:
                 except (json.JSONDecodeError, TypeError):
                     pass  # 保持原始 body
 
+            # 推送到前端
+            if self.log:
+                url_short = request.url[:60] + ('...' if len(request.url) > 60 else '')
+                await self.log.debug(f"正在请求: {url_short}")
+
             logger.info(f"Fetching [{request.method}]: {request.url[:80]}")
             body = await self.http_client.fetch(
                 url=request.url,
@@ -193,7 +203,14 @@ class QueueConsumer:
 
             if body is None:
                 logger.info(f"Fetch failed: {request.url[:80]}")
+                if self.log:
+                    error_msg = self.http_client.last_error or '未知错误'
+                    await self.log.warning(f"请求失败: {request.url[:50]} - {error_msg}")
                 return None
+
+            if self.log:
+                size_kb = len(body) / 1024
+                await self.log.debug(f"请求成功 (200, {size_kb:.1f}KB)")
 
             response = Response.from_request(
                 request=request,
@@ -237,6 +254,8 @@ class QueueConsumer:
         if request.retry_count > 0:
             delay = request.retry_delay * (2 ** (request.retry_count - 1))
             logger.debug(f"Retry delay {delay}s for {request.url[:50]}")
+            if self.log:
+                await self.log.warning(f"正在重试 ({request.retry_count}/{request.max_retries}): {request.url[:50]}")
             try:
                 await asyncio.sleep(delay)
             except asyncio.CancelledError:
@@ -340,6 +359,8 @@ class QueueConsumer:
 
         except Exception as e:
             logger.exception(f"Callback error for {request.url}")
+            if self.log:
+                await self.log.error(f"解析出错: {str(e)[:100]}")
             # 调用 Spider 的异常回调
             self.spider.exception_request(request, response, e)
             # 回调出错，尝试重试
