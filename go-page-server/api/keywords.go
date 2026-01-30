@@ -751,3 +751,96 @@ func (h *KeywordsHandler) Upload(c *gin.Context) {
 		"skipped": skipped,
 	})
 }
+
+// Stats 获取统计信息
+// GET /api/keywords/stats
+func (h *KeywordsHandler) Stats(c *gin.Context) {
+	if h.db == nil {
+		core.Success(c, gin.H{"total": 0, "groups": []interface{}{}})
+		return
+	}
+
+	// 获取各分组统计
+	type GroupStat struct {
+		GroupID   int    `db:"group_id" json:"group_id"`
+		GroupName string `db:"group_name" json:"group_name"`
+		Count     int    `db:"count" json:"count"`
+	}
+
+	var stats []GroupStat
+	h.db.Select(&stats, `
+		SELECT kg.id as group_id, kg.name as group_name, COUNT(k.id) as count
+		FROM keyword_groups kg
+		LEFT JOIN keywords k ON k.group_id = kg.id AND k.status = 1
+		WHERE kg.status = 1
+		GROUP BY kg.id, kg.name
+		ORDER BY kg.is_default DESC, kg.name
+	`)
+
+	var total int64
+	h.db.Get(&total, "SELECT COUNT(*) FROM keywords WHERE status = 1")
+
+	core.Success(c, gin.H{
+		"total":  total,
+		"groups": stats,
+	})
+}
+
+// Random 随机获取关键词
+// GET /api/keywords/random
+func (h *KeywordsHandler) Random(c *gin.Context) {
+	count, _ := strconv.Atoi(c.DefaultQuery("count", "10"))
+	groupID := c.Query("group_id")
+
+	if count < 1 {
+		count = 10
+	}
+	if count > 100 {
+		count = 100
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"keywords": []string{}, "count": 0})
+		return
+	}
+
+	where := "status = 1"
+	args := []interface{}{}
+
+	if groupID != "" {
+		where += " AND group_id = ?"
+		args = append(args, groupID)
+	}
+
+	args = append(args, count)
+	query := `SELECT keyword FROM keywords WHERE ` + where + ` ORDER BY RAND() LIMIT ?`
+
+	var keywords []string
+	if err := h.db.Select(&keywords, query, args...); err != nil {
+		log.Warn().Err(err).Msg("Failed to get random keywords")
+		keywords = []string{}
+	}
+
+	core.Success(c, gin.H{"keywords": keywords, "count": len(keywords)})
+}
+
+// Reload 重新加载（占位，Go 中暂不需要）
+// POST /api/keywords/reload
+func (h *KeywordsHandler) Reload(c *gin.Context) {
+	if h.db == nil {
+		core.Success(c, gin.H{"success": true, "total": 0})
+		return
+	}
+
+	var total int64
+	h.db.Get(&total, "SELECT COUNT(*) FROM keywords WHERE status = 1")
+
+	core.Success(c, gin.H{"success": true, "total": total})
+}
+
+// ClearCache 清理缓存（占位，Go 中暂不需要 Redis 缓存）
+// POST /api/keywords/cache/clear
+func (h *KeywordsHandler) ClearCache(c *gin.Context) {
+	// Go 版本暂不使用 Redis 缓存关键词
+	core.Success(c, gin.H{"success": true, "cleared": 0, "message": "缓存已清理"})
+}
