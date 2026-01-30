@@ -300,6 +300,8 @@ func main() {
 
 	// Configure Admin API routes
 	deps := &api.Dependencies{
+		DB:               db,
+		Config:           cfg,
 		TemplateAnalyzer: templateAnalyzer,
 		TemplateFuncs:    funcsManager,
 		DataPoolManager:  dataPoolManager,

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"go-page-server/config"
 	"go-page-server/core"
 )
 
@@ -15,7 +16,17 @@ func setupTestRouter() (*gin.Engine, *Dependencies) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 
+	// 创建测试配置
+	testConfig := &config.Config{
+		Auth: config.AuthConfig{
+			SecretKey:                "test-secret-key-for-testing",
+			Algorithm:                "HS256",
+			AccessTokenExpireMinutes: 60,
+		},
+	}
+
 	deps := &Dependencies{
+		Config:           testConfig,
 		TemplateAnalyzer: core.NewTemplateAnalyzer(),
 		// 其他依赖可以为 nil 或在具体测试中设置
 	}
