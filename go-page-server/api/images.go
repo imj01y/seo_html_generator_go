@@ -1,6 +1,8 @@
 package api
 
 import (
+	"database/sql"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -492,4 +494,155 @@ func (h *ImagesHandler) DeleteURL(c *gin.Context) {
 	}
 
 	core.Success(c, gin.H{"success": true})
+}
+
+// BatchDelete 批量删除
+// DELETE /api/images/batch
+func (h *ImagesHandler) BatchDelete(c *gin.Context) {
+	var req ImageBatchIdsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "deleted": 0})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "deleted": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "deleted": 0})
+		return
+	}
+
+	placeholders := strings.Repeat("?,", len(req.IDs))
+	placeholders = placeholders[:len(placeholders)-1]
+
+	args := make([]interface{}, len(req.IDs))
+	for i, id := range req.IDs {
+		args[i] = id
+	}
+
+	query := fmt.Sprintf("UPDATE images SET status = 0 WHERE id IN (%s)", placeholders)
+	if _, err := h.db.Exec(query, args...); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true, "deleted": len(req.IDs)})
+}
+
+// DeleteAll 删除全部
+// DELETE /api/images/delete-all
+func (h *ImagesHandler) DeleteAll(c *gin.Context) {
+	var req ImageDeleteAllRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "请求参数错误", "deleted": 0})
+		return
+	}
+
+	if !req.Confirm {
+		core.Success(c, gin.H{"success": false, "message": "请确认删除操作", "deleted": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "deleted": 0})
+		return
+	}
+
+	var result sql.Result
+	var err error
+
+	if req.GroupID != nil {
+		result, err = h.db.Exec("UPDATE images SET status = 0 WHERE group_id = ? AND status = 1", *req.GroupID)
+	} else {
+		result, err = h.db.Exec("UPDATE images SET status = 0 WHERE status = 1")
+	}
+
+	if err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
+		return
+	}
+
+	deleted, _ := result.RowsAffected()
+	core.Success(c, gin.H{"success": true, "deleted": deleted})
+}
+
+// BatchUpdateStatus 批量更新状态
+// PUT /api/images/batch/status
+func (h *ImagesHandler) BatchUpdateStatus(c *gin.Context) {
+	var req ImageBatchStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "请求参数错误", "updated": 0})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "updated": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "updated": 0})
+		return
+	}
+
+	placeholders := strings.Repeat("?,", len(req.IDs))
+	placeholders = placeholders[:len(placeholders)-1]
+
+	args := []interface{}{req.Status}
+	for _, id := range req.IDs {
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf("UPDATE images SET status = ? WHERE id IN (%s)", placeholders)
+	if _, err := h.db.Exec(query, args...); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "updated": 0})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true, "updated": len(req.IDs)})
+}
+
+// BatchMove 批量移动分组
+// PUT /api/images/batch/move
+func (h *ImagesHandler) BatchMove(c *gin.Context) {
+	var req ImageBatchMoveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "请求参数错误", "moved": 0})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "moved": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "moved": 0})
+		return
+	}
+
+	var exists int
+	if err := h.db.Get(&exists, "SELECT 1 FROM image_groups WHERE id = ? AND status = 1", req.GroupID); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "目标分组不存在", "moved": 0})
+		return
+	}
+
+	placeholders := strings.Repeat("?,", len(req.IDs))
+	placeholders = placeholders[:len(placeholders)-1]
+
+	args := []interface{}{req.GroupID}
+	for _, id := range req.IDs {
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf("UPDATE images SET group_id = ? WHERE id IN (%s)", placeholders)
+	if _, err := h.db.Exec(query, args...); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "moved": 0})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
 }
