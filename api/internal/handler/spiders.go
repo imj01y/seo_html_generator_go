@@ -1573,40 +1573,54 @@ func (h *SpiderStatsHandler) GetScheduled(c *gin.Context) {
 	c.JSON(200, gin.H{"success": true, "data": projects})
 }
 
-// GetByProject 按项目统计
+// GetByProject 按项目统计（从 Redis 读取实时数据）
 func (h *SpiderStatsHandler) GetByProject(c *gin.Context) {
-	db, exists := c.Get("db")
-	if !exists {
+	db, dbExists := c.Get("db")
+	rdb, redisExists := c.Get("redis")
+	if !dbExists || !redisExists {
 		c.JSON(200, gin.H{"success": true, "data": []interface{}{}})
 		return
 	}
 	sqlxDB := db.(*sqlx.DB)
+	redisClient := rdb.(*redis.Client)
+	ctx := context.Background()
 
-	period := c.DefaultQuery("period", "day")
-
-	rows, err := sqlxDB.Queryx(`
-		SELECT sp.id, sp.name,
-		       COALESCE(SUM(sh.total), 0) as total,
-		       COALESCE(SUM(sh.completed), 0) as completed,
-		       COALESCE(SUM(sh.failed), 0) as failed
-		FROM spider_projects sp
-		LEFT JOIN spider_stats_history sh ON sp.id = sh.project_id AND sh.period_type = ?
-		GROUP BY sp.id, sp.name
-		ORDER BY total DESC
-	`, period)
-
-	if err != nil {
-		c.JSON(200, gin.H{"success": true, "data": []interface{}{}})
-		return
+	// 获取所有项目
+	var projects []struct {
+		ID   int    `db:"id"`
+		Name string `db:"name"`
 	}
-	defer rows.Close()
+	sqlxDB.Select(&projects, "SELECT id, name FROM spider_projects ORDER BY id")
 
-	data := []map[string]interface{}{}
-	for rows.Next() {
-		row := make(map[string]interface{})
-		rows.MapScan(row)
-		data = append(data, row)
+	// 从 Redis 获取每个项目的统计
+	result := make([]gin.H, 0, len(projects))
+	for _, p := range projects {
+		statsKey := fmt.Sprintf("spider:%d:stats", p.ID)
+		statsData, err := redisClient.HGetAll(ctx, statsKey).Result()
+
+		var total, completed, failed, retried int64
+		if err == nil && len(statsData) > 0 {
+			total, _ = strconv.ParseInt(statsData["total"], 10, 64)
+			completed, _ = strconv.ParseInt(statsData["completed"], 10, 64)
+			failed, _ = strconv.ParseInt(statsData["failed"], 10, 64)
+			retried, _ = strconv.ParseInt(statsData["retried"], 10, 64)
+		}
+
+		var successRate float64
+		if total > 0 {
+			successRate = float64(completed) / float64(total) * 100
+		}
+
+		result = append(result, gin.H{
+			"project_id":   p.ID,
+			"project_name": p.Name,
+			"total":        total,
+			"completed":    completed,
+			"failed":       failed,
+			"retried":      retried,
+			"success_rate": successRate,
+		})
 	}
 
-	c.JSON(200, gin.H{"success": true, "data": data})
+	c.JSON(200, gin.H{"success": true, "data": result})
 }
