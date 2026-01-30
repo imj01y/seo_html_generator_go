@@ -1,0 +1,944 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <!-- ========== 1. 百度适配Meta标签 ========== -->
+    <meta name="applicable-device" content="pc" />
+    <meta http-equiv="Cache-Control" content="no-transform" />
+    <meta http-equiv="Cache-Control" content="no-siteapp" />
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+    <!-- ========== 2. Title (关键词+Emoji混合编码) ========== -->
+    <title>{{.Title}}</title>
+
+    <!-- ========== 3. Mobile Agent适配 ========== -->
+    <meta http-equiv="mobile-agent" content="format=xhtml; url={{.RandomURL}}" />
+    <meta http-equiv="mobile-agent" content="format=html5; url={{.RandomURL}}" />
+
+    <!-- ========== 4. SEO基础标签（留空） ========== -->
+    <meta name="keywords" content="" />
+    <meta name="description" content="" />
+
+    <!-- ========== 5. CSS引用 ========== -->
+    <link href="http://www.imansoft.cn/static/css/3673.css" type="text/css" rel="stylesheet" />
+
+    <!-- ========== 6. 页面配置JS变量 ========== -->
+    <script>
+    var _pageinfo = {
+        id: "{{.RandomURL}}",
+        path: "down",
+        categroyId: '{{.RandomNumber 100 999}}',
+        rootId: '{{.RandomNumber 1 9}}',
+        commendid: '0',
+        catalogname: '{{.RandomKeyword}}',
+        softname: '{{.RandomKeyword}}',
+        softver: '{{.RandomKeyword}}',
+        system: '{{.RandomKeyword}}',
+        softlicence: "{{.RandomKeyword}}",
+        body: "1"
+    }
+    </script>
+    <script type="text/javascript" src="/static/js/jquerymin.js"></script>
+    <script type="text/javascript" src="/static/js/maininfo.js"></script>
+
+    <!-- ========== 7. OG协议标签 ========== -->
+    <meta property="og:type" content="soft" />
+    <meta property="og:description" content="" />
+    <meta property="og:image" content="{{.RandomImage}}" />
+    <meta property="og:title" content="{{.RandomKeyword}}" />
+
+    <!-- ========== 8. OG软件扩展标签 (og:soft:*) ========== -->
+    <meta property="og:soft:operating_system" content="{{.RandomKeyword}}" />
+    <meta property="og:soft:language" content="{{.RandomKeyword}}" />
+    <meta property="og:soft:license" content="{{.RandomKeyword}}" />
+    <meta property="og:soft:url" content="{{.RandomURL}}" />
+    <meta property="og:release_date" content="{{.Now}}" />
+
+    <!-- ========== 9. 字节跳动时间戳标签 ========== -->
+    <meta property="bytedance:published_time" content="{{.Now}}" />
+    <meta property="bytedance:lrDate_time" content="{{.Now}}" />
+    <meta property="bytedance:updated_time" content="{{.Now}}" />
+
+    <!-- ========== 10. 统计代码 ========== -->
+    {{.AnalyticsCode}}
+</head>
+
+<body id="downpage">
+    <!-- ========== 区域1: 顶部导航条 (topper) ========== -->
+    <div class="{{.Cls "topper"}}">
+        <div class="{{.Cls "box"}}">
+            <span class="{{.Cls "fl"}}">{{.RandomKeyword}}</span>
+            {{range $i := iterate 4}}
+            <a href="{{.RandomURL}}">{{.RandomKeyword}}</a>|
+            {{end}}
+        </div>
+    </div>
+
+    <!-- ========== 区域2: 头部 (header) ========== -->
+    <div class="{{.Cls "header"}}">
+        <div class="{{.Cls "box"}}">
+            <!-- Logo -->
+            <div class="{{.Cls "logo"}}">
+                <a href="{{.RandomURL}}"><b>{{.SiteID}}</b>.com</a>
+            </div>
+
+            <!-- 导航菜单 -->
+            <div class="{{.Cls "menu"}}">
+                <a href="{{.RandomURL}}" class="{{.Cls "menuGame"}}"><i></i>网络游戏</a>
+                <a href="{{.RandomURL}}" class="{{.Cls "menuGame"}}"><i></i>单机游戏</a>
+                <a href="{{.RandomURL}}" class="{{.Cls "menuApp"}}"><i></i>手机应用</a>
+                <a href="{{.RandomURL}}" class="{{.Cls "menuTopic"}}"><i></i>电脑软件</a>
+                <a href="{{.RandomURL}}" class="{{.Cls "menuNew"}}"><i></i>专题</a>
+                <a href="{{.RandomURL}}" class="{{.Cls "menuGame"}}"><i></i>热门排行榜</a>
+            </div>
+
+            <!-- 搜索框 -->
+            <div class="{{.Cls "searBox"}}">
+                <div class="{{.Cls "search"}}">
+                    <input type="text" class="{{.Cls "txt_search"}}" id="words" onkeypress="if(event.keyCode==13) {search_submit('words');return false;}" value="" />
+                    <input type="button" class="{{.Cls "btn_search"}}" onclick="search_submit('words')" />
+                </div>
+                <!-- 热搜词 -->
+                <div class="{{.Cls "hot_word"}}">
+                    {{range $i := iterate 9}}
+                    <a href="{{.RandomURL}}" class="{{.Cls "bdcs-hot-item"}}" target="_blank">{{.RandomKeyword}}</a>
+                    {{end}}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 区域3: 面包屑导航 (breadcrumb) ========== -->
+    <div class="{{.Cls "box"}}">
+        <p class="{{.Cls "pos"}}">当前位置：
+            <a href="{{.RandomURL}}">{{.RandomKeyword}}</a>→
+            <a href="{{.RandomURL}}">{{.RandomKeyword}}</a>→
+            <a href="{{.RandomURL}}">{{.RandomKeyword}}</a>
+            {{.RandomKeyword}} 安卓版
+        </p>
+    </div>
+
+    <!-- ========== 区域4: 主内容区域 ========== -->
+    <div class="{{.Cls "box"}}">
+        <!-- ===== 4.1 左侧信息栏 (infoSub) ===== -->
+        <div class="{{.Cls "infoSub"}}">
+            <!-- 应用图标和H1标题 -->
+            <div class="{{.Cls "subAppicon"}}">
+                <img src="{{.RandomImage}}" alt="{{.RandomKeyword}}" />
+                <h1>{{.RandomKeyword}}</h1>
+
+                <!-- 下载按钮 -->
+                <ul id="dbtns">
+                    <li class="{{.Cls "az"}}" id="azbtn">
+                        <a href="{{.RandomURL}}" rel="nofollow" class="{{.Cls "down_counter"}}" id="{{.RandomURL}}" target="_blank">安卓版下载</a>
+                    </li>
+                    <li id="pgbtn" class="{{.Cls "appstore"}}">
+                        <a target="_blank" id="{{.RandomURL}}" href="{{.RandomURL}}">电脑版下载</a>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- 点赞/踩按钮 -->
+            <ul class="{{.Cls "aztop"}}">
+                <li id="showding" onclick="javascript:sEval({{.RandomURL}},1,'showding','showcai',0)">
+                    <em class="{{.Cls "showDinNum"}}">{{.RandomNumber 1 20}}</em>
+                </li>
+                <li id="showcai" onclick="javascript:sEval({{.RandomURL}},0,'showding','showcai',0)">
+                    <em class="{{.Cls "showDinNum"}}">{{.RandomNumber 1 10}}</em>
+                </li>
+            </ul>
+
+            <!-- 相关推荐列表 -->
+            <div class="{{.Cls "subList"}}">
+                <div class="{{.Cls "tit"}}" id="anchorLike">相关推荐</div>
+                <ul class="{{.Cls "zolSub"}}">
+                    {{range $i := iterate 50}}
+                    <li>
+                        <a href="{{.RandomURL}}" title="{{.RandomKeyword}}">
+                            <img src="{{.RandomImage}}" alt="{{.RandomKeyword}}" />
+                            <section>
+                                <h3>{{.RandomKeyword}}</h3>
+                                <span class="{{.Cls "star"}}" title="热度评级：6/10">
+                                    <span style="width:calc(40%*2)"></span>
+                                </span>
+                                <p>v{{.RandomNumber 1 9}}.{{.RandomNumber 0 9}}.{{.RandomNumber 0 99}}</p>
+                            </section>
+                        </a>
+                    </li>
+                    {{end}}
+                </ul>
+            </div>
+        </div>
+
+        <!-- ===== 4.1.5 右侧边栏 (infoRight) ===== -->
+        <div class="{{.Cls "infoRight"}}">
+            <dl class="{{.Cls "kbox"}}">
+                <dt>相关游戏</dt>
+                <dd>
+                    {{range $i := iterate 18}}
+                    <a href="{{.RandomURL}}">
+                        <img alt="{{.RandomKeyword}}" src="{{.RandomImage}}" />
+                        <i>{{.RandomKeyword}}</i>
+                    </a>
+                    {{end}}
+                </dd>
+            </dl>
+
+            <!-- 热门排行 (移动到infoRight内) -->
+            <div class="{{.Cls "tit"}}">热门冒险解谜</div>
+            <ul class="{{.Cls "topList"}}">
+                {{range $i := iterate 400}}
+                <li>
+                    <i>{{.Now}}</i>
+                    <b class='on'>{{.RandomNumber 100 999}}</b>
+                    <a href="{{.RandomURL}}" target="_blank">
+                        <img src="{{.RandomImage}}" alt="{{.RandomKeyword}}" />
+                    </a>
+                    <p><a href="{{.RandomURL}}" target="_blank">{{.RandomKeyword}}</a></p>
+                </li>
+                {{end}}
+            </ul>
+        </div>
+
+        <!-- ===== 4.2 主信息区域 (infoMain) ===== -->
+        <div class="{{.Cls "infoMain"}}">
+            <!-- 软件信息表格 -->
+            <table cellpadding="0" cellspacing="0">
+                <tr>
+                    <td><i>分类：</i>{{.RandomKeyword}} / {{.RandomKeyword}}</td>
+                    <td><i>大小：</i></td>
+                    <td><i>授权：</i>{{.RandomKeyword}}</td>
+                </tr>
+                <tr>
+                    <td><i>语言：</i>{{.RandomKeyword}}</td>
+                    <td><i>更新：</i>{{.Now}}</td>
+                    <td><i>等级：</i>
+                        <span class="{{.Cls "star"}}">
+                            <span style="width:calc(40%*2)"></span>
+                        </span>
+                    </td>
+                </tr>
+                <tr>
+                    <td><i>平台：</i>{{.RandomKeyword}}</td>
+                    <td><i>厂商：</i>
+                        <a href="{{.RandomURL}}" target="_blank">{{.RandomKeyword}}</a>
+                    </td>
+                    <td class="{{.Cls "siteurl"}}"><i>官网：</i>暂无</td>
+                </tr>
+                <tr>
+                    <td class="{{.Cls "qx"}}"><i>权限：</i><b>查看</b>
+                        <div class="{{.Cls "qxstr"}}">允许程序访问网络.</div>
+                    </td>
+                    <td class="{{.Cls "beian"}}"><i>备案：</i>湘ICP备2023018554号-3A</td>
+                    <td></td>
+                </tr>
+                <tr>
+                    <td colspan="3"><i>标签：</i>
+                        <span class="{{.Cls "tipWord"}}">
+                            {{range $i := iterate 3}}
+                            <a href="{{.RandomURL}}" target="_blank">{{.RandomKeyword}}</a>
+                            {{end}}
+                        </span>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Tab导航 -->
+            <dl class="{{.Cls "queTit"}}">
+                <dd class="{{.Cls "on"}}"><i class="{{.Cls "queTop"}}"></i>详情</dd>
+                <dd><i class="{{.Cls "queInfo"}}"></i>介绍</dd>
+                <dd><i class="{{.Cls "queLike"}}"></i>猜你喜欢</dd>
+                <dd><i class="{{.Cls "queHistory"}}"></i>相关版本</dd>
+            </dl>
+
+            <!-- 截图区域 -->
+            <div class="{{.Cls "appWrap"}}" id="div_screenshots">
+                <h3><i class="{{.Cls "iInfo"}}"></i>截图</h3>
+                <div class="{{.Cls "infopic"}}" id="div_screenshots2">
+                    <div class="{{.Cls "picbox"}}">
+                        <ul class="{{.Cls "piclist"}}">
+                            {{range $i := iterate 4}}
+                            <li>
+                                <a href="{{.RandomImage}}" data-lightbox="s1" data-text="{{.RandomKeyword}}">
+                                    <img src="{{.RandomImage}}" alt="{{.RandomKeyword}}" />
+                                </a>
+                            </li>
+                            {{end}}
+                        </ul>
+                    </div>
+                    <div class="{{.Cls "gn_prev"}}"></div>
+                    <div class="{{.Cls "gn_next"}}"></div>
+                </div>
+            </div>
+
+            <!-- 内容详情区域 -->
+            <div class="{{.Cls "appWrap"}}">
+                <h3 id="anchorInfo"><i class="{{.Cls "iInfo"}}"></i>内容详情</h3>
+                <div class="{{.Cls "txtIntro"}}">
+                    <!-- 热点新闻标题 -->
+                    <p id="news_1">{{.RandomKeyword}}</p>
+                    <p id="news_2">{{.RandomKeyword}}</p>
+                    <p id="news_3">{{.RandomKeyword}}</p>
+
+                    <!-- 厂商新闻 -->
+                    <p style="text-indent:2em;">
+                        <i>厂商新闻</i>{{.RandomKeyword}} 时间：{{.Now}}
+                    </p>
+
+                    <!-- 文章正文（含拼音标注） -->
+                    <ul class="{{.Cls "intem"}}">
+                        <ul class="{{.Cls "intem"}}">
+                            <li>编辑：admin</li>
+                        </ul>
+                        <p align="center">{{.Now}}
+                        <div class="{{.Cls "left_zw"}}">
+                            <!-- 拼音标注段落 -->
+                            <p>　{{.Content}}</p>
+
+                            <table border="0" cellspacing="0" cellpadding="0" align="left" class="{{.Cls "adInContent"}}">
+                                <tr>
+                                    <td>
+                                        <!--画中画广告start-->
+                                        <!--画中画广告end-->
+                                    </td>
+                                </tr>
+                            </table>
+
+                            <!-- 编辑署名 -->
+                            <div class="{{.Cls "adEditor"}}">
+                                <div class="{{.Cls "left_name"}} right">
+                                    <span>编辑：站点编辑</span>
+                                </div>
+                            </div>
+                            <div id="function_code_page"></div>
+                        </div>
+                        <img src="{{.RandomImage}}" alt="" />
+                        </p>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="{{.Cls "appWrap"}}"></div>
+
+            <!-- 厂商其他下载 -->
+            <div class="{{.Cls "company"}}" id="company">
+                <p class="{{.Cls "introTit"}}">厂商其他下载</p>
+                <p class="{{.Cls "sys"}}">
+                    <span>安卓应用</span>
+                    <span>安卓手游</span>
+                    <span>苹果应用</span>
+                    <span>苹果手游</span>
+                    <span>电脑</span>
+                    <a href="{{.RandomURL}}" target="_blank">更多+</a>
+                </p>
+                <ul class="{{.Cls "clearfix"}}"></ul>
+                <ul class="{{.Cls "clearfix"}}">
+                    {{range $i := iterate 147}}
+                    <li>
+                        <a href="{{.RandomURL}}" target="_blank">
+                            <img alt="{{.RandomKeyword}}" src="{{.RandomImage}}" />
+                            {{.RandomKeyword}}
+                        </a>
+                    </li>
+                    {{end}}
+                </ul>
+            </div>
+        </div>
+
+        <!-- ========== 区域4.5: AppBox 应用详情盒子 ========== -->
+        <div class="{{.Cls "AppBox"}}">
+            <!-- App-details: 应用图标和标题 -->
+            <div class="{{.Cls "App-details"}}">
+                <img class="{{.Cls "icon"}}" height="51px" width="51px" alt="{{.RandomKeyword}}" src="{{.RandomImage}}" />
+                <div class="{{.Cls "App-details-det"}}">
+                    <div class="{{.Cls "app-details-appname"}}">
+                        <h1>{{.RandomKeyword}}</h1>
+                    </div>
+                    <div class="{{.Cls "app-details-appdes"}}">
+                        <h3>「活动」首次登录送{{.RandomNumber 50 200}}元红包</h3>
+                    </div>
+                    <div class="{{.Cls "app-details-appinfo"}}">
+                        <div>{{.RandomKeyword}}</div>
+                        <div>{{.RandomKeyword}}</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- App-display-a: 下载按钮 -->
+            <div class="{{.Cls "App-display-a"}}">
+                <div class="{{.Cls "download_btn_col"}}">
+                    <a class="{{.Cls "normal-down-btn"}}" href="{{.RandomURL}}">下载APK</a>
+                    <a class="{{.Cls "high-speed-down-btn"}}" href="{{.RandomURL}}">高速下载</a>
+                </div>
+                <div class="{{.Cls "b-text"}}">
+                    <span class="{{.Cls "span"}}">下载安装你想要的应用 更方便 更快捷 发现更多</span>
+                </div>
+            </div>
+
+            <!-- App_Hots: 点赞和评论数 -->
+            <div class="{{.Cls "App_Hots"}}">
+                <div>
+                    <div class="{{.Cls "fr"}}">
+                        <img alt="喜欢" src="/static/images/icon_03.png" />
+                        <span>{{.RandomNumber 30 90}}%好评({{.RandomNumber 10 100}}人)</span>
+                    </div>
+                </div>
+                <div>
+                    <div class="{{.Cls "fl"}}">
+                        <img alt="评论" src="/static/images/icon_04.png" />
+                        <span>{{.RandomNumber 10 200}}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- App_ImgBox: 截图图片行 -->
+            <div class="{{.Cls "img"}}">
+                <div class="{{.Cls "App_ImgBox"}}">
+                    {{range $i := iterate 5}}
+                    <img alt="{{.RandomKeyword}}截图{{$i}}" src="{{.RandomImage}}" />
+                    {{end}}
+                </div>
+            </div>
+
+            <!-- App_Category: 详细信息区域 -->
+            <div class="{{.Cls "App_Category"}}">
+                <!-- 详细信息 -->
+                <div class="{{.Cls "App_SpreadBox"}}">
+                    <div class="{{.Cls "App_SpreadTitle"}}">
+                        <span>详细信息</span>
+                        <div class="{{.Cls "icon"}}"></div>
+                    </div>
+                    <ul class="{{.Cls "App_SpreadContent"}}">
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">软件大小:</span>
+                            <span class="{{.Cls "fl"}}">{{.RandomNumber 10 200}}.{{.RandomNumber 10 99}}MB</span>
+                        </li>
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">最后更新:</span>
+                            <span class="{{.Cls "fl"}}">{{.Now}}</span>
+                        </li>
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">最新版本:</span>
+                            <span class="{{.Cls "fl"}}">V{{.RandomNumber 1 20}}.{{.RandomNumber 0 99}}.{{.RandomNumber 0 99}}</span>
+                        </li>
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">文件格式:</span>
+                            <span class="{{.Cls "fl"}}">apk</span>
+                        </li>
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">应用分类:</span>
+                            <span class="{{.Cls "fl"}}">ios-Android</span>
+                        </li>
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">使用语言:</span>
+                            <span class="{{.Cls "fl"}}">中文</span>
+                        </li>
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">:</span>
+                            <span class="{{.Cls "fl"}}">需要联网</span>
+                        </li>
+                        <li class="{{.Cls "3ce690"}}">
+                            <span class="{{.Cls "fl"}}">系统要求:</span>
+                            <span class="{{.Cls "fl"}}">{{.RandomNumber 5 10}}.{{.RandomNumber 0 9}}以上</span>
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- 简介 -->
+                <div class="{{.Cls "App_SpreadBox"}}">
+                    <div class="{{.Cls "App_SpreadTitle"}}">
+                        <span>简介</span>
+                        <div class="{{.Cls "icon"}}"></div>
+                    </div>
+                    <div class="{{.Cls "App_Introduce"}}">
+                        <span><a href='{{.RandomURL}}'>{{.RandomKeyword}}</a></span>
+                    </div>
+                </div>
+
+                <!-- 更新日志 -->
+                <div class="{{.Cls "App_SpreadBox"}}">
+                    <div class="{{.Cls "App_SpreadTitle"}}">
+                        <span>更新</span>
+                        <div class="{{.Cls "icon"}}"></div>
+                    </div>
+                    <div class="{{.Cls "App_Update"}}">
+                        <span>V{{.RandomNumber 10 20}}.{{.RandomNumber 0 99}}.{{.RandomNumber 0 9}}</span>
+                        <div class="{{.Cls "get_more"}}">更多历史版本</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 区域5.5: 相关攻略 (StrategyList) ========== -->
+    <div class="{{.Cls "App_SpreadBox"}}">
+        <div class="{{.Cls "App_SpreadTitle"}}">
+            <span>相关攻略</span>
+            <div class="{{.Cls "icon"}}"></div>
+        </div>
+        <div class="{{.Cls "App_SpreadContent"}}">
+            <ul>
+                {{range $i := iterate 22}}
+                <li class="{{.Cls "StrategyList_Content"}}">
+                    <div class="{{.Cls "StrategyList_ContentTitle ml0"}}">
+                        <a href="{{.RandomURL}}">
+                            <div>{{.RandomKeyword}}</div>
+                        </a>
+                    </div>
+                    <div class="{{.Cls "StrategyList_TimeBox"}}">
+                        <span style="line-height: 40px;">{{.RandomNumber 1 9}}</span>
+                    </div>
+                </li>
+                {{end}}
+            </ul>
+        </div>
+    </div>
+
+    <!-- ========== 区域5.6: 评论区域 ========== -->
+    <div class="{{.Cls "App_SpreadBox"}}">
+        <div class="{{.Cls "App_SpreadTitle"}}">
+            <span>评论</span>
+            <div class="{{.Cls "icon"}}"></div>
+        </div>
+        <div class="{{.Cls "App-details-comment"}}">
+            <ul>
+                {{range $i := iterate 10}}
+                <li class="{{.Cls "3ce690"}}">
+                    <table>
+                        <tr>
+                            <td style="width:230px;">{{.RandomKeyword}}</td>
+                            <td>{{.RandomNumber 1 59}}分钟前</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2" style="color:#44423C; text-align:justify; text-justify:distribute-all-lines;word-wrap:break-word;word-break:break-all;">{{.RandomKeyword}}</td>
+                        </tr>
+                    </table>
+                </li>
+                {{end}}
+            </ul>
+            <a href="{{.RandomURL}}">
+                <div class="{{.Cls "link_more"}}">{{.RandomKeyword}}</div>
+            </a>
+        </div>
+    </div>
+
+    <!-- 隐藏输入字段 -->
+    <input data-page-role="{{.Cls ""}}" id="SpreadBox_Open" type="hidden" value="{{.RandomImage}}" />
+    <input data-aria-hidden="{{.Cls ""}}" id="SpreadBox_Close" type="hidden" value="{{.RandomImage}}" />
+
+    <!-- ========== 区域6: Footer (页脚) ========== -->
+    <div class="{{.Cls "footer"}}">
+        <div class="{{.Cls "wrap"}}">
+            <div class="{{.Cls "bottomText"}}">
+                <a href="{{.RandomURL}}" rel="nofollow">关于我们</a>|
+                <a href="{{.RandomURL}}" rel="nofollow">意见反馈</a>|
+                <a href="{{.RandomURL}}" rel="nofollow">版权声明</a>|
+                <a href="{{.RandomURL}}" rel="nofollow">合作伙伴</a>|
+                <a href="{{.RandomURL}}" rel="nofollow">友情连接</a>|
+                <a href="{{.RandomURL}}" rel="nofollow">联系我们</a>|
+                <a href="{{.RandomURL}}">网站地图</a>
+            </div>
+            <span>copyright 2022-2024 3673安卓网.All Right Reserved</span>
+        </div>
+    </div>
+
+    <!-- ========== 区域7: 底部脚本 ========== -->
+    <script>
+    var detail = {
+        'sid': {{.RandomNumber 10000 99999}},
+        'sname': "{{.RandomKeyword}}",
+        'cname': "冒险解谜",
+        'crid': {{.RandomNumber 1 10}},
+        'cid': {{.RandomNumber 10 99}}
+    };
+    var _webInfo = {};
+    _webInfo = {
+        Username: "{{.RandomKeyword}}",
+        Type: "0",
+        DateTime: "{{.Now}}",
+        Id: "{{.RandomNumber 10000 99999}}"
+    };
+    </script>
+
+    <!-- 二维码 -->
+    <div id="qrcode1" style="display:none;" title="{{.RandomURL}}">
+        <canvas width="110" height="110" style="display: none;"></canvas>
+        <img src="{{.RandomImage}}" style="display: block;" />
+    </div>
+
+    <!-- ========== 用户反馈表单 (feedBack) ========== -->
+    <div class="{{.Cls "feedBack"}}">
+        <div class="{{.Cls "feBaBox"}}">
+            <div class="{{.Cls "feBaClose"}}"><i class="{{.Cls "ico"}}"></i></div>
+            <div class="{{.Cls "feHead"}}">用户反馈</div>
+            <div class="{{.Cls "feBack"}}">
+                <p>反馈原因</p>
+                <div class="{{.Cls "info"}}">
+                    <div class="{{.Cls "checkbox"}}">
+                        <input type="checkbox" id="checkbox1" name="fklb" value="有色情、暴力、反动等不良内容" />
+                        <label for="checkbox1">有色情、暴力、反动等不良内容</label>
+                    </div>
+                    <div class="{{.Cls "checkbox"}}">
+                        <input type="checkbox" id="checkbox2" name="fklb" value="有抄袭、侵权嫌疑" />
+                        <label for="checkbox2">有抄袭、侵权嫌疑</label>
+                    </div>
+                    <div class="{{.Cls "checkbox"}}">
+                        <input type="checkbox" id="checkbox3" name="fklb" value="广告很多、含有不良插件" />
+                        <label for="checkbox3">广告很多、含有不良插件</label>
+                    </div>
+                    <div class="{{.Cls "checkbox"}}">
+                        <input type="checkbox" id="checkbox4" name="fklb" value="无法正常安装或进入游戏" />
+                        <label for="checkbox4">无法正常安装或进入游戏</label>
+                    </div>
+                </div>
+                <p>其他原因</p>
+                <textarea name="remake" placeholder="请输入补充说明"></textarea>
+            </div>
+            <div class="{{.Cls "h20"}}"></div>
+            <div class="{{.Cls "telBox"}}">
+                <span>联系方式</span>
+                <input type="tel" name="tel" placeholder="请输入邮箱" />
+            </div>
+            <div class="{{.Cls "feSubmit"}}">
+                <input type="button" class="{{.Cls "submit"}}" name="submit" value="提交反馈" />
+            </div>
+        </div>
+    </div>
+
+    <!-- 脚本引用 -->
+    <script type="text/javascript" src="/static/js/comment.js"></script>
+    <script type="text/javascript" src="/static/js/footer.js"></script>
+
+    <!-- 结构化数据 -->
+    <script type="application/ld+json">{
+"@context": "http://zhanzhang.baidu.com/contexts/cambrian.jsonld",
+"@id": "{{.RandomURL}}",
+"appid": "否",
+"title": "{{.RandomKeyword}}",
+"images": ["{{.RandomImage}}"],
+"description": "{{.RandomKeyword}}",
+"upDate": "{{.Now}}",
+"data": {
+"WebPage": {
+"pcUrl": "{{.RandomURL}}",
+"wapUrl": "{{.RandomURL}}",
+"fromSrc": "3676安卓网"
+}
+}
+}</script>
+
+    <!-- ========== 图片灯箱 (lightbox) ========== -->
+    <div id="lightboxOverlay" class="{{.Cls "lightboxOverlay"}}" style="display: none;"></div>
+    <div id="lightbox" class="{{.Cls "lightbox"}}" style="display: none;">
+        <div class="{{.Cls "lb-outerContainer"}}">
+            <div class="{{.Cls "lb-container"}}">
+                <img class="{{.Cls "lb-image"}}" src="{{.RandomImage}}" />
+                <div class="{{.Cls "lb-nav"}}">
+                    <a class="{{.Cls "lb-prev"}}" href="{{.RandomURL}}"></a>
+                    <a class="{{.Cls "lb-next"}}" href="{{.RandomURL}}"></a>
+                </div>
+            </div>
+        </div>
+        <div class="{{.Cls "lb-dataContainer"}}">
+            <div class="{{.Cls "lb-data"}}">
+                <div class="{{.Cls "lb-details"}}">
+                    <span class="{{.Cls "lb-caption"}}"></span>
+                    <span class="{{.Cls "lb-number"}}"></span>
+                </div>
+                <div class="{{.Cls "lb-closeContainer"}}">
+                    <a class="{{.Cls "lb-close"}}"></a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 底部下载栏 (yyh-bottom) ========== -->
+    <div id="yyh-bottom" class="{{.Cls "yyh-bottom"}}" style="display: none;">
+        <a href="{{.RandomURL}}">
+            <div class="{{.Cls "left"}}">
+                <img class="{{.Cls "img"}}" alt="" src="/static/images/close_black.png" />
+            </div>
+            <div class="{{.Cls "middle"}}">
+                <p class="{{.Cls "one"}}">{{.RandomKeyword}}</p>
+                <p class="{{.Cls "two"}}">{{.RandomKeyword}}</p>
+            </div>
+            <p class="{{.Cls "right"}}">
+                <span class="{{.Cls "freedownload"}}">下载</span>
+            </p>
+        </a>
+        <span id="m-close" class="{{.Cls "m-close"}}">
+            <img alt="" src="{{.RandomImage}}" />
+        </span>
+    </div>
+
+    <!-- ========== 移动端头部 (Header) ========== -->
+    <header class="{{.Cls "Header"}}">
+        <div class="{{.Cls "Top"}}">
+            <a href="{{.RandomURL}}" class="{{.Cls "logo"}}">
+                <img alt="" class="{{.Cls "logo_img"}}" src="/static/temp/heqishengcai2024/logo2.png" />
+            </a>
+            <div class="{{.Cls "SearchBox"}}">
+                <form action="/search/" method="GET">
+                    <div class="{{.Cls "Search_Input"}}">
+                        <input type="text" id="keyword" class="{{.Cls "s_input"}}" value="" />
+                    </div>
+                    <input type="image" class="{{.Cls "i-input"}}" src="{{.RandomImage}}" />
+                </form>
+            </div>
+        </div>
+    </header>
+
+    <!-- ========== 移动端主内容区 (main) ========== -->
+    <div class="{{.Cls "main"}}">
+        <div class="{{.Cls "mainpage"}}">
+            <!-- 面包屑导航 -->
+            <div class="{{.Cls "breadcrumb"}}">
+                <a href="{{.RandomURL}}">首页</a>
+                &gt;
+                <a href="{{.RandomURL}}">{{.RandomKeyword}}</a>
+                &gt;
+                <a href="{{.RandomURL}}">{{.RandomKeyword}}</a>
+            </div>
+
+            <!-- 移动端AppBox -->
+            <div class="{{.Cls "AppBox"}}">
+                <div class="{{.Cls "App-details"}}">
+                    <img class="{{.Cls "icon"}}" height="51px" width="51px" alt="{{.RandomKeyword}}" src="{{.RandomImage}}" />
+                    <div class="{{.Cls "App-details-det"}}">
+                        <div class="{{.Cls "app-details-appname"}}">
+                            <h1>{{.RandomKeyword}}</h1>
+                        </div>
+                        <div class="{{.Cls "app-details-appdes"}}">
+                            <h3>「活动」首次登录送{{.RandomNumber 50 200}}元红包</h3>
+                        </div>
+                        <div class="{{.Cls "app-details-appinfo"}}">
+                            <div>{{.RandomKeyword}}</div>
+                            <div>{{.RandomKeyword}}</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="{{.Cls "App-display-a"}}">
+                    <div class="{{.Cls "download_btn_col"}}">
+                        <a class="{{.Cls "normal-down-btn"}}" href="{{.RandomURL}}">下载APK</a>
+                        <a class="{{.Cls "high-speed-down-btn"}}" href="{{.RandomURL}}">高速下载</a>
+                    </div>
+                    <div class="{{.Cls "b-text"}}">
+                        <span class="{{.Cls "span"}}">下载安装你想要的应用 更方便 更快捷 发现更多</span>
+                    </div>
+                </div>
+                <div class="{{.Cls "App_Hots"}}">
+                    <div>
+                        <div class="{{.Cls "fr"}}">
+                            <img alt="喜欢" src="/static/images/icon_03.png" />
+                            <span>{{.RandomNumber 30 90}}%好评({{.RandomNumber 10 100}}人)</span>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="{{.Cls "fl"}}">
+                            <img alt="评论" src="/static/images/icon_04.png" />
+                            <span>{{.RandomNumber 10 200}}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="{{.Cls "img"}}">
+                    <div class="{{.Cls "App_ImgBox"}}">
+                        {{range $i := iterate 5}}
+                        <img alt="{{.RandomKeyword}}截图{{$i}}" src="{{.RandomImage}}" />
+                        {{end}}
+                    </div>
+                </div>
+                <div class="{{.Cls "App_Category"}}">
+                    <div class="{{.Cls "App_SpreadBox"}}">
+                        <div class="{{.Cls "App_SpreadTitle"}}">
+                            <span>详细信息</span>
+                            <div class="{{.Cls "icon"}}"></div>
+                        </div>
+                        <ul class="{{.Cls "App_SpreadContent"}}">
+                            <li><span class="{{.Cls "fl"}}">软件大小:</span><span class="{{.Cls "fl"}}">{{.RandomNumber 10 200}}.{{.RandomNumber 10 99}}MB</span></li>
+                            <li><span class="{{.Cls "fl"}}">最后更新:</span><span class="{{.Cls "fl"}}">{{.Now}}</span></li>
+                            <li><span class="{{.Cls "fl"}}">最新版本:</span><span class="{{.Cls "fl"}}">V{{.RandomNumber 1 20}}.{{.RandomNumber 0 99}}.{{.RandomNumber 0 99}}</span></li>
+                            <li><span class="{{.Cls "fl"}}">文件格式:</span><span class="{{.Cls "fl"}}">apk</span></li>
+                            <li><span class="{{.Cls "fl"}}">应用分类:ios-Android</span><span class="{{.Cls "fl"}}"><a class="{{.Cls "CategoryLink"}}" href="{{.RandomURL}}"></a></span></li>
+                            <li><span class="{{.Cls "fl"}}">使用语言:</span><span class="{{.Cls "fl"}}">中文</span></li>
+                            <li><span class="{{.Cls "fl"}}">网络支持:</span><span class="{{.Cls "fl"}}">需要联网</span></li>
+                            <li><span class="{{.Cls "fl"}}">系统要求:</span><span class="{{.Cls "fl"}}">{{.RandomNumber 5 10}}.{{.RandomNumber 0 9}}以上</span></li>
+                        </ul>
+                    </div>
+                    <div class="{{.Cls "App_SpreadBox"}}">
+                        <div class="{{.Cls "App_SpreadTitle"}}">
+                            <span>简介</span>
+                            <div class="{{.Cls "icon"}}"></div>
+                        </div>
+                        <div class="{{.Cls "App_Introduce"}}">
+                            <span><a href='{{.RandomURL}}'>{{.RandomKeyword}}</a></span>
+                        </div>
+                    </div>
+                    <div class="{{.Cls "App_SpreadBox"}}">
+                        <div class="{{.Cls "App_SpreadTitle"}}">
+                            <span>更新</span>
+                            <div class="{{.Cls "icon"}}"></div>
+                        </div>
+                        <div class="{{.Cls "App_Update"}}">
+                            <span>V{{.RandomNumber 10 20}}.{{.RandomNumber 0 99}}.{{.RandomNumber 0 9}}</span>
+                            <div class="{{.Cls "get_more"}}">{{.RandomKeyword}}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== 第二个移动端main区域 ========== -->
+    <div class="{{.Cls "main"}}">
+        <div class="{{.Cls "mainpage mbt_27"}}">
+            <!-- 分类标签 (ClassifyBox) -->
+            <section class="{{.Cls "ClassifyBox"}}">
+                <ul>
+                    <li class="{{.Cls "Classify_Checked"}}"><a href="{{.RandomURL}}">{{.RandomKeyword}}</a></li>
+                    {{range $i := iterate 20}}
+                    <li data-is-active="{{.Cls ""}}">
+                        <a href="{{.RandomURL}}">{{.RandomKeyword}}</a>
+                    </li>
+                    {{end}}
+                </ul>
+            </section>
+
+            <!-- ========== 区域: list_con 应用列表 (132个) ========== -->
+            <ul class="{{.Cls "list_con"}}">
+                {{range $i := iterate 132}}
+                <li class="{{.Cls "app-list-con"}}">
+                    <a href="{{.RandomURL}}">
+                        <img class="{{.Cls "app-list-img"}}" alt="{{.RandomKeyword}}" title="{{.RandomKeyword}}">
+                    </a>
+                    <div class="{{.Cls "app-list-details"}}">
+                        <div class="{{.Cls "app-list-name"}}">
+                            <h2><a href="{{.RandomURL}}">{{.RandomKeyword}}</a></h2>
+                        </div>
+                        <div class="{{.Cls "app-list-des"}}">
+                            <h3>{{.RandomKeyword}}</h3>
+                        </div>
+                        <div class="{{.Cls "app-list-info"}}">
+                            <div>{{.RandomKeyword}}</div>
+                            <div>{{.RandomKeyword}}</div>
+                        </div>
+                    </div>
+                    <div class="{{.Cls "app-list-download"}}">
+                        <a class="{{.Cls "detail"}}" href="{{.RandomURL}}">{{.RandomKeyword}}</a>
+                    </div>
+                </li>
+                {{end}}
+            </ul>
+        </div>
+    </div>
+
+    <!-- ========== 区域: App-everybody-dl 应用推荐 (1271个) ========== -->
+    <div class="{{.Cls "App-everybody-dl"}}">
+        <h3 class="{{.Cls "title"}}">{{.RandomKeyword}}</h3>
+        <ul class="{{.Cls "App-ul fix"}}" style="width: 100%; overflow: hidden;">
+            {{range $i := iterate 1271}}
+            <li class="{{.Cls "li fix"}}">
+                <a href="{{.RandomURL}}">
+                    <div class="{{.Cls "img"}}">
+                        {{.RandomKeyword}}
+                    </div>
+                </a>
+                <div class="{{.Cls "right"}}" style="padding-left: 0;">
+                    <p class="{{.Cls "App-name"}}">{{.RandomKeyword}}</p>
+                    </a>
+                </div>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+
+    <!-- ========== 区域: App_SpreadContent 应用列表 (1+80个应用卡片) ========== -->
+    <div class="{{.Cls "App_SpreadContent"}}">
+        <ul class="{{.Cls "Applicati****_list list_con"}}">
+            <!-- 第1个li: 只有图片，没有WYpg -->
+            <li class="{{.Cls "Application_content"}}">
+                <div class="{{.Cls "Application_img_set ml0"}}">
+                    <a href="{{.RandomURL}}">
+                        <img class="{{.Cls "small"}}" src="{{.RandomImage}}" />
+                    </a>
+                    <a href="{{.RandomURL}}">
+                        <img class="{{.Cls "middle"}}" src="{{.RandomImage}}" />
+                    </a>
+                    <a href="{{.RandomURL}}">
+                        <img class="{{.Cls "bigger"}}" src="{{.RandomImage}}" />
+                    </a>
+                </div>
+            </li>
+            <!-- 第2-81个li: 完整结构 -->
+            {{range $i := iterate 80}}
+            <li class="{{.Cls "WYpg Application_content"}}">
+                <div class="{{.Cls "Application_img_set ml0"}}">
+                    <a href="{{.RandomURL}}">
+                        <img class="{{.Cls "small"}}" src="{{.RandomImage}}" />
+                    </a>
+                    <a href="{{.RandomURL}}">
+                        <img class="{{.Cls "middle"}}" src="{{.RandomImage}}" />
+                    </a>
+                    <a href="{{.RandomURL}}">
+                        <img class="{{.Cls "bigger"}}" src="{{.RandomImage}}" />
+                    </a>
+                </div>
+                <a href="{{.RandomURL}}">
+                    <div class="{{.Cls "App"}}">
+                        <div class="{{.Cls "App_tit"}}">{{.RandomKeyword}}</div>
+                        <div class="{{.Cls "App_user"}}">{{.RandomKeyword}}</div>
+                        <div class="{{.Cls "App_oth"}}">
+                            <span>{{.RandomNumber 10000 99999}}</span>
+                            <span>{{.RandomNumber 10000 99999}}</span>
+                            <span>{{.Now}}</span>
+                        </div>
+                    </div>
+                </a>
+            </li>
+            {{end}}
+        </ul>
+    </div>
+
+    <!-- ========== 移动端Footer (Footer-line) ========== -->
+    <div class="{{.Cls "Footer"}}">
+        <div class="{{.Cls "Footer-line"}}"></div>
+        <span class="{{.Cls "Appchina.com/"}}">{{.RandomKeyword}}-安卓手机网上最贴心的Android软件应用平台!</span>
+        <span class="{{.Cls "Footer-com"}}">版权所有：{{.RandomKeyword}}有限公司</span>
+        <span class="{{.Cls "Footer-com"}}">备案号：京ICP备44633832号-1</span>
+    </div>
+
+</div>
+
+<!-- ========== SetImgBoxWidth script ========== -->
+<script type="text/javascript">
+    function SetImgBoxWidth() {
+        var app_screenshot_list_width = 0;
+        $('.App_ImgBox').find('img').each(function () {
+            app_screenshot_list_width += $(this).width() + 8;
+            app_screenshot_list_width += 5;
+        });
+        $(".App_ImgBox").css("width", app_screenshot_list_width + 2);
+    }
+    onload = function () {
+        SetImgBoxWidth();
+    };
+    AdjustElement();
+</script>
+
+<!-- ========== Baidu push script ========== -->
+<script>
+    (function () {
+        var bp = document.createElement('script');
+        var curProtocol = window.location.protocol.split(':')[0];
+        if (curProtocol === 'https') {
+            bp.src = 'https://zz.bdstatic.com/linksubmit/push.js';
+        }
+        else {
+            bp.src = 'http://push.zhanzhang.baidu.com/push.js';
+        }
+        var s = document.getElementsByTagName("script")[0];
+        s.parentNode.insertBefore(bp, s);
+    })();
+</script>
+</body>
+
+</html>

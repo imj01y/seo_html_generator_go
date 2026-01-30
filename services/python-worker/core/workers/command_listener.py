@@ -1,0 +1,410 @@
+# -*- coding: utf-8 -*-
+"""
+Python Worker 命令监听器
+
+监听 Go API 发送的 Redis 命令，执行爬虫任务。
+复用现有的 ProjectLoader 和 ProjectRunner。
+"""
+
+import asyncio
+import json
+from datetime import datetime
+from typing import Dict, Optional
+
+from loguru import logger
+
+from database.db import fetch_one, insert, execute_query, get_db_pool
+from core.redis_client import get_redis_client
+
+
+class RedisLogger:
+    """日志发布到 Redis，Go 订阅后推送给前端"""
+
+    def __init__(self, rdb, project_id: int, prefix: str = "project"):
+        self.rdb = rdb
+        self.channel = f"spider:logs:{prefix}_{project_id}"
+
+    async def _publish(self, level: str, message: str):
+        log = {
+            "level": level,
+            "message": message,
+            "timestamp": datetime.now().isoformat()
+        }
+        await self.rdb.publish(self.channel, json.dumps(log, ensure_ascii=False))
+
+    async def info(self, msg: str):
+        await self._publish("INFO", msg)
+        logger.info(msg)
+
+    async def warning(self, msg: str):
+        await self._publish("WARNING", msg)
+        logger.warning(msg)
+
+    async def error(self, msg: str):
+        await self._publish("ERROR", msg)
+        logger.error(msg)
+
+    async def debug(self, msg: str):
+        await self._publish("DEBUG", msg)
+        logger.debug(msg)
+
+
+class CommandListener:
+    """监听 Go 发来的命令"""
+
+    def __init__(self):
+        self.running_tasks: Dict[int, asyncio.Task] = {}
+        self.rdb = None
+
+    async def start(self):
+        """启动监听器"""
+        self.rdb = get_redis_client()
+        if not self.rdb:
+            logger.error("Redis 未初始化，无法启动命令监听器")
+            return
+
+        logger.info("命令监听器已启动，等待命令...")
+
+        pubsub = self.rdb.pubsub()
+        await pubsub.subscribe("spider:commands")
+
+        async for message in pubsub.listen():
+            if message["type"] == "message":
+                try:
+                    data = message["data"]
+                    if isinstance(data, bytes):
+                        data = data.decode('utf-8')
+                    cmd = json.loads(data)
+                    await self.handle_command(cmd)
+                except Exception as e:
+                    logger.error(f"处理命令失败: {e}")
+
+    async def handle_command(self, cmd: dict):
+        """处理命令"""
+        action = cmd.get("action")
+        project_id = cmd.get("project_id")
+
+        logger.info(f"收到命令: {action} for project {project_id}")
+
+        if action == "run":
+            # 如果已有运行中的任务，先取消
+            if project_id in self.running_tasks:
+                old_task = self.running_tasks[project_id]
+                if not old_task.done():
+                    old_task.cancel()
+
+            task = asyncio.create_task(self.run_project(project_id))
+            self.running_tasks[project_id] = task
+
+        elif action == "test":
+            max_items = cmd.get("max_items", 0)
+            if project_id in self.running_tasks:
+                old_task = self.running_tasks[project_id]
+                if not old_task.done():
+                    old_task.cancel()
+
+            task = asyncio.create_task(self.test_project(project_id, max_items))
+            self.running_tasks[project_id] = task
+
+        elif action == "stop":
+            await self.stop_project(project_id)
+
+        elif action == "test_stop":
+            await self.stop_test(project_id)
+
+        elif action == "pause":
+            await self.pause_project(project_id)
+
+        elif action == "resume":
+            await self.resume_project(project_id)
+
+    async def run_project(self, project_id: int):
+        """运行爬虫项目"""
+        from core.crawler.project_loader import ProjectLoader
+        from core.crawler.project_runner import ProjectRunner
+        from core.crawler.request_queue import RequestQueue
+
+        log = RedisLogger(self.rdb, project_id, "project")
+
+        # 更新状态
+        await self.rdb.set(
+            f"spider:status:{project_id}",
+            json.dumps({"status": "running", "started_at": datetime.now().isoformat()})
+        )
+
+        items_count = 0
+
+        try:
+            await log.info("正在加载项目...")
+
+            # 获取项目配置
+            row = await fetch_one(
+                "SELECT id, name, entry_file, config, concurrency, output_group_id FROM spider_projects WHERE id = %s",
+                (project_id,)
+            )
+            if not row:
+                await log.error("项目不存在")
+                return
+
+            config = json.loads(row['config']) if row['config'] else {}
+
+            # 加载项目文件
+            loader = ProjectLoader(project_id)
+            modules = await loader.load()
+            await log.info(f"已加载 {len(modules)} 个模块")
+
+            # 清除旧的停止信号
+            stop_key = f"spider_project:{project_id}:stop"
+            await self.rdb.delete(stop_key)
+
+            # 创建运行器
+            runner = ProjectRunner(
+                project_id=project_id,
+                modules=modules,
+                config=config,
+                redis=self.rdb,
+                db_pool=get_db_pool(),
+                concurrency=row.get('concurrency', 3),
+            )
+
+            await log.info("开始执行 Spider...")
+
+            group_id = row['output_group_id']
+
+            async for item in runner.run():
+                # 检查停止信号
+                if await self.rdb.get(stop_key):
+                    await log.info("收到停止信号，任务终止")
+                    await self.rdb.delete(stop_key)
+                    break
+
+                # 根据 type 字段路由到不同的表
+                item_type = item.get('type', 'article')
+
+                try:
+                    if item_type == 'keywords':
+                        # 写入关键词表
+                        keywords = item.get('keywords', [])
+                        target_group = item.get('group_id', group_id)
+
+                        if keywords:
+                            from core.keyword_group_manager import get_keyword_group
+                            keyword_manager = get_keyword_group()
+                            if keyword_manager:
+                                result = await keyword_manager.add_keywords_batch(keywords, target_group)
+                                items_count += result.get('added', 0)
+                                await log.info(f"关键词写入: 新增 {result['added']}, 跳过 {result['skipped']}")
+
+                    elif item_type == 'images':
+                        # 写入图片表
+                        urls = item.get('urls', [])
+                        target_group = item.get('group_id', group_id)
+
+                        if urls:
+                            from core.image_group_manager import get_image_group
+                            image_manager = get_image_group()
+                            if image_manager:
+                                result = await image_manager.add_urls_batch(urls, target_group)
+                                items_count += result.get('added', 0)
+                                await log.info(f"图片写入: 新增 {result['added']}, 跳过 {result['skipped']}")
+
+                    else:
+                        # 写入文章表
+                        if item.get('title') and item.get('content'):
+                            target_group = item.get('group_id', group_id)
+
+                            article_id = await insert("original_articles", {
+                                "group_id": target_group,
+                                "source_id": project_id,
+                                "source_url": item.get('source_url'),
+                                "title": item['title'][:500],
+                                "content": item['content'],
+                            })
+                            items_count += 1
+
+                            # 推送到待处理队列
+                            if article_id:
+                                try:
+                                    queue_key = f"pending:articles:{target_group}"
+                                    await self.rdb.lpush(queue_key, article_id)
+                                except Exception as queue_err:
+                                    await log.warning(f"推送到待处理队列失败: {queue_err}")
+
+                    if items_count > 0 and items_count % 10 == 0:
+                        await log.info(f"已抓取 {items_count} 条数据")
+
+                except Exception as e:
+                    if 'Duplicate' in str(e):
+                        await log.warning(f"数据重复，已跳过")
+                    else:
+                        await log.error(f"保存数据失败: {e}")
+
+            await log.info(f"任务完成：共 {items_count} 条数据")
+
+            # 更新统计
+            await execute_query(
+                """
+                UPDATE spider_projects SET
+                    status = 'idle',
+                    last_run_at = NOW(),
+                    last_run_items = %s,
+                    last_error = NULL,
+                    total_runs = total_runs + 1,
+                    total_items = total_items + %s
+                WHERE id = %s
+                """,
+                (items_count, items_count, project_id),
+                commit=True
+            )
+
+        except asyncio.CancelledError:
+            await log.info("任务已被取消")
+            await execute_query(
+                "UPDATE spider_projects SET status = 'idle', last_error = %s WHERE id = %s",
+                ("任务被取消", project_id),
+                commit=True
+            )
+
+        except Exception as e:
+            await log.error(f"任务异常: {str(e)}")
+            await execute_query(
+                "UPDATE spider_projects SET status = 'error', last_error = %s WHERE id = %s",
+                (str(e), project_id),
+                commit=True
+            )
+
+        finally:
+            await self.rdb.set(
+                f"spider:status:{project_id}",
+                json.dumps({"status": "idle"})
+            )
+            self.running_tasks.pop(project_id, None)
+
+    async def test_project(self, project_id: int, max_items: int = 0):
+        """测试运行项目"""
+        from core.crawler.project_loader import ProjectLoader
+        from core.crawler.project_runner import ProjectRunner
+        from core.crawler.request_queue import RequestQueue
+
+        log = RedisLogger(self.rdb, project_id, "test")
+
+        try:
+            limit_text = f"最多 {max_items} 条" if max_items > 0 else "不限制条数"
+            await log.info(f"开始测试运行（{limit_text}）...")
+
+            # 清除测试队列
+            queue = RequestQueue(self.rdb, project_id, is_test=True)
+            await queue.clear()
+
+            row = await fetch_one(
+                "SELECT id, name, entry_file, config, concurrency FROM spider_projects WHERE id = %s",
+                (project_id,)
+            )
+            if not row:
+                await log.error("项目不存在")
+                return
+
+            config = json.loads(row['config']) if row['config'] else {}
+
+            loader = ProjectLoader(project_id)
+            modules = await loader.load()
+            await log.info(f"已加载 {len(modules)} 个模块")
+
+            runner = ProjectRunner(
+                project_id=project_id,
+                modules=modules,
+                config=config,
+                redis=self.rdb,
+                db_pool=get_db_pool(),
+                concurrency=row.get('concurrency', 3),
+                is_test=True,
+                max_items=max_items,
+            )
+
+            items_count = 0
+            async for item in runner.run():
+                # 检查停止信号
+                state = await queue.get_state()
+                if state == RequestQueue.STATE_STOPPED:
+                    await log.info("测试已停止")
+                    break
+
+                if not item.get('title') or not item.get('content'):
+                    await log.warning(f"数据缺少必填字段，已跳过")
+                    continue
+
+                items_count += 1
+
+                # 输出数据预览
+                title = item.get('title', '(无标题)')[:50]
+                if max_items > 0:
+                    await log.info(f"[{items_count}/{max_items}] {title}")
+                else:
+                    await log.info(f"[{items_count}] {title}")
+
+                if max_items > 0 and items_count >= max_items:
+                    break
+
+            await log.info(f"测试完成：共 {items_count} 条数据")
+
+        except asyncio.CancelledError:
+            await log.info("测试已被取消")
+
+        except Exception as e:
+            await log.error(f"测试异常: {str(e)}")
+
+        finally:
+            self.running_tasks.pop(project_id, None)
+
+    async def stop_project(self, project_id: int):
+        """停止项目"""
+        from core.crawler.request_queue import RequestQueue
+
+        stop_key = f"spider_project:{project_id}:stop"
+        await self.rdb.set(stop_key, "1", ex=3600)
+
+        queue = RequestQueue(self.rdb, project_id)
+        await queue.stop()
+
+        # 取消任务
+        if project_id in self.running_tasks:
+            task = self.running_tasks[project_id]
+            if not task.done():
+                task.cancel()
+
+    async def stop_test(self, project_id: int):
+        """停止测试"""
+        from core.crawler.request_queue import RequestQueue
+
+        queue = RequestQueue(self.rdb, project_id, is_test=True)
+        await queue.stop(clear_queue=True)
+
+        # 取消任务
+        if project_id in self.running_tasks:
+            task = self.running_tasks[project_id]
+            if not task.done():
+                task.cancel()
+
+    async def pause_project(self, project_id: int):
+        """暂停项目"""
+        from core.crawler.request_queue import RequestQueue
+
+        queue = RequestQueue(self.rdb, project_id)
+        await queue.pause()
+
+    async def resume_project(self, project_id: int):
+        """恢复项目"""
+        from core.crawler.request_queue import RequestQueue
+
+        queue = RequestQueue(self.rdb, project_id)
+        await queue.resume()
+
+
+async def main():
+    """主入口"""
+    listener = CommandListener()
+    await listener.start()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

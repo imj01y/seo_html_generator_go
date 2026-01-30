@@ -1,0 +1,173 @@
+# ==============================================
+# SEO HTML Generator - HTTPS 站点配置模板
+# ==============================================
+# 使用说明:
+# 1. 将 SSL 证书放置到 docker/nginx/ssl/ 目录
+# 2. 复制此文件并重命名为 your-domain-ssl.conf
+# 3. 将 example.com 替换为实际域名
+# 4. 更新证书路径
+# 5. 重启 nginx: docker-compose restart nginx
+# ==============================================
+
+# HTTP -> HTTPS 重定向
+server {
+    listen 80;
+    listen [::]:80;
+    server_name example.com www.example.com;
+
+    # ACME 验证 (Let's Encrypt)
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    # 其他请求重定向到 HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# HTTPS 站点
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name example.com www.example.com;
+
+    # SSL 证书
+    ssl_certificate /etc/nginx/ssl/example.com/fullchain.pem;
+    ssl_certificate_key /etc/nginx/ssl/example.com/privkey.pem;
+
+    # SSL 配置 (Mozilla Modern 配置)
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+
+    # SSL 会话缓存
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:50m;
+    ssl_session_tickets off;
+
+    # OCSP Stapling
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    resolver 8.8.8.8 8.8.4.4 valid=300s;
+    resolver_timeout 5s;
+
+    # 安全头
+    add_header Strict-Transport-Security "max-age=63072000" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+
+    # 日志
+    access_log /var/log/nginx/example.com.ssl.access.log detailed;
+    error_log /var/log/nginx/example.com.ssl.error.log warn;
+
+    # 根目录
+    root /app;
+    charset utf-8;
+    client_max_body_size 50M;
+
+    # ==========================================
+    # 健康检查
+    # ==========================================
+    location = /nginx-health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+
+    # ==========================================
+    # 管理后台 (Vue SPA)
+    # ==========================================
+    location /admin {
+        alias /app/admin-panel/dist;
+        try_files $uri $uri/ /admin/index.html;
+    }
+
+    location /admin/assets {
+        alias /app/admin-panel/dist/assets;
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        access_log off;
+    }
+
+    # ==========================================
+    # API 反向代理
+    # ==========================================
+    location /api/ {
+        proxy_pass http://fastapi_backend;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Spider $is_spider;
+        proxy_set_header Connection "";
+    }
+
+    # ==========================================
+    # 静态资源
+    # ==========================================
+    location /static {
+        alias /app/static;
+        expires 7d;
+        add_header Cache-Control "public";
+    }
+
+    location = /favicon.ico {
+        alias /app/static/favicon.ico;
+        access_log off;
+        log_not_found off;
+    }
+
+    location = /robots.txt {
+        alias /app/static/robots.txt;
+        access_log off;
+        log_not_found off;
+    }
+
+    # ==========================================
+    # HTML 缓存直服
+    # ==========================================
+    location / {
+        set $normalized_path $uri;
+
+        if ($uri = /) {
+            set $normalized_path /index.html;
+        }
+
+        if ($uri ~ "^/[^.]+$") {
+            set $normalized_path $uri.html;
+        }
+
+        root /app/html_cache;
+        try_files /$host$normalized_path @fastapi_backend;
+
+        add_header X-Cache-Status "HIT" always;
+        add_header X-Served-By "nginx-cache" always;
+        expires 1h;
+    }
+
+    # ==========================================
+    # FastAPI 回源
+    # ==========================================
+    location @fastapi_backend {
+        proxy_pass http://fastapi_backend;
+        proxy_http_version 1.1;
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 120s;
+        proxy_read_timeout 120s;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Spider $is_spider;
+        proxy_set_header X-Original-URI $request_uri;
+        proxy_set_header Connection "";
+        add_header X-Cache-Status "MISS" always;
+        add_header X-Served-By "fastapi-backend" always;
+    }
+}

@@ -1,0 +1,67 @@
+# =============================================================================
+# Go Page Server Docker Compose 配置
+# 将此配置合并到主 docker-compose.yml 中
+# =============================================================================
+
+version: '3.8'
+
+services:
+  # ========================================
+  # Go Page Server (quicktemplate 高性能渲染)
+  # ========================================
+  go-server:
+    build:
+      context: ./go-page-server
+      dockerfile: Dockerfile
+    container_name: seo-generator-go
+    restart: unless-stopped
+    expose:
+      - "8080"
+    environment:
+      # 数据库配置（与 Python 服务共用）
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_USER=${DB_USER:-root}
+      - DB_PASSWORD=${DB_PASSWORD:-mysql_6yh7uJ}
+      - DB_NAME=${DB_NAME:-seo_generator}
+      # Redis 配置（可选）
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-redis_6yh7uJ}
+      # 应用配置
+      - GIN_MODE=release
+      - TZ=Asia/Shanghai
+      - SERVER_PORT=8080
+    volumes:
+      # 挂载模板目录，支持动态更新
+      - ./go-page-server/templates:/app/templates
+      # 挂载数据目录
+      - ./go-page-server/data:/app/data
+      # 挂载日志目录
+      - ./logs/go:/app/logs
+      # 挂载配置文件
+      - ./config.yaml:/app/config.yaml:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - seo-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+# 网络配置（如果主 docker-compose 中没有定义）
+networks:
+  seo-network:
+    driver: bridge
