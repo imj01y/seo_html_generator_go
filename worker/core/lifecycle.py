@@ -36,16 +36,13 @@ async def _safe_stop(coro, name: str):
 async def cleanup_components():
     """清理所有组件"""
     # 导入 workers 引用
-    from core.initializers import _generator_worker, _stats_worker, _scheduler_worker
+    from core.initializers import _generator_worker, _scheduler_worker
 
     logger.info("Cleaning up components...")
 
     # 停止 workers
     if _generator_worker:
         await _safe_stop(_generator_worker.stop(), "Generator worker")
-
-    if _stats_worker:
-        await _safe_stop(_stats_worker.stop(), "Spider stats worker")
 
     if _scheduler_worker:
         await _safe_stop(_scheduler_worker.stop(), "Spider scheduler worker")

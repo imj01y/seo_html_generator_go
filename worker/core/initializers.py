@@ -32,7 +32,6 @@ from core.content_pool_manager import init_content_pool_manager
 
 # 全局变量：worker 引用（用于清理）
 _generator_worker = None
-_stats_worker = None
 _scheduler_worker = None
 
 
@@ -72,7 +71,7 @@ async def _load_file_cache_config() -> dict:
 
 async def _start_background_worker(worker_class, name: str, **kwargs):
     """启动后台 worker 的通用函数"""
-    global _generator_worker, _stats_worker
+    global _generator_worker
 
     try:
         worker = worker_class(**kwargs)
@@ -80,9 +79,6 @@ async def _start_background_worker(worker_class, name: str, **kwargs):
         if name == 'generator':
             _generator_worker = worker
             await worker.run_forever(group_id=1)
-        else:  # 'stats'
-            _stats_worker = worker
-            await worker.start()
 
     except asyncio.CancelledError:
         logger.info(f"{name.capitalize()} worker cancelled")
@@ -389,16 +385,7 @@ async def init_background_workers():
     except Exception as e:
         logger.warning(f"Generator worker start failed: {e}")
 
-    # 爬虫统计归档后台任务
-    try:
-        from core.workers.stats_worker import SpiderStatsWorker
-        asyncio.create_task(_start_background_worker(
-            SpiderStatsWorker, 'stats',
-            db_pool=db_pool, redis=redis_client
-        ))
-        logger.info("Spider stats worker started in background")
-    except Exception as e:
-        logger.warning(f"Spider stats worker start failed: {e}")
+    # 注意：爬虫统计归档已迁移到 Go API 的 StatsArchiver 服务
 
     # 爬虫定时调度器
     try:
