@@ -86,6 +86,40 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		templatesGroup.DELETE("/:id", templatesHandler.Delete)
 	}
 
+	// Keywords routes (require JWT)
+	keywordsHandler := NewKeywordsHandler(deps.DB)
+	keywordsGroup := r.Group("/api/keywords")
+	keywordsGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		// 分组管理
+		keywordsGroup.GET("/groups", keywordsHandler.ListGroups)
+		keywordsGroup.POST("/groups", keywordsHandler.CreateGroup)
+		keywordsGroup.PUT("/groups/:id", keywordsHandler.UpdateGroup)
+		keywordsGroup.DELETE("/groups/:id", keywordsHandler.DeleteGroup)
+
+		// 关键词 CRUD
+		keywordsGroup.GET("/list", keywordsHandler.List)
+		keywordsGroup.PUT("/:id", keywordsHandler.Update)
+		keywordsGroup.DELETE("/:id", keywordsHandler.Delete)
+
+		// 批量操作
+		keywordsGroup.DELETE("/batch", keywordsHandler.BatchDelete)
+		keywordsGroup.DELETE("/delete-all", keywordsHandler.DeleteAll)
+		keywordsGroup.PUT("/batch/status", keywordsHandler.BatchUpdateStatus)
+		keywordsGroup.PUT("/batch/move", keywordsHandler.BatchMove)
+		keywordsGroup.POST("/batch", keywordsHandler.BatchAdd)
+
+		// 添加和上传
+		keywordsGroup.POST("/add", keywordsHandler.Add)
+		keywordsGroup.POST("/upload", keywordsHandler.Upload)
+
+		// 统计和缓存
+		keywordsGroup.GET("/stats", keywordsHandler.Stats)
+		keywordsGroup.GET("/random", keywordsHandler.Random)
+		keywordsGroup.POST("/reload", keywordsHandler.Reload)
+		keywordsGroup.POST("/cache/clear", keywordsHandler.ClearCache)
+	}
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
