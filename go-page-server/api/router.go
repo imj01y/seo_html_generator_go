@@ -179,6 +179,35 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		articlesGroup.POST("/batch", articlesHandler.BatchAdd)
 	}
 
+	// Sites routes (require JWT)
+	sitesHandler := NewSitesHandler(deps.DB)
+	sitesGroup := r.Group("/api/sites")
+	sitesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		sitesGroup.GET("", sitesHandler.List)
+		sitesGroup.POST("", sitesHandler.Create)
+		sitesGroup.GET("/:id", sitesHandler.Get)
+		sitesGroup.PUT("/:id", sitesHandler.Update)
+		sitesGroup.DELETE("/:id", sitesHandler.Delete)
+		sitesGroup.DELETE("/batch/delete", sitesHandler.BatchDelete)
+		sitesGroup.PUT("/batch/status", sitesHandler.BatchUpdateStatus)
+	}
+
+	// Site Groups routes (require JWT)
+	siteGroupsGroup := r.Group("/api/site-groups")
+	siteGroupsGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		siteGroupsGroup.GET("", sitesHandler.ListGroups)
+		siteGroupsGroup.POST("", sitesHandler.CreateGroup)
+		siteGroupsGroup.GET("/:id", sitesHandler.GetGroup)
+		siteGroupsGroup.GET("/:id/options", sitesHandler.GetGroupOptions)
+		siteGroupsGroup.PUT("/:id", sitesHandler.UpdateGroup)
+		siteGroupsGroup.DELETE("/:id", sitesHandler.DeleteGroup)
+	}
+
+	// Groups options route (require JWT)
+	r.GET("/api/groups/options", AuthMiddleware(deps.Config.Auth.SecretKey), sitesHandler.GetAllGroupOptions)
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
