@@ -1510,41 +1510,64 @@ func (h *SpiderStatsHandler) GetChart(c *gin.Context) {
 	period := c.DefaultQuery("period", "hour")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 
-	where := "period_type = ?"
-	args := []interface{}{period}
-
-	if projectIDStr != "" && projectIDStr != "0" {
-		projectID, _ := strconv.Atoi(projectIDStr)
-		where += " AND project_id = ?"
-		args = append(args, projectID)
+	// 周期回退顺序
+	periodFallback := map[string]string{
+		"month": "day",
+		"day":   "hour",
+		"hour":  "minute",
 	}
 
-	args = append(args, limit)
+	// 尝试查询，如果没有数据则回退
+	for {
+		where := "period_type = ?"
+		args := []interface{}{period}
 
-	rows, err := sqlxDB.Queryx(`
-		SELECT period_start, SUM(total) as total, SUM(completed) as completed,
-		       SUM(failed) as failed, AVG(avg_speed) as avg_speed
-		FROM spider_stats_history
-		WHERE `+where+`
-		GROUP BY period_start
-		ORDER BY period_start DESC
-		LIMIT ?
-	`, args...)
+		if projectIDStr != "" && projectIDStr != "0" {
+			projectID, _ := strconv.Atoi(projectIDStr)
+			where += " AND project_id = ?"
+			args = append(args, projectID)
+		}
 
-	if err != nil {
-		c.JSON(200, gin.H{"success": true, "data": []interface{}{}})
-		return
+		args = append(args, limit)
+
+		var data []map[string]interface{}
+		rows, err := sqlxDB.Queryx(`
+			SELECT period_start as time, SUM(total) as total, SUM(completed) as completed,
+			       SUM(failed) as failed, SUM(retried) as retried, AVG(avg_speed) as avg_speed
+			FROM spider_stats_history
+			WHERE `+where+`
+			GROUP BY period_start
+			ORDER BY period_start DESC
+			LIMIT ?
+		`, args...)
+
+		if err == nil {
+			for rows.Next() {
+				row := make(map[string]interface{})
+				rows.MapScan(row)
+				data = append(data, row)
+			}
+			rows.Close()
+		}
+
+		if len(data) > 0 {
+			// 反转为时间正序
+			for i, j := 0, len(data)-1; i < j; i, j = i+1, j-1 {
+				data[i], data[j] = data[j], data[i]
+			}
+			c.JSON(200, gin.H{"success": true, "data": data})
+			return
+		}
+
+		// 回退到更细粒度
+		fallback, ok := periodFallback[period]
+		if !ok {
+			// 已经是最细粒度，返回空
+			c.JSON(200, gin.H{"success": true, "data": []interface{}{}})
+			return
+		}
+		period = fallback
 	}
-	defer rows.Close()
-
-	data := []map[string]interface{}{}
-	for rows.Next() {
-		row := make(map[string]interface{})
-		rows.MapScan(row)
-		data = append(data, row)
-	}
-
-	c.JSON(200, gin.H{"success": true, "data": data})
 }
 
 // GetScheduled 获取已调度项目
