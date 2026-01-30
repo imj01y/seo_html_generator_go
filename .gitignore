@@ -29,7 +29,6 @@ web/dist/
 
 # Runtime data (不入库)
 data/
-config.yaml
 
 # Logs
 *.log
