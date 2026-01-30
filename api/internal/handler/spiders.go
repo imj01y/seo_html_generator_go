@@ -1577,8 +1577,12 @@ func (h *SpiderStatsHandler) GetScheduled(c *gin.Context) {
 func (h *SpiderStatsHandler) GetByProject(c *gin.Context) {
 	db, dbExists := c.Get("db")
 	rdb, redisExists := c.Get("redis")
-	if !dbExists || !redisExists {
-		c.JSON(200, gin.H{"success": true, "data": []interface{}{}})
+	if !dbExists {
+		c.JSON(500, gin.H{"success": false, "message": "数据库未连接"})
+		return
+	}
+	if !redisExists {
+		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
 		return
 	}
 	sqlxDB := db.(*sqlx.DB)
@@ -1590,7 +1594,10 @@ func (h *SpiderStatsHandler) GetByProject(c *gin.Context) {
 		ID   int    `db:"id"`
 		Name string `db:"name"`
 	}
-	sqlxDB.Select(&projects, "SELECT id, name FROM spider_projects ORDER BY id")
+	if err := sqlxDB.Select(&projects, "SELECT id, name FROM spider_projects ORDER BY id"); err != nil {
+		c.JSON(500, gin.H{"success": false, "message": "查询项目列表失败"})
+		return
+	}
 
 	// 从 Redis 获取每个项目的统计
 	result := make([]gin.H, 0, len(projects))
