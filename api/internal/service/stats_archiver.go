@@ -26,6 +26,7 @@ type StatsArchiver struct {
 	lastDayRun    time.Time
 
 	// 保存每个项目上次归档时的统计值（用于计算增量）
+	archivedMu   sync.RWMutex
 	lastArchived map[int]statsSnapshot
 }
 
@@ -54,7 +55,16 @@ func (a *StatsArchiver) Start(ctx context.Context) {
 		return
 	}
 	a.running = true
+	// 重新创建 stopCh 以支持重启
+	a.stopCh = make(chan struct{})
 	a.mu.Unlock()
+
+	// 确保退出时重置状态
+	defer func() {
+		a.mu.Lock()
+		a.running = false
+		a.mu.Unlock()
+	}()
 
 	log.Info().Msg("StatsArchiver started")
 
@@ -79,9 +89,9 @@ func (a *StatsArchiver) Start(ctx context.Context) {
 func (a *StatsArchiver) Stop() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.running {
+	if a.running && a.stopCh != nil {
 		close(a.stopCh)
-		a.running = false
+		// running 将由 Start 的 defer 设置为 false
 	}
 }
 
@@ -152,7 +162,9 @@ func (a *StatsArchiver) archiveMinuteStats(ctx context.Context, now time.Time) e
 		}
 
 		// 计算增量
+		a.archivedMu.RLock()
 		last := a.lastArchived[projectID]
+		a.archivedMu.RUnlock()
 		delta := statsSnapshot{
 			Total:     maxInt64(0, current.Total-last.Total),
 			Completed: maxInt64(0, current.Completed-last.Completed),
@@ -182,7 +194,9 @@ func (a *StatsArchiver) archiveMinuteStats(ctx context.Context, now time.Time) e
 		}
 
 		// 更新基准值
+		a.archivedMu.Lock()
 		a.lastArchived[projectID] = current
+		a.archivedMu.Unlock()
 	}
 
 	return iter.Err()
