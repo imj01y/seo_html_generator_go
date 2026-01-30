@@ -2,6 +2,7 @@
 package api
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -409,4 +410,220 @@ func (h *KeywordsHandler) Delete(c *gin.Context) {
 	}
 
 	core.Success(c, gin.H{"success": true})
+}
+
+// BatchDelete 批量删除
+// DELETE /api/keywords/batch
+func (h *KeywordsHandler) BatchDelete(c *gin.Context) {
+	var req BatchIdsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "deleted": 0})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "deleted": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "deleted": 0})
+		return
+	}
+
+	placeholders := strings.Repeat("?,", len(req.IDs))
+	placeholders = placeholders[:len(placeholders)-1]
+
+	args := make([]interface{}, len(req.IDs))
+	for i, id := range req.IDs {
+		args[i] = id
+	}
+
+	query := fmt.Sprintf("UPDATE keywords SET status = 0 WHERE id IN (%s)", placeholders)
+	if _, err := h.db.Exec(query, args...); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true, "deleted": len(req.IDs)})
+}
+
+// DeleteAll 删除全部
+// DELETE /api/keywords/delete-all
+func (h *KeywordsHandler) DeleteAll(c *gin.Context) {
+	var req DeleteAllRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "请求参数错误", "deleted": 0})
+		return
+	}
+
+	if !req.Confirm {
+		core.Success(c, gin.H{"success": false, "message": "请确认删除操作", "deleted": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "deleted": 0})
+		return
+	}
+
+	var result sql.Result
+	var err error
+
+	if req.GroupID != nil {
+		result, err = h.db.Exec("UPDATE keywords SET status = 0 WHERE group_id = ? AND status = 1", *req.GroupID)
+	} else {
+		result, err = h.db.Exec("UPDATE keywords SET status = 0 WHERE status = 1")
+	}
+
+	if err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
+		return
+	}
+
+	deleted, _ := result.RowsAffected()
+	core.Success(c, gin.H{"success": true, "deleted": deleted})
+}
+
+// BatchUpdateStatus 批量更新状态
+// PUT /api/keywords/batch/status
+func (h *KeywordsHandler) BatchUpdateStatus(c *gin.Context) {
+	var req BatchStatusRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "请求参数错误", "updated": 0})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "updated": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "updated": 0})
+		return
+	}
+
+	placeholders := strings.Repeat("?,", len(req.IDs))
+	placeholders = placeholders[:len(placeholders)-1]
+
+	args := []interface{}{req.Status}
+	for _, id := range req.IDs {
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf("UPDATE keywords SET status = ? WHERE id IN (%s)", placeholders)
+	if _, err := h.db.Exec(query, args...); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "updated": 0})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true, "updated": len(req.IDs)})
+}
+
+// BatchMove 批量移动分组
+// PUT /api/keywords/batch/move
+func (h *KeywordsHandler) BatchMove(c *gin.Context) {
+	var req BatchMoveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "请求参数错误", "moved": 0})
+		return
+	}
+
+	if len(req.IDs) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "ID列表不能为空", "moved": 0})
+		return
+	}
+
+	if h.db == nil {
+		core.Success(c, gin.H{"success": false, "message": "数据库未初始化", "moved": 0})
+		return
+	}
+
+	// 检查目标分组是否存在
+	var exists int
+	if err := h.db.Get(&exists, "SELECT 1 FROM keyword_groups WHERE id = ? AND status = 1", req.GroupID); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "目标分组不存在", "moved": 0})
+		return
+	}
+
+	placeholders := strings.Repeat("?,", len(req.IDs))
+	placeholders = placeholders[:len(placeholders)-1]
+
+	args := []interface{}{req.GroupID}
+	for _, id := range req.IDs {
+		args = append(args, id)
+	}
+
+	query := fmt.Sprintf("UPDATE keywords SET group_id = ? WHERE id IN (%s)", placeholders)
+	if _, err := h.db.Exec(query, args...); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error(), "moved": 0})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
+}
+
+// BatchAdd 批量添加关键词
+// POST /api/keywords/batch
+func (h *KeywordsHandler) BatchAdd(c *gin.Context) {
+	var req KeywordBatchAddRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if len(req.Keywords) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "关键词列表不能为空"})
+		return
+	}
+
+	if len(req.Keywords) > 100000 {
+		core.FailWithMessage(c, core.ErrInvalidParam, "单次最多添加 100000 个关键词")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	groupID := req.GroupID
+	if groupID == 0 {
+		groupID = 1
+	}
+
+	// 使用 INSERT IGNORE 批量插入
+	added := 0
+	skipped := 0
+
+	for _, kw := range req.Keywords {
+		kw = strings.TrimSpace(kw)
+		if kw == "" {
+			skipped++
+			continue
+		}
+
+		result, err := h.db.Exec(
+			"INSERT IGNORE INTO keywords (group_id, keyword) VALUES (?, ?)",
+			groupID, kw)
+		if err != nil {
+			skipped++
+			continue
+		}
+
+		affected, _ := result.RowsAffected()
+		if affected > 0 {
+			added++
+		} else {
+			skipped++
+		}
+	}
+
+	core.Success(c, gin.H{
+		"success": true,
+		"added":   added,
+		"skipped": skipped,
+		"total":   len(req.Keywords),
+	})
 }
