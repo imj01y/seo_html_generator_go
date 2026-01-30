@@ -8,9 +8,11 @@ import (
 	"strconv"
 	"time"
 
+	"go-page-server/config"
 	"go-page-server/core"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 )
 
 // startTime 记录服务启动时间
@@ -18,6 +20,8 @@ var startTime = time.Now()
 
 // Dependencies holds all dependencies required by the API handlers
 type Dependencies struct {
+	DB               *sqlx.DB
+	Config           *config.Config
 	TemplateAnalyzer *core.TemplateAnalyzer
 	TemplateFuncs    *core.TemplateFuncsManager
 	DataPoolManager  *core.DataPoolManager
@@ -28,6 +32,26 @@ type Dependencies struct {
 
 // SetupRouter configures all API routes
 func SetupRouter(r *gin.Engine, deps *Dependencies) {
+	// Auth routes (public - no middleware required)
+	authGroup := r.Group("/api/auth")
+	{
+		authHandler := NewAuthHandler(
+			deps.Config.Auth.SecretKey,
+			deps.Config.Auth.AccessTokenExpireMinutes,
+			deps.DB,
+		)
+		authGroup.POST("/login", authHandler.Login)
+		authGroup.POST("/logout", authHandler.Logout)
+
+		// Protected auth routes (require JWT)
+		authProtected := authGroup.Group("")
+		authProtected.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+		{
+			authProtected.GET("/profile", authHandler.Profile)
+			authProtected.POST("/change-password", authHandler.ChangePassword)
+		}
+	}
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
