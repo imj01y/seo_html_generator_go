@@ -2,6 +2,19 @@ version: '3.8'
 
 services:
   # ========================================
+  # Vue Frontend Builder
+  # ========================================
+  web:
+    build:
+      context: ./web
+      dockerfile: ../docker/web.Dockerfile
+    container_name: seo-generator-web
+    volumes:
+      - web_dist:/dist
+    networks:
+      - seo-network
+
+  # ========================================
   # Nginx Reverse Proxy
   # ========================================
   nginx:
@@ -18,11 +31,13 @@ services:
       - ./docker/nginx/lua:/etc/nginx/lua:ro
       - ./docker/nginx/ssl:/etc/nginx/ssl:ro
       - ./data/cache:/app/html_cache:ro
-      - ./web/dist:/app/admin-panel/dist:ro
+      - web_dist:/app/admin-panel/dist:ro
       - ./data/logs/nginx:/var/log/nginx
     depends_on:
       api:
         condition: service_healthy
+      web:
+        condition: service_started
     networks:
       - seo-network
     healthcheck:
@@ -170,4 +185,6 @@ volumes:
   mysql_data:
     driver: local
   redis_data:
+    driver: local
+  web_dist:
     driver: local

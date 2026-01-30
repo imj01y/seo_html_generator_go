@@ -27,8 +27,12 @@ web/dist/
 *.swo
 *~
 
-# Runtime data (不入库)
-data/
+# Runtime data (内容不入库，但保留目录结构)
+data/*
+!data/.gitkeep
+!data/cache/.gitkeep
+!data/logs/.gitkeep
+!data/logs/nginx/.gitkeep
 
 # Logs
 *.log

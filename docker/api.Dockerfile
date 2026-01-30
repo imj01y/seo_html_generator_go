@@ -1,63 +1,57 @@
-# ========================================
-# Stage 1: Build frontend
-# ========================================
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /app/admin-panel
-
-# Copy package files first for better caching
-COPY admin-panel/package*.json ./
-
-# Install dependencies
-RUN npm install
-
-# Copy frontend source
-COPY admin-panel/ ./
-
-# Build frontend
-RUN npm run build
+# Go API Server Dockerfile
+# 用于构建和运行 Go API 服务
 
 # ========================================
-# Stage 2: Python backend + frontend static files
+# Stage 1: Build
 # ========================================
-FROM python:3.11.9-slim
+FROM golang:1.24-alpine AS builder
+
+WORKDIR /build
+
+# Install git for go mod download
+RUN apk add --no-cache git
+
+# Copy go mod files first for better caching
+COPY go.mod go.sum ./
+
+# Download dependencies
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the binary
+RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/main.go
+
+# ========================================
+# Stage 2: Runtime
+# ========================================
+FROM alpine:3.19
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    default-libmysqlclient-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
+# Install ca-certificates for HTTPS and tzdata for timezone
+RUN apk add --no-cache ca-certificates tzdata wget
 
-# Copy requirements first for better caching
-COPY requirements.txt ./
+# Copy binary from builder
+COPY --from=builder /build/server .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy templates
+COPY --from=builder /build/templates ./templates
 
-# Copy application code
-COPY . .
-
-# Copy built frontend from stage 1 (to dist-build, will be copied to shared volume at runtime)
-COPY --from=frontend-builder /app/admin-panel/dist ./admin-panel/dist-build
-
-# Create necessary directories
-RUN mkdir -p /app/logs /app/cache /app/data
+# Create directories
+RUN mkdir -p /app/html_cache /app/logs
 
 # Set environment variables
-ENV PYTHONUNBUFFERED=1 \
-    ENV_FOR_DYNACONF=production \
-    TZ=Asia/Shanghai
+ENV TZ=Asia/Shanghai \
+    GIN_MODE=release
 
 # Expose port
-EXPOSE 8009
+EXPOSE 8080
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8009/api/health')" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget -q --spider http://localhost:8080/health || exit 1
 
-# Start application (copy frontend to shared volume first)
-CMD cp -r /app/admin-panel/dist-build/* /app/admin-panel/dist/ 2>/dev/null || true && \
-    uvicorn main:app --host 0.0.0.0 --port 8009
+# Start server
+CMD ["./server"]
