@@ -330,7 +330,15 @@ func (h *SpidersHandler) Create(c *gin.Context) {
 		configJSON = &configStr
 	}
 
-	result, err := sqlxDB.Exec(`
+	// 使用事务确保项目和文件同时创建成功
+	tx, err := sqlxDB.Beginx()
+	if err != nil {
+		c.JSON(500, gin.H{"success": false, "message": "开启事务失败: " + err.Error()})
+		return
+	}
+
+	// 插入项目
+	result, err := tx.Exec(`
 		INSERT INTO spider_projects
 		(name, description, entry_file, entry_function, start_url, config,
 		 concurrency, output_group_id, schedule, enabled)
@@ -340,12 +348,14 @@ func (h *SpidersHandler) Create(c *gin.Context) {
 		req.Schedule, req.Enabled)
 
 	if err != nil {
-		c.JSON(500, gin.H{"success": false, "message": "创建失败: " + err.Error()})
+		tx.Rollback()
+		c.JSON(500, gin.H{"success": false, "message": "创建项目失败: " + err.Error()})
 		return
 	}
 
 	projectID, _ := result.LastInsertId()
 
+	// 确保入口文件存在
 	hasEntryFile := false
 	for _, f := range req.Files {
 		if f.Filename == req.EntryFile {
@@ -361,11 +371,23 @@ func (h *SpidersHandler) Create(c *gin.Context) {
 		})
 	}
 
+	// 插入文件（带错误检查）
 	for _, f := range req.Files {
-		sqlxDB.Exec(`
+		_, err := tx.Exec(`
 			INSERT INTO spider_project_files (project_id, filename, content)
 			VALUES (?, ?, ?)
 		`, projectID, f.Filename, f.Content)
+		if err != nil {
+			tx.Rollback()
+			c.JSON(500, gin.H{"success": false, "message": "创建文件失败: " + err.Error()})
+			return
+		}
+	}
+
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		c.JSON(500, gin.H{"success": false, "message": "提交事务失败: " + err.Error()})
+		return
 	}
 
 	c.JSON(200, gin.H{"success": true, "id": projectID, "message": "创建成功"})
@@ -673,22 +695,19 @@ func (h *SpidersHandler) UpdateFile(c *gin.Context) {
 		return
 	}
 
-	result, err := sqlxDB.Exec(`
-		UPDATE spider_project_files SET content = ? WHERE project_id = ? AND filename = ?
-	`, req.Content, id, filename)
+	// 使用 upsert 避免竞态条件
+	_, err = sqlxDB.Exec(`
+		INSERT INTO spider_project_files (project_id, filename, content)
+		VALUES (?, ?, ?)
+		ON DUPLICATE KEY UPDATE content = VALUES(content)
+	`, id, filename, req.Content)
 
 	if err != nil {
-		c.JSON(500, gin.H{"success": false, "message": "更新失败"})
+		c.JSON(500, gin.H{"success": false, "message": "保存文件失败: " + err.Error()})
 		return
 	}
 
-	affected, _ := result.RowsAffected()
-	if affected == 0 {
-		c.JSON(404, gin.H{"success": false, "message": "文件不存在"})
-		return
-	}
-
-	c.JSON(200, gin.H{"success": true, "message": "更新成功"})
+	c.JSON(200, gin.H{"success": true, "message": "保存成功"})
 }
 
 // DeleteFile 删除文件
@@ -1408,51 +1427,69 @@ def main():
 // 爬虫统计 API
 // ============================================
 
-// GetOverview 获取统计概览
+// GetOverview 获取统计概览（从 Redis 读取实时数据）
 func (h *SpiderStatsHandler) GetOverview(c *gin.Context) {
-	db, exists := c.Get("db")
+	rdb, exists := c.Get("redis")
 	if !exists {
-		c.JSON(200, gin.H{"success": true, "data": map[string]interface{}{}})
+		c.JSON(200, gin.H{"success": true, "data": map[string]interface{}{
+			"total": 0, "completed": 0, "failed": 0, "retried": 0, "success_rate": 0, "avg_speed": 0,
+		}})
 		return
 	}
-	sqlxDB := db.(*sqlx.DB)
+	redisClient := rdb.(*redis.Client)
 
 	projectIDStr := c.Query("project_id")
-	period := c.DefaultQuery("period", "day")
+	ctx := context.Background()
 
-	where := "period_type = ?"
-	args := []interface{}{period}
+	var total, completed, failed, retried int64
 
 	if projectIDStr != "" && projectIDStr != "0" {
+		// 单个项目统计
 		projectID, _ := strconv.Atoi(projectIDStr)
-		where += " AND project_id = ?"
-		args = append(args, projectID)
+		statsKey := fmt.Sprintf("spider:%d:stats", projectID)
+		statsData, err := redisClient.HGetAll(ctx, statsKey).Result()
+		if err == nil && len(statsData) > 0 {
+			total, _ = strconv.ParseInt(statsData["total"], 10, 64)
+			completed, _ = strconv.ParseInt(statsData["completed"], 10, 64)
+			failed, _ = strconv.ParseInt(statsData["failed"], 10, 64)
+			retried, _ = strconv.ParseInt(statsData["retried"], 10, 64)
+		}
+	} else {
+		// 全部项目统计：扫描所有 spider:*:stats 键
+		iter := redisClient.Scan(ctx, 0, "spider:*:stats", 100).Iterator()
+		for iter.Next(ctx) {
+			key := iter.Val()
+			// 排除 archived 和 test 键
+			if strings.Contains(key, ":archived") || strings.HasPrefix(key, "test_spider:") {
+				continue
+			}
+			statsData, err := redisClient.HGetAll(ctx, key).Result()
+			if err == nil {
+				t, _ := strconv.ParseInt(statsData["total"], 10, 64)
+				c, _ := strconv.ParseInt(statsData["completed"], 10, 64)
+				f, _ := strconv.ParseInt(statsData["failed"], 10, 64)
+				r, _ := strconv.ParseInt(statsData["retried"], 10, 64)
+				total += t
+				completed += c
+				failed += f
+				retried += r
+			}
+		}
 	}
 
-	var stats struct {
-		Total       int     `db:"total"`
-		Completed   int     `db:"completed"`
-		Failed      int     `db:"failed"`
-		Retried     int     `db:"retried"`
-		AvgSpeed    float64 `db:"avg_speed"`
-		SuccessRate float64
+	var successRate float64
+	if total > 0 {
+		successRate = float64(completed) / float64(total) * 100
 	}
 
-	sqlxDB.Get(&stats, `
-		SELECT
-			COALESCE(SUM(total), 0) as total,
-			COALESCE(SUM(completed), 0) as completed,
-			COALESCE(SUM(failed), 0) as failed,
-			COALESCE(SUM(retried), 0) as retried,
-			COALESCE(AVG(avg_speed), 0) as avg_speed
-		FROM spider_stats_history
-		WHERE `+where, args...)
-
-	if stats.Total > 0 {
-		stats.SuccessRate = float64(stats.Completed) / float64(stats.Total) * 100
-	}
-
-	c.JSON(200, gin.H{"success": true, "data": stats})
+	c.JSON(200, gin.H{"success": true, "data": gin.H{
+		"total":        total,
+		"completed":    completed,
+		"failed":       failed,
+		"retried":      retried,
+		"success_rate": successRate,
+		"avg_speed":    0, // 实时统计不计算速度
+	}})
 }
 
 // GetChart 获取图表数据
