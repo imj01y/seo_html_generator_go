@@ -4,6 +4,7 @@ package api
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -625,5 +626,128 @@ func (h *KeywordsHandler) BatchAdd(c *gin.Context) {
 		"added":   added,
 		"skipped": skipped,
 		"total":   len(req.Keywords),
+	})
+}
+
+// Add 添加单个关键词
+// POST /api/keywords/add
+func (h *KeywordsHandler) Add(c *gin.Context) {
+	var req KeywordAddRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	groupID := req.GroupID
+	if groupID == 0 {
+		groupID = 1
+	}
+
+	result, err := h.db.Exec(
+		"INSERT IGNORE INTO keywords (group_id, keyword) VALUES (?, ?)",
+		groupID, req.Keyword)
+
+	if err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		core.Success(c, gin.H{"success": false, "message": "关键词已存在"})
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	core.Success(c, gin.H{"success": true, "id": id})
+}
+
+// Upload 上传TXT文件批量添加
+// POST /api/keywords/upload
+func (h *KeywordsHandler) Upload(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请上传文件")
+		return
+	}
+
+	if !strings.HasSuffix(strings.ToLower(file.Filename), ".txt") {
+		core.FailWithMessage(c, core.ErrInvalidParam, "只支持 .txt 格式文件")
+		return
+	}
+
+	groupID, _ := strconv.Atoi(c.DefaultPostForm("group_id", "1"))
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	// 读取文件内容
+	f, err := file.Open()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "无法读取文件")
+		return
+	}
+	defer f.Close()
+
+	content, err := io.ReadAll(f)
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "无法读取文件内容")
+		return
+	}
+
+	// 解析关键词
+	lines := strings.Split(string(content), "\n")
+	keywords := []string{}
+	for _, line := range lines {
+		kw := strings.TrimSpace(line)
+		if kw != "" {
+			keywords = append(keywords, kw)
+		}
+	}
+
+	if len(keywords) == 0 {
+		core.FailWithMessage(c, core.ErrInvalidParam, "文件中没有有效的关键词")
+		return
+	}
+
+	if len(keywords) > 500000 {
+		core.FailWithMessage(c, core.ErrInvalidParam, "单次最多上传 500000 个关键词")
+		return
+	}
+
+	// 批量插入
+	added := 0
+	skipped := 0
+
+	for _, kw := range keywords {
+		result, err := h.db.Exec(
+			"INSERT IGNORE INTO keywords (group_id, keyword) VALUES (?, ?)",
+			groupID, kw)
+		if err != nil {
+			skipped++
+			continue
+		}
+
+		affected, _ := result.RowsAffected()
+		if affected > 0 {
+			added++
+		} else {
+			skipped++
+		}
+	}
+
+	core.Success(c, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("成功添加 %d 个关键词，跳过 %d 个重复", added, skipped),
+		"total":   len(keywords),
+		"added":   added,
+		"skipped": skipped,
 	})
 }
