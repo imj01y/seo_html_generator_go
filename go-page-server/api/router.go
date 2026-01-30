@@ -120,6 +120,37 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		keywordsGroup.POST("/cache/clear", keywordsHandler.ClearCache)
 	}
 
+	// Images routes (require JWT)
+	imagesHandler := NewImagesHandler(deps.DB)
+	imagesGroup := r.Group("/api/images")
+	imagesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		// 分组管理
+		imagesGroup.GET("/groups", imagesHandler.ListGroups)
+		imagesGroup.POST("/groups", imagesHandler.CreateGroup)
+		imagesGroup.PUT("/groups/:id", imagesHandler.UpdateGroup)
+		imagesGroup.DELETE("/groups/:id", imagesHandler.DeleteGroup)
+
+		// 图片URL管理
+		imagesGroup.GET("/urls/list", imagesHandler.ListURLs)
+		imagesGroup.POST("/urls/add", imagesHandler.AddURL)
+		imagesGroup.POST("/urls/batch", imagesHandler.BatchAddURLs)
+		imagesGroup.PUT("/urls/:id", imagesHandler.UpdateURL)
+		imagesGroup.DELETE("/urls/:id", imagesHandler.DeleteURL)
+
+		// 批量操作
+		imagesGroup.DELETE("/batch", imagesHandler.BatchDelete)
+		imagesGroup.DELETE("/delete-all", imagesHandler.DeleteAll)
+		imagesGroup.PUT("/batch/status", imagesHandler.BatchUpdateStatus)
+		imagesGroup.PUT("/batch/move", imagesHandler.BatchMove)
+
+		// 统计和缓存
+		imagesGroup.GET("/urls/stats", imagesHandler.Stats)
+		imagesGroup.GET("/urls/random", imagesHandler.Random)
+		imagesGroup.POST("/urls/reload", imagesHandler.Reload)
+		imagesGroup.POST("/cache/clear", imagesHandler.ClearCache)
+	}
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 
