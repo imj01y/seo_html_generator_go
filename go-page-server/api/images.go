@@ -263,3 +263,233 @@ func (h *ImagesHandler) DeleteGroup(c *gin.Context) {
 
 	core.Success(c, gin.H{"success": true})
 }
+
+// ListURLs 获取图片URL列表
+// GET /api/images/urls/list
+func (h *ImagesHandler) ListURLs(c *gin.Context) {
+	groupID, _ := strconv.Atoi(c.DefaultQuery("group_id", "1"))
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	search := c.Query("search")
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 || pageSize > 100 {
+		pageSize = 20
+	}
+	offset := (page - 1) * pageSize
+
+	if h.db == nil {
+		core.SuccessPaged(c, []ImageListItem{}, 0, page, pageSize)
+		return
+	}
+
+	where := "group_id = ? AND status = 1"
+	args := []interface{}{groupID}
+
+	if search != "" {
+		where += " AND url LIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+
+	var total int64
+	h.db.Get(&total, "SELECT COUNT(*) FROM images WHERE "+where, args...)
+
+	args = append(args, pageSize, offset)
+	query := `SELECT id, group_id, url, status, created_at
+	          FROM images WHERE ` + where + ` ORDER BY id DESC LIMIT ? OFFSET ?`
+
+	var items []ImageListItem
+	if err := h.db.Select(&items, query, args...); err != nil {
+		log.Warn().Err(err).Msg("Failed to list images")
+		items = []ImageListItem{}
+	}
+
+	core.SuccessPaged(c, items, total, page, pageSize)
+}
+
+// AddURL 添加单个图片URL
+// POST /api/images/urls/add
+func (h *ImagesHandler) AddURL(c *gin.Context) {
+	var req ImageAddRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	groupID := req.GroupID
+	if groupID == 0 {
+		groupID = 1
+	}
+
+	result, err := h.db.Exec(
+		"INSERT IGNORE INTO images (group_id, url) VALUES (?, ?)",
+		groupID, req.URL)
+
+	if err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	affected, _ := result.RowsAffected()
+	if affected == 0 {
+		core.Success(c, gin.H{"success": false, "message": "图片URL已存在"})
+		return
+	}
+
+	id, _ := result.LastInsertId()
+	core.Success(c, gin.H{"success": true, "id": id})
+}
+
+// BatchAddURLs 批量添加图片URL
+// POST /api/images/urls/batch
+func (h *ImagesHandler) BatchAddURLs(c *gin.Context) {
+	var req ImageBatchAddRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if len(req.URLs) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "URL列表不能为空"})
+		return
+	}
+
+	if len(req.URLs) > 100000 {
+		core.FailWithMessage(c, core.ErrInvalidParam, "单次最多添加 100000 个URL")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	groupID := req.GroupID
+	if groupID == 0 {
+		groupID = 1
+	}
+
+	added := 0
+	skipped := 0
+
+	for _, url := range req.URLs {
+		url = strings.TrimSpace(url)
+		if url == "" {
+			skipped++
+			continue
+		}
+
+		result, err := h.db.Exec(
+			"INSERT IGNORE INTO images (group_id, url) VALUES (?, ?)",
+			groupID, url)
+		if err != nil {
+			skipped++
+			continue
+		}
+
+		affected, _ := result.RowsAffected()
+		if affected > 0 {
+			added++
+		} else {
+			skipped++
+		}
+	}
+
+	core.Success(c, gin.H{
+		"success": true,
+		"added":   added,
+		"skipped": skipped,
+		"total":   len(req.URLs),
+	})
+}
+
+// UpdateURL 更新图片URL
+// PUT /api/images/urls/:id
+func (h *ImagesHandler) UpdateURL(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的图片 ID")
+		return
+	}
+
+	var req ImageURLUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请求参数错误")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	var exists int
+	if err := h.db.Get(&exists, "SELECT 1 FROM images WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "图片不存在"})
+		return
+	}
+
+	updates := []string{}
+	args := []interface{}{}
+
+	if req.URL != nil && *req.URL != "" {
+		updates = append(updates, "url = ?")
+		args = append(args, *req.URL)
+	}
+	if req.GroupID != nil {
+		updates = append(updates, "group_id = ?")
+		args = append(args, *req.GroupID)
+	}
+	if req.Status != nil {
+		updates = append(updates, "status = ?")
+		args = append(args, *req.Status)
+	}
+
+	if len(updates) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "没有要更新的字段"})
+		return
+	}
+
+	args = append(args, id)
+	query := "UPDATE images SET " + strings.Join(updates, ", ") + " WHERE id = ?"
+
+	if _, err := h.db.Exec(query, args...); err != nil {
+		if strings.Contains(err.Error(), "Duplicate") {
+			core.Success(c, gin.H{"success": false, "message": "图片URL已存在"})
+			return
+		}
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
+
+// DeleteURL 删除图片URL
+// DELETE /api/images/urls/:id
+func (h *ImagesHandler) DeleteURL(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的图片 ID")
+		return
+	}
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	if _, err := h.db.Exec("UPDATE images SET status = 0 WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	core.Success(c, gin.H{"success": true})
+}
