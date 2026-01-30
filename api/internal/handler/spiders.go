@@ -1466,14 +1466,19 @@ func (h *SpiderStatsHandler) GetOverview(c *gin.Context) {
 			statsData, err := redisClient.HGetAll(ctx, key).Result()
 			if err == nil {
 				t, _ := strconv.ParseInt(statsData["total"], 10, 64)
-				c, _ := strconv.ParseInt(statsData["completed"], 10, 64)
+				comp, _ := strconv.ParseInt(statsData["completed"], 10, 64)
 				f, _ := strconv.ParseInt(statsData["failed"], 10, 64)
 				r, _ := strconv.ParseInt(statsData["retried"], 10, 64)
 				total += t
-				completed += c
+				completed += comp
 				failed += f
 				retried += r
 			}
+		}
+		// 检查迭代器错误
+		if err := iter.Err(); err != nil {
+			c.JSON(500, gin.H{"success": false, "message": "Redis 扫描失败"})
+			return
 		}
 	}
 
