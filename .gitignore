@@ -1,4 +1,4 @@
-# Python 相关
+# Python
 __pycache__/
 *.pyc
 *.pyo
@@ -9,36 +9,41 @@ venv/
 .mypy_cache/
 *.egg-info/
 
-# Node.js 相关
+# Node.js
 node_modules/
-dist/
-.npm/
+web/dist/
 
-# IDE 配置
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
 
-# 运行时文件
-logs/
-*.log
-/cache/
-html_cache/
+# Runtime data (不入库)
+data/
+config.yaml
 
-# 敏感信息
+# Logs
+*.log
+
+# Sensitive
 .env
 .env.local
 .env.*.local
 *.secret
 
-# 系统文件
+# System
 .DS_Store
 Thumbs.db
-
-# Claude Code 配置
-.claude/
-
-# Windows invalid / temp files
 nul
+
+# Claude Code
+.claude/
