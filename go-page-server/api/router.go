@@ -208,6 +208,81 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	// Groups options route (require JWT)
 	r.GET("/api/groups/options", AuthMiddleware(deps.Config.Auth.SecretKey), sitesHandler.GetAllGroupOptions)
 
+	// Spider Projects routes (require JWT)
+	spidersHandler := &SpidersHandler{}
+	spiderRoutes := r.Group("/api/spider-projects")
+	spiderRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		spiderRoutes.GET("", spidersHandler.List)
+		spiderRoutes.POST("", spidersHandler.Create)
+		spiderRoutes.GET("/templates", spidersHandler.GetCodeTemplates)
+		spiderRoutes.GET("/:id", spidersHandler.Get)
+		spiderRoutes.PUT("/:id", spidersHandler.Update)
+		spiderRoutes.DELETE("/:id", spidersHandler.Delete)
+		spiderRoutes.POST("/:id/toggle", spidersHandler.Toggle)
+
+		// 文件管理
+		spiderRoutes.GET("/:id/files", spidersHandler.ListFiles)
+		spiderRoutes.GET("/:id/files/:filename", spidersHandler.GetFile)
+		spiderRoutes.POST("/:id/files", spidersHandler.CreateFile)
+		spiderRoutes.PUT("/:id/files/:filename", spidersHandler.UpdateFile)
+		spiderRoutes.DELETE("/:id/files/:filename", spidersHandler.DeleteFile)
+
+		// 任务控制
+		spiderRoutes.POST("/:id/run", spidersHandler.Run)
+		spiderRoutes.POST("/:id/test", spidersHandler.Test)
+		spiderRoutes.POST("/:id/test/stop", spidersHandler.TestStop)
+		spiderRoutes.POST("/:id/stop", spidersHandler.Stop)
+		spiderRoutes.POST("/:id/pause", spidersHandler.Pause)
+		spiderRoutes.POST("/:id/resume", spidersHandler.Resume)
+
+		// 统计
+		spiderRoutes.GET("/:id/stats/realtime", spidersHandler.GetRealtimeStats)
+		spiderRoutes.GET("/:id/stats/chart", spidersHandler.GetChartStats)
+
+		// 队列管理
+		spiderRoutes.POST("/:id/queue/clear", spidersHandler.ClearQueue)
+		spiderRoutes.POST("/:id/reset", spidersHandler.Reset)
+
+		// 失败请求
+		spiderRoutes.GET("/:id/failed", spidersHandler.ListFailed)
+		spiderRoutes.GET("/:id/failed/stats", spidersHandler.GetFailedStats)
+		spiderRoutes.POST("/:id/failed/retry-all", spidersHandler.RetryAllFailed)
+		spiderRoutes.POST("/:id/failed/:fid/retry", spidersHandler.RetryOneFailed)
+		spiderRoutes.POST("/:id/failed/:fid/ignore", spidersHandler.IgnoreFailed)
+		spiderRoutes.DELETE("/:id/failed/:fid", spidersHandler.DeleteFailed)
+	}
+
+	// Spider Stats routes (require JWT)
+	spiderStatsHandler := &SpiderStatsHandler{}
+	statsRoutes := r.Group("/api/spider-stats")
+	statsRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		statsRoutes.GET("/overview", spiderStatsHandler.GetOverview)
+		statsRoutes.GET("/chart", spiderStatsHandler.GetChart)
+		statsRoutes.GET("/scheduled", spiderStatsHandler.GetScheduled)
+		statsRoutes.GET("/by-project", spiderStatsHandler.GetByProject)
+	}
+
+	// Generators routes (require JWT)
+	generatorsHandler := &GeneratorsHandler{}
+	genRoutes := r.Group("/api/generators")
+	genRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		genRoutes.GET("", generatorsHandler.List)
+		genRoutes.POST("", generatorsHandler.Create)
+		genRoutes.GET("/templates/list", generatorsHandler.GetTemplates)
+		genRoutes.GET("/:id", generatorsHandler.Get)
+		genRoutes.PUT("/:id", generatorsHandler.Update)
+		genRoutes.DELETE("/:id", generatorsHandler.Delete)
+		genRoutes.POST("/:id/set-default", generatorsHandler.SetDefault)
+		genRoutes.POST("/:id/toggle", generatorsHandler.Toggle)
+	}
+
+	// WebSocket routes (不需要认证)
+	wsHandler := &WebSocketHandler{}
+	r.GET("/ws/spider-logs/:id", wsHandler.SpiderLogs)
+
 	// Admin API group
 	admin := r.Group("/api/admin")
 

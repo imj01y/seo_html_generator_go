@@ -42,6 +42,8 @@ services:
     volumes:
       - ./templates:/app/templates
       - ../data:/app/data
+      - ../config.yaml:/app/config.yaml:ro
+      - ../html_cache:/app/html_cache
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/health"]
       interval: 30s
