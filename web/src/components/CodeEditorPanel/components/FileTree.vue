@@ -2,7 +2,7 @@
   <div class="file-tree" :style="{ width: width + 'px' }">
     <!-- 标题栏 -->
     <div class="tree-header">
-      <span class="title">WORKER</span>
+      <span class="title">{{ title }}</span>
       <div class="actions">
         <el-tooltip content="刷新" placement="bottom">
           <el-icon class="action-btn" @click="handleRefresh"><Refresh /></el-icon>
@@ -17,20 +17,21 @@
     </div>
 
     <!-- 树内容 -->
-    <div class="tree-content" v-loading="store.treeLoading">
-      <template v-if="store.fileTree">
+    <div class="tree-content" v-loading="store.treeLoading.value">
+      <template v-if="store.fileTree.value">
         <FileTreeNode
           v-for="child in sortedRootChildren"
           :key="child.path"
           :node="child"
           :depth="0"
           :active-path="activePath"
+          :store="store"
           @select="handleSelect"
           @open="handleOpen"
           @context-menu="handleContextMenu"
         />
       </template>
-      <div v-else-if="!store.treeLoading" class="empty-tip">
+      <div v-else-if="!store.treeLoading.value" class="empty-tip">
         暂无文件
       </div>
     </div>
@@ -53,14 +54,18 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { Refresh, DocumentAdd, FolderAdd } from '@element-plus/icons-vue'
-import { useWorkerEditorStore } from '@/stores/workerEditor'
-import type { TreeNode } from '@/api/worker'
+import type { TreeNode, MenuItem, CodeEditorApi } from '../types'
+import type { EditorStore } from '../composables/useEditorStore'
 import FileTreeNode from './FileTreeNode.vue'
 import ContextMenu from './ContextMenu.vue'
-import type { MenuItem } from './ContextMenu.vue'
 
 const props = defineProps<{
   width: number
+  title?: string
+  store: EditorStore
+  api: CodeEditorApi
+  runnable?: boolean
+  runnableExtensions?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -72,25 +77,26 @@ const emit = defineEmits<{
   (e: 'run', node: TreeNode): void
 }>()
 
-const store = useWorkerEditorStore()
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>()
 const contextNode = ref<TreeNode | null>(null)
 
-const activePath = computed(() => store.activeTab?.path || null)
+const activePath = computed(() => props.store.activeTab.value?.path || null)
 
 const sortedRootChildren = computed(() => {
-  if (!store.fileTree?.children) return []
-  return [...store.fileTree.children].sort((a, b) => {
+  if (!props.store.fileTree.value?.children) return []
+  return [...props.store.fileTree.value.children].sort((a, b) => {
     if (a.type !== b.type) return a.type === 'dir' ? -1 : 1
     return a.name.localeCompare(b.name)
   })
 })
 
+const runnableExts = computed(() => props.runnableExtensions || ['.py'])
+
 const contextMenuItems = computed<MenuItem[]>(() => {
   if (!contextNode.value) return []
   const node = contextNode.value
   const isFile = node.type === 'file'
-  const isPython = node.name.endsWith('.py')
+  const isRunnable = isFile && runnableExts.value.some(ext => node.name.endsWith(ext))
 
   const items: MenuItem[] = [
     { key: 'new-file', label: '新建文件' },
@@ -103,10 +109,12 @@ const contextMenuItems = computed<MenuItem[]>(() => {
   if (isFile) {
     items.push({ key: 'divider-2', divider: true })
     items.push({ key: 'open', label: '在编辑器打开' })
-    if (isPython) {
+    if (props.runnable && isRunnable) {
       items.push({ key: 'run', label: '运行' })
     }
-    items.push({ key: 'download', label: '下载' })
+    if (props.api.getDownloadUrl) {
+      items.push({ key: 'download', label: '下载' })
+    }
   }
 
   items.push({ key: 'divider-3', divider: true })
@@ -116,21 +124,20 @@ const contextMenuItems = computed<MenuItem[]>(() => {
 })
 
 function handleRefresh() {
-  store.loadFileTree()
+  props.store.loadFileTree()
 }
 
 function handleSelect(node: TreeNode) {
   if (node.type === 'dir') {
-    store.toggleDir(node.path)
+    props.store.toggleDir(node.path)
   } else {
-    // 单击文件时打开
-    store.openFile(node.path, node.name)
+    props.store.openFile(node.path, node.name)
   }
 }
 
 function handleOpen(node: TreeNode) {
   if (node.type === 'file') {
-    store.openFile(node.path, node.name)
+    props.store.openFile(node.path, node.name)
   }
 }
 
@@ -163,7 +170,9 @@ function handleMenuSelect(key: string) {
       emit('run', node)
       break
     case 'download':
-      window.open(`/api/worker/download/${node.path}?token=${localStorage.getItem('token')}`, '_blank')
+      if (props.api.getDownloadUrl) {
+        window.open(props.api.getDownloadUrl(node.path), '_blank')
+      }
       break
     case 'delete':
       emit('delete', node)
@@ -197,7 +206,7 @@ function startResize(event: MouseEvent) {
 }
 
 onMounted(() => {
-  store.loadFileTree()
+  props.store.loadFileTree()
 })
 </script>
 

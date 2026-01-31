@@ -1,12 +1,12 @@
 <template>
   <div
     class="log-panel"
-    :class="{ expanded: store.logExpanded }"
-    :style="{ height: store.logExpanded ? height + 'px' : '28px' }"
+    :class="{ expanded: store.logExpanded.value }"
+    :style="{ height: store.logExpanded.value ? height + 'px' : '28px' }"
   >
     <!-- 拖拽调整高度 -->
     <div
-      v-if="store.logExpanded"
+      v-if="store.logExpanded.value"
       class="resize-handle"
       @mousedown="startResize"
     ></div>
@@ -15,20 +15,20 @@
     <div class="panel-header" @click="toggleExpand">
       <div class="header-left">
         <el-icon class="expand-icon">
-          <CaretRight v-if="!store.logExpanded" />
+          <CaretRight v-if="!store.logExpanded.value" />
           <CaretBottom v-else />
         </el-icon>
         <span class="title">运行日志</span>
-        <span v-if="store.logRunning" class="running-badge">运行中...</span>
-        <span v-else-if="store.logs.length === 0" class="empty-badge">无输出</span>
+        <span v-if="store.logRunning.value" class="running-badge">运行中...</span>
+        <span v-else-if="store.logs.value.length === 0" class="empty-badge">无输出</span>
       </div>
       <div class="header-right" @click.stop>
         <el-button
-          v-if="store.logRunning"
+          v-if="store.logRunning.value"
           text
           size="small"
           type="danger"
-          @click="handleStop"
+          @click="$emit('stop')"
         >
           停止
         </el-button>
@@ -38,17 +38,17 @@
     </div>
 
     <!-- 日志内容 -->
-    <div v-if="store.logExpanded" class="log-content" ref="logContent">
+    <div v-if="store.logExpanded.value" class="log-content" ref="logContent">
       <div
-        v-for="(log, index) in store.logs"
+        v-for="(log, index) in store.logs.value"
         :key="index"
         :class="['log-line', log.type]"
       >
         <span class="log-text">{{ log.data }}</span>
         <span class="log-time">{{ formatTime(log.timestamp) }}</span>
       </div>
-      <div v-if="store.logs.length === 0" class="empty-log">
-        运行 Python 文件查看输出
+      <div v-if="store.logs.value.length === 0" class="empty-log">
+        运行文件查看输出
       </div>
     </div>
   </div>
@@ -58,14 +58,21 @@
 import { ref, watch, nextTick } from 'vue'
 import { CaretRight, CaretBottom } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { useWorkerEditorStore } from '@/stores/workerEditor'
+import type { EditorStore } from '../composables/useEditorStore'
 
-const store = useWorkerEditorStore()
+const props = defineProps<{
+  store: EditorStore
+}>()
+
+defineEmits<{
+  (e: 'stop'): void
+}>()
+
 const logContent = ref<HTMLElement>()
 const height = ref(200)
 
 function toggleExpand() {
-  store.logExpanded = !store.logExpanded
+  props.store.logExpanded.value = !props.store.logExpanded.value
 }
 
 function startResize(event: MouseEvent) {
@@ -95,18 +102,13 @@ function formatTime(date: Date): string {
 }
 
 function handleCopy() {
-  const text = store.logs.map(l => l.data).join('\n')
+  const text = props.store.logs.value.map(l => l.data).join('\n')
   navigator.clipboard.writeText(text)
   ElMessage.success('已复制到剪贴板')
 }
 
-function handleStop() {
-  // 停止逻辑由 CodeEditor 组件处理
-  // 这里只是 UI 占位
-}
-
 // 自动滚动到底部
-watch(() => store.logs.length, () => {
+watch(() => props.store.logs.value.length, () => {
   nextTick(() => {
     if (logContent.value) {
       logContent.value.scrollTop = logContent.value.scrollHeight

@@ -37,6 +37,7 @@
         :node="child"
         :depth="depth + 1"
         :active-path="activePath"
+        :store="store"
         @select="$emit('select', $event)"
         @open="$emit('open', $event)"
         @context-menu="$emit('context-menu', $event)"
@@ -48,13 +49,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { CaretRight, Folder, Document } from '@element-plus/icons-vue'
-import { useWorkerEditorStore } from '@/stores/workerEditor'
-import type { TreeNode } from '@/api/worker'
+import type { TreeNode } from '../types'
+import type { EditorStore } from '../composables/useEditorStore'
 
 const props = defineProps<{
   node: TreeNode
   depth?: number
   activePath?: string | null
+  store: EditorStore
 }>()
 
 const emit = defineEmits<{
@@ -63,34 +65,31 @@ const emit = defineEmits<{
   (e: 'context-menu', payload: { event: MouseEvent; node: TreeNode }): void
 }>()
 
-const store = useWorkerEditorStore()
 const depth = computed(() => props.depth ?? 0)
 
-const isExpanded = computed(() => store.isDirExpanded(props.node.path))
+const isExpanded = computed(() => props.store.isDirExpanded(props.node.path))
 const isActive = computed(() => props.activePath === props.node.path)
 const isSelected = computed(() =>
-  store.tabs.some(t => t.path === props.node.path)
+  props.store.tabs.value.some(t => t.path === props.node.path)
 )
 const isModified = computed(() => {
-  const tab = store.tabs.find(t => t.path === props.node.path)
+  const tab = props.store.tabs.value.find(t => t.path === props.node.path)
   return tab ? tab.content !== tab.originalContent : false
 })
 
 const sortedChildren = computed(() => {
   if (!props.node.children) return []
   return [...props.node.children].sort((a, b) => {
-    // 目录在前
     if (a.type !== b.type) {
       return a.type === 'dir' ? -1 : 1
     }
-    // 同类型按名称排序
     return a.name.localeCompare(b.name)
   })
 })
 
 function toggleExpand() {
   if (props.node.type === 'dir') {
-    store.toggleDir(props.node.path)
+    props.store.toggleDir(props.node.path)
   }
 }
 

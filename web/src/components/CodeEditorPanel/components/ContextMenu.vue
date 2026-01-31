@@ -21,17 +21,9 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
+import type { MenuItem } from '../types'
 
-export interface MenuItem {
-  key: string
-  label?: string
-  shortcut?: string
-  divider?: boolean
-  danger?: boolean
-  disabled?: boolean
-}
-
-const props = defineProps<{
+defineProps<{
   items: MenuItem[]
 }>()
 
@@ -49,7 +41,6 @@ function show(event: MouseEvent) {
   y.value = event.clientY
   visible.value = true
 
-  // 确保菜单不超出视口
   setTimeout(() => {
     const menu = document.querySelector('.context-menu') as HTMLElement
     if (menu) {
@@ -69,7 +60,7 @@ function hide() {
   emit('close')
 }
 
-function handleClick(item: MenuItem) {
+function handleClick(item: MenuItem & { disabled?: boolean }) {
   if (item.divider || item.disabled) return
   emit('select', item.key)
   hide()
