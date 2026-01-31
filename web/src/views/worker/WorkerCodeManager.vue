@@ -117,7 +117,7 @@ async function loadDir() {
   loading.value = true
   try {
     const res = await getDir(currentPath.value)
-    files.value = res.items
+    files.value = res.files
   } catch (e: any) {
     ElMessage.error(e.message || '加载失败')
   } finally {

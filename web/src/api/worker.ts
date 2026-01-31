@@ -20,7 +20,7 @@ export interface FileContent {
 
 export interface DirContent {
   path: string
-  items: FileInfo[]
+  files: FileInfo[]
 }
 
 export interface TreeNode {
