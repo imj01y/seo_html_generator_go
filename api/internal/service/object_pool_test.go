@@ -262,29 +262,28 @@ func TestPoolPresets(t *testing.T) {
 		}
 	}
 
-	// 验证 medium 预设的 QPS = 500
+	// 验证 medium 预设的 Concurrency = 200
 	mediumPreset, ok := GetPoolPreset("medium")
 	if !ok {
 		t.Error("获取 medium 预设失败")
 	}
-	if mediumPreset.TargetQPS != 500 {
-		t.Errorf("medium 预设的 QPS 应该为 500, 实际 %d", mediumPreset.TargetQPS)
+	if mediumPreset.Concurrency != 200 {
+		t.Errorf("medium 预设的 Concurrency 应该为 200, 实际 %d", mediumPreset.Concurrency)
 	}
 }
 
 // 7. TestCalculatePoolSizes - 池大小计算测试
-// - 使用 preset QPS=500, SafetyFactor=1.5, BufferSeconds=1.0
+// - 使用 preset Concurrency=200
 // - maxStats: Cls=100, RandomURL=50, KeywordEmoji=20
-// - 验证 ClsPoolSize = 100 * 500 * 1.5 * 1 = 75000
-// - 验证 URLPoolSize = 50 * 500 * 1.5 * 1 = 37500
-// - 验证 KeywordEmojiPoolSize = 20 * 500 * 1.5 * 1 = 15000
+// - 公式: size = maxStat * Concurrency * DefaultBufferSeconds (3)
+// - 验证 ClsPoolSize = 100 * 200 * 3 = 60000
+// - 验证 URLPoolSize = 50 * 200 * 3 = 30000
+// - 验证 KeywordEmojiPoolSize = 20 * 200 * 3 = 12000
 func TestCalculatePoolSizes(t *testing.T) {
 	preset := PoolPreset{
-		Name:          "测试预设",
-		Description:   "用于测试的预设",
-		TargetQPS:     500,
-		SafetyFactor:  1.5,
-		BufferSeconds: 1.0,
+		Name:        "测试预设",
+		Description: "用于测试的预设",
+		Concurrency: 200,
 	}
 
 	maxStats := TemplateFuncStats{
@@ -295,20 +294,20 @@ func TestCalculatePoolSizes(t *testing.T) {
 
 	config := CalculatePoolSizes(preset, maxStats)
 
-	// 验证 ClsPoolSize = 100 * 500 * 1.5 * 1 = 75000
-	expectedClsSize := 75000
+	// 验证 ClsPoolSize = 100 * 200 * 3 = 60000
+	expectedClsSize := 60000
 	if config.ClsPoolSize != expectedClsSize {
 		t.Errorf("ClsPoolSize 应该为 %d, 实际 %d", expectedClsSize, config.ClsPoolSize)
 	}
 
-	// 验证 URLPoolSize = 50 * 500 * 1.5 * 1 = 37500
-	expectedURLSize := 37500
+	// 验证 URLPoolSize = 50 * 200 * 3 = 30000
+	expectedURLSize := 30000
 	if config.URLPoolSize != expectedURLSize {
 		t.Errorf("URLPoolSize 应该为 %d, 实际 %d", expectedURLSize, config.URLPoolSize)
 	}
 
-	// 验证 KeywordEmojiPoolSize = 20 * 500 * 1.5 * 1 = 15000
-	expectedKeywordEmojiSize := 15000
+	// 验证 KeywordEmojiPoolSize = 20 * 200 * 3 = 12000
+	expectedKeywordEmojiSize := 12000
 	if config.KeywordEmojiPoolSize != expectedKeywordEmojiSize {
 		t.Errorf("KeywordEmojiPoolSize 应该为 %d, 实际 %d", expectedKeywordEmojiSize, config.KeywordEmojiPoolSize)
 	}
