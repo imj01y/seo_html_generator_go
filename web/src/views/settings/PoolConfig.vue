@@ -130,21 +130,93 @@
         </div>
       </el-col>
     </el-row>
+
+    <!-- 池运行状态监控 -->
+    <div class="card pool-status-section">
+      <div class="card-header">
+        <span class="title">池运行状态</span>
+        <div class="header-actions">
+          <el-button size="small" @click="handleRefreshAll" :loading="poolStatusLoading">
+            刷新全部
+          </el-button>
+        </div>
+      </div>
+
+      <el-row :gutter="20" v-loading="poolStatusLoading">
+        <!-- 左侧: Go 对象池 -->
+        <el-col :xs="24" :lg="12">
+          <div class="pool-section">
+            <div class="section-header">
+              <span class="section-title">Go 对象池</span>
+              <div class="section-actions">
+                <el-button size="small" @click="handleWarmup" :loading="operationLoading">
+                  预热
+                </el-button>
+                <el-button size="small" @click="handlePause" :loading="operationLoading">
+                  暂停
+                </el-button>
+                <el-button size="small" @click="handleResume" :loading="operationLoading">
+                  恢复
+                </el-button>
+              </div>
+            </div>
+            <div class="pool-cards">
+              <PoolStatusCard
+                v-for="pool in objectPoolStats"
+                :key="pool.name"
+                :pool="pool"
+              />
+              <el-empty v-if="objectPoolStats.length === 0" description="暂无数据" />
+            </div>
+          </div>
+        </el-col>
+
+        <!-- 右侧: Python 数据池 -->
+        <el-col :xs="24" :lg="12">
+          <div class="pool-section">
+            <div class="section-header">
+              <span class="section-title">Python 数据池</span>
+              <div class="section-actions">
+                <el-button size="small" @click="handleRefreshData" :loading="operationLoading">
+                  刷新数据
+                </el-button>
+              </div>
+            </div>
+            <div class="pool-cards">
+              <PoolStatusCard
+                v-for="pool in dataPoolStats"
+                :key="pool.name"
+                :pool="pool"
+              />
+              <el-empty v-if="dataPoolStats.length === 0" description="暂无数据" />
+            </div>
+          </div>
+        </el-col>
+      </el-row>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage } from 'element-plus'
+import PoolStatusCard from '@/components/PoolStatusCard.vue'
 import {
   getPoolConfig,
   updatePoolConfig,
   getPresets,
   formatMemorySize,
+  getObjectPoolStats,
+  getDataPoolStats,
+  warmupPool,
+  pausePool,
+  resumePool,
+  refreshDataPool,
   type PoolPreset,
   type PoolSizes,
   type TemplateStats,
-  type MemoryEstimate
+  type MemoryEstimate,
+  type PoolStats
 } from '@/api/pool-config'
 
 const loading = ref(false)
@@ -182,6 +254,12 @@ const memoryEstimate = reactive<MemoryEstimate>({
   bytes: 0,
   human: '0 MB'
 })
+
+// 池状态监控
+const poolStatusLoading = ref(false)
+const objectPoolStats = ref<PoolStats[]>([])
+const dataPoolStats = ref<PoolStats[]>([])
+const operationLoading = ref(false)
 
 const formatNumber = (num: number): string => {
   return num.toLocaleString()
@@ -269,8 +347,98 @@ const handleSave = async () => {
   }
 }
 
+// ========== 池状态监控方法 ==========
+
+const loadPoolStatus = async () => {
+  poolStatusLoading.value = true
+  try {
+    const [objectRes, dataRes] = await Promise.all([
+      getObjectPoolStats(),
+      getDataPoolStats()
+    ])
+
+    // 转换对象池统计为数组格式
+    const objectPools: PoolStats[] = []
+    if (objectRes.cls) {
+      objectPools.push({ ...objectRes.cls, name: 'CSS 类名池' })
+    }
+    if (objectRes.url) {
+      objectPools.push({ ...objectRes.url, name: 'URL 池' })
+    }
+    if (objectRes.keyword_emoji) {
+      objectPools.push({ ...objectRes.keyword_emoji, name: '关键词表情池' })
+    }
+    objectPoolStats.value = objectPools
+
+    // 数据池统计
+    dataPoolStats.value = dataRes.pools || []
+  } catch (e) {
+    ElMessage.error((e as Error).message || '加载池状态失败')
+  } finally {
+    poolStatusLoading.value = false
+  }
+}
+
+const handleWarmup = async () => {
+  operationLoading.value = true
+  try {
+    await warmupPool(0.5)
+    ElMessage.success('预热已启动')
+    await loadPoolStatus()
+  } catch (e) {
+    ElMessage.error((e as Error).message || '预热失败')
+  } finally {
+    operationLoading.value = false
+  }
+}
+
+const handlePause = async () => {
+  operationLoading.value = true
+  try {
+    await pausePool()
+    ElMessage.success('已暂停补充')
+    await loadPoolStatus()
+  } catch (e) {
+    ElMessage.error((e as Error).message || '暂停失败')
+  } finally {
+    operationLoading.value = false
+  }
+}
+
+const handleResume = async () => {
+  operationLoading.value = true
+  try {
+    await resumePool()
+    ElMessage.success('已恢复补充')
+    await loadPoolStatus()
+  } catch (e) {
+    ElMessage.error((e as Error).message || '恢复失败')
+  } finally {
+    operationLoading.value = false
+  }
+}
+
+const handleRefreshData = async () => {
+  operationLoading.value = true
+  try {
+    await refreshDataPool('all')
+    ElMessage.success('数据刷新已启动')
+    await loadPoolStatus()
+  } catch (e) {
+    ElMessage.error((e as Error).message || '刷新失败')
+  } finally {
+    operationLoading.value = false
+  }
+}
+
+const handleRefreshAll = async () => {
+  await loadPoolStatus()
+  ElMessage.success('状态已刷新')
+}
+
 onMounted(() => {
   loadConfig()
+  loadPoolStatus()
 })
 </script>
 
@@ -419,6 +587,41 @@ onMounted(() => {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .pool-status-section {
+    margin-top: 20px;
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .pool-section {
+      .section-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #ebeef5;
+
+        .section-title {
+          font-size: 15px;
+          font-weight: 600;
+          color: #303133;
+        }
+
+        .section-actions {
+          display: flex;
+          gap: 8px;
+        }
+      }
+
+      .pool-cards {
+        min-height: 200px;
+      }
+    }
   }
 }
 </style>
