@@ -190,3 +190,248 @@ func (h *WorkerFilesHandler) readFile(c *gin.Context, fullPath, relativePath str
 		"mtime":   info.ModTime(),
 	})
 }
+
+// GetTree 获取目录树
+// GET /api/worker/files?tree=true
+func (h *WorkerFilesHandler) GetTree(c *gin.Context) {
+	tree := h.buildTree(h.workerDir, "/")
+	core.Success(c, tree)
+}
+
+// buildTree 递归构建目录树（只包含目录）
+func (h *WorkerFilesHandler) buildTree(dirPath, relativePath string) *TreeNode {
+	info, err := os.Stat(dirPath)
+	if err != nil {
+		return nil
+	}
+
+	node := &TreeNode{
+		Name: filepath.Base(dirPath),
+		Path: relativePath,
+		Type: "dir",
+	}
+
+	if relativePath == "/" {
+		node.Name = "worker"
+	}
+
+	if !info.IsDir() {
+		node.Type = "file"
+		return node
+	}
+
+	entries, err := os.ReadDir(dirPath)
+	if err != nil {
+		return node
+	}
+
+	for _, entry := range entries {
+		// 只包含目录
+		if !entry.IsDir() {
+			continue
+		}
+		// 跳过隐藏目录和 __pycache__
+		if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "__pycache__" {
+			continue
+		}
+
+		childPath := filepath.Join(relativePath, entry.Name())
+		child := h.buildTree(filepath.Join(dirPath, entry.Name()), childPath)
+		if child != nil {
+			node.Children = append(node.Children, child)
+		}
+	}
+
+	// 按名称排序
+	sort.Slice(node.Children, func(i, j int) bool {
+		return node.Children[i].Name < node.Children[j].Name
+	})
+
+	return node
+}
+
+// CreateRequest 创建文件或目录请求
+type CreateRequest struct {
+	Type string `json:"type" binding:"required,oneof=file dir"`
+	Name string `json:"name" binding:"required"`
+}
+
+// Create 创建文件或目录
+// POST /api/worker/files/*path
+func (h *WorkerFilesHandler) Create(c *gin.Context) {
+	path := c.Param("path")
+	if path == "" || path == "/" {
+		path = ""
+	}
+
+	parentPath, ok := h.validatePath(path)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的路径")
+		return
+	}
+
+	// 确保父目录存在
+	info, err := os.Stat(parentPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			core.FailWithCode(c, core.ErrNotFound)
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+	if !info.IsDir() {
+		core.FailWithMessage(c, core.ErrInvalidParam, "父路径不是目录")
+		return
+	}
+
+	var req CreateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "参数错误: "+err.Error())
+		return
+	}
+
+	// 验证文件名不包含非法字符
+	if strings.ContainsAny(req.Name, `/\:*?"<>|`) || strings.HasPrefix(req.Name, ".") {
+		core.FailWithMessage(c, core.ErrInvalidParam, "文件名包含非法字符")
+		return
+	}
+
+	targetPath := filepath.Join(parentPath, req.Name)
+
+	// 检查目标是否已存在
+	if _, err := os.Stat(targetPath); err == nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "文件或目录已存在")
+		return
+	}
+
+	if req.Type == "dir" {
+		if err := os.MkdirAll(targetPath, 0755); err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, "创建目录失败: "+err.Error())
+			return
+		}
+	} else {
+		// 创建空文件
+		file, err := os.Create(targetPath)
+		if err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, "创建文件失败: "+err.Error())
+			return
+		}
+		file.Close()
+	}
+
+	core.Success(c, gin.H{
+		"path": filepath.Join(path, req.Name),
+		"name": req.Name,
+		"type": req.Type,
+	})
+}
+
+// SaveRequest 保存文件请求
+type SaveRequest struct {
+	Content string `json:"content"`
+}
+
+// Save 保存文件
+// PUT /api/worker/files/*path
+func (h *WorkerFilesHandler) Save(c *gin.Context) {
+	path := c.Param("path")
+	if path == "" || path == "/" {
+		core.FailWithMessage(c, core.ErrInvalidParam, "路径不能为空")
+		return
+	}
+
+	fullPath, ok := h.validatePath(path)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的路径")
+		return
+	}
+
+	// 检查文件是否存在
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			core.FailWithCode(c, core.ErrNotFound)
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	// 不能保存目录
+	if info.IsDir() {
+		core.FailWithMessage(c, core.ErrInvalidParam, "不能保存目录")
+		return
+	}
+
+	// 检查是否为文本文件
+	if !isTextFile(path) {
+		core.FailWithMessage(c, core.ErrInvalidParam, "不支持编辑二进制文件")
+		return
+	}
+
+	var req SaveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "参数错误: "+err.Error())
+		return
+	}
+
+	// 写入内容
+	if err := os.WriteFile(fullPath, []byte(req.Content), 0644); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "保存文件失败: "+err.Error())
+		return
+	}
+
+	// 获取更新后的文件信息
+	newInfo, _ := os.Stat(fullPath)
+	mtime := time.Now()
+	if newInfo != nil {
+		mtime = newInfo.ModTime()
+	}
+
+	core.Success(c, gin.H{
+		"path":  path,
+		"size":  len(req.Content),
+		"mtime": mtime,
+	})
+}
+
+// Delete 删除文件或目录
+// DELETE /api/worker/files/*path
+func (h *WorkerFilesHandler) Delete(c *gin.Context) {
+	path := c.Param("path")
+	if path == "" || path == "/" {
+		core.FailWithMessage(c, core.ErrInvalidParam, "不能删除根目录")
+		return
+	}
+
+	fullPath, ok := h.validatePath(path)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的路径")
+		return
+	}
+
+	// 再次检查是否试图删除根目录
+	if fullPath == h.workerDir {
+		core.FailWithMessage(c, core.ErrInvalidParam, "不能删除根目录")
+		return
+	}
+
+	// 检查文件或目录是否存在
+	if _, err := os.Stat(fullPath); err != nil {
+		if os.IsNotExist(err) {
+			core.FailWithCode(c, core.ErrNotFound)
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	// 删除文件或目录
+	if err := os.RemoveAll(fullPath); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "删除失败: "+err.Error())
+		return
+	}
+
+	core.SuccessWithMessage(c, "删除成功", nil)
+}
