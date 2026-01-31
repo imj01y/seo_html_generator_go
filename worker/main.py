@@ -99,6 +99,10 @@ async def main():
     from core.workers.generator_manager import GeneratorManager
     generator = GeneratorManager()
 
+    # 启动池配置热更新监听器
+    from core.pool_reloader import start_pool_reloader, stop_pool_reloader
+    pool_reloader = await start_pool_reloader()
+
     # 设置信号处理
     shutdown_event = asyncio.Event()
 
@@ -116,6 +120,7 @@ async def main():
         logger.info("启动 Worker 服务...")
         logger.info("  - 命令监听器: 处理爬虫命令")
         logger.info("  - 数据加工器: 自动处理文章数据")
+        logger.info("  - 池配置监听器: 动态调整缓存池大小")
 
         # 创建任务
         listener_task = asyncio.create_task(listener.start(), name="command_listener")
@@ -139,6 +144,7 @@ async def main():
     except Exception as e:
         logger.error(f"Worker 运行异常: {e}")
     finally:
+        await stop_pool_reloader()
         await generator.stop()
         await listener.stop()
         await cleanup()
