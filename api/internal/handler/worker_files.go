@@ -14,6 +14,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 	core "seo-generator/api/internal/service"
 )
 
@@ -709,5 +710,57 @@ func (h *WorkerFilesHandler) sendWSError(conn *websocket.Conn, msg string) {
 	conn.WriteJSON(map[string]interface{}{
 		"type":      "done",
 		"exit_code": 1,
+	})
+}
+
+// Restart 重启 Worker 进程
+// POST /api/worker/restart
+func (h *WorkerFilesHandler) Restart(c *gin.Context) {
+	rdb, exists := c.Get("redis")
+	if !exists {
+		core.FailWithMessage(c, core.ErrInternalServer, "Redis 未连接")
+		return
+	}
+	redisClient := rdb.(*redis.Client)
+
+	// 发送重启信号到 Redis
+	err := redisClient.Publish(c.Request.Context(), "worker:command", "restart").Err()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	core.Success(c, gin.H{"message": "重启指令已发送"})
+}
+
+// Rebuild 重新构建 Worker 镜像
+// POST /api/worker/rebuild
+func (h *WorkerFilesHandler) Rebuild(c *gin.Context) {
+	// 获取 docker-compose 路径
+	composeFile := "/project/docker-compose.yml"
+	if _, err := os.Stat(composeFile); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "docker-compose.yml 未找到")
+		return
+	}
+
+	// 使用 context 设置超时（10分钟）
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx,
+		"docker-compose",
+		"-f", composeFile,
+		"up", "-d", "--build", "worker",
+	)
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, string(output))
+		return
+	}
+
+	core.Success(c, gin.H{
+		"message": "Worker 重新构建完成",
+		"output":  string(output),
 	})
 }
