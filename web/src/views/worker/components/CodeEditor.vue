@@ -194,33 +194,33 @@ monaco.languages.setMonarchTokensProvider('python', {
   }
 })
 
-// PyCharm Darcula 主题配色（精确匹配）
+// PyCharm Darcula 主题配色（用户提供的精确 RGB 值）
 monaco.editor.defineTheme('pycharm-darcula', {
   base: 'vs-dark',
   inherit: false,
   rules: [
-    // 默认文本/变量 - 更亮的白色（PyCharm 实际颜色）
-    { token: '', foreground: 'bababa' },
-    { token: 'identifier', foreground: 'bababa' },
-    { token: 'white', foreground: 'bababa' },
+    // 变量名 - RGB(183, 189, 195) = #b7bdc3
+    { token: '', foreground: 'b7bdc3' },
+    { token: 'identifier', foreground: 'b7bdc3' },
+    { token: 'white', foreground: 'b7bdc3' },
 
-    // self, cls - 紫色斜体
+    // self, cls - RGB(148, 85, 141) = #94558d
     { token: 'variable.self', foreground: '94558d', fontStyle: 'italic' },
 
     // 实例属性（self.xxx, _xxx）- 紫色
-    { token: 'variable.instance', foreground: '9876aa' },
+    { token: 'variable.instance', foreground: '94558d' },
 
-    // 注释 - 灰色（PyCharm 实际颜色）
+    // 注释 - 灰色
     { token: 'comment', foreground: '808080', fontStyle: 'italic' },
 
     // 关键字 - 橙色
     { token: 'keyword', foreground: 'cc7832' },
     { token: 'keyword.constant', foreground: 'cc7832' },
 
-    // 字符串 - 绿色（PyCharm 实际颜色）
-    { token: 'string', foreground: '6a8759' },
-    { token: 'string.docstring', foreground: '6a8759', fontStyle: 'italic' },
-    { token: 'string.fstring', foreground: '6a8759' },
+    // 字符串 - RGB(92, 170, 114) = #5caa72
+    { token: 'string', foreground: '5caa72' },
+    { token: 'string.docstring', foreground: '5caa72', fontStyle: 'italic' },
+    { token: 'string.fstring', foreground: '5caa72' },
     { token: 'string.fstring.bracket', foreground: 'cc7832' },
     { token: 'string.escape', foreground: 'cc7832' },
 
@@ -231,43 +231,46 @@ monaco.editor.defineTheme('pycharm-darcula', {
     { token: 'number.octal', foreground: '6897bb' },
     { token: 'number.binary', foreground: '6897bb' },
 
-    // 函数声明名 - 黄色
-    { token: 'function.declaration', foreground: 'ffc66d' },
-    { token: 'function.magic', foreground: 'b200b2' },
+    // 函数名 - RGB(85, 167, 242) = #55a7f2 (蓝色)
+    { token: 'function.declaration', foreground: '55a7f2' },
+    { token: 'function.magic', foreground: '55a7f2' },
 
     // 类声明名 - 普通色
-    { token: 'class.declaration', foreground: 'bababa' },
+    { token: 'class.declaration', foreground: 'b7bdc3' },
 
     // 类型注解 - 橙色
     { token: 'type', foreground: 'cc7832' },
 
     // 常量（全大写）- 紫色
-    { token: 'constant', foreground: '9876aa' },
+    { token: 'constant', foreground: '94558d' },
+
+    // 系统保留变量名 - RGB(135, 126, 134) = #877e86
+    { token: 'predefined', foreground: '877e86' },
 
     // 装饰器 - 黄色
     { token: 'decorator', foreground: 'bbb529' },
 
-    // 运算符 - 白色
-    { token: 'operator', foreground: 'bababa' },
+    // 运算符 - 变量色
+    { token: 'operator', foreground: 'b7bdc3' },
 
-    // 分隔符 - 白色
-    { token: 'delimiter', foreground: 'bababa' },
-    { token: 'delimiter.parenthesis', foreground: 'bababa' },
-    { token: 'delimiter.bracket', foreground: 'bababa' },
-    { token: 'delimiter.curly', foreground: 'bababa' },
+    // 分隔符 - 变量色
+    { token: 'delimiter', foreground: 'b7bdc3' },
+    { token: 'delimiter.parenthesis', foreground: 'b7bdc3' },
+    { token: 'delimiter.bracket', foreground: 'b7bdc3' },
+    { token: 'delimiter.curly', foreground: 'b7bdc3' },
 
     // JSON
-    { token: 'string.key.json', foreground: '9876aa' },
-    { token: 'string.value.json', foreground: '6a8759' },
+    { token: 'string.key.json', foreground: '94558d' },
+    { token: 'string.value.json', foreground: '5caa72' },
 
     // YAML
     { token: 'type.yaml', foreground: 'cc7832' },
-    { token: 'string.yaml', foreground: '6a8759' }
+    { token: 'string.yaml', foreground: '5caa72' }
   ],
   colors: {
-    // 编辑器背景 - PyCharm Darcula 精确颜色
-    'editor.background': '#2b2b2b',
-    'editor.foreground': '#bababa',
+    // 编辑器背景 - RGB(30, 31, 34) = #1e1f22
+    'editor.background': '#1e1f22',
+    'editor.foreground': '#b7bdc3',
 
     // 行号
     'editorLineNumber.foreground': '#606366',
@@ -276,27 +279,26 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // 光标 - 白色
     'editorCursor.foreground': '#ffffff',
 
-    // 选中 - PyCharm 蓝色选中
+    // 选中
     'editor.selectionBackground': '#214283',
     'editor.inactiveSelectionBackground': '#323232',
 
-    // 当前行 - 稍微亮一点
-    'editor.lineHighlightBackground': '#323232',
+    // 当前行
+    'editor.lineHighlightBackground': '#26282e',
     'editor.lineHighlightBorder': '#00000000',
 
     // 匹配括号
     'editorBracketMatch.background': '#3b514d',
     'editorBracketMatch.border': '#ffef28',
 
-    // 缩进线 - 更暗
+    // 缩进线
     'editorIndentGuide.background': '#393939',
     'editorIndentGuide.activeBackground': '#505050',
 
     // 小地图
-    'minimap.background': '#2b2b2b',
-    'minimap.foregroundOpacity': '#000000c0',
+    'minimap.background': '#1e1f22',
 
-    // 滚动条 - 更清晰
+    // 滚动条
     'scrollbarSlider.background': '#4e4e4e80',
     'scrollbarSlider.hoverBackground': '#5a5a5a',
     'scrollbarSlider.activeBackground': '#6e6e6e',
@@ -306,20 +308,17 @@ monaco.editor.defineTheme('pycharm-darcula', {
     'editor.findMatchHighlightBackground': '#274a2d80',
 
     // 侧边栏/边距
-    'editorGutter.background': '#313335',
+    'editorGutter.background': '#1e1f22',
 
     // 代码折叠
-    'editorGutter.foldingControlForeground': '#bababa',
-
-    // 禁用一些效果使其更清晰
-    'editor.lineHighlightBorder': '#00000000',
+    'editorGutter.foldingControlForeground': '#b7bdc3',
 
     // 编辑器边框
-    'editorWidget.background': '#3c3f41',
+    'editorWidget.background': '#2b2d30',
     'editorWidget.border': '#454647',
 
     // 悬停提示
-    'editorHoverWidget.background': '#3c3f41',
+    'editorHoverWidget.background': '#2b2d30',
     'editorHoverWidget.border': '#454647'
   }
 })
@@ -444,13 +443,13 @@ function handleRun() {
   justify-content: space-between;
   align-items: center;
   padding: 4px 12px;
-  background: #3c3f41;
-  border-bottom: 1px solid #323232;
+  background: #2b2d30;
+  border-bottom: 1px solid #1e1f22;
 }
 
 .file-path {
   font-size: 12px;
-  color: #bbbbbb;
+  color: #b7bdc3;
 }
 
 .actions {
@@ -470,7 +469,7 @@ function handleRun() {
   align-items: center;
   justify-content: center;
   color: #6e6e6e;
-  background: #2b2b2b;
+  background: #1e1f22;
 }
 
 .empty-editor p {
