@@ -52,6 +52,123 @@ const saving = ref(false)
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let stopRun: (() => void) | null = null
 
+// 定义 PyCharm Darcula 主题
+monaco.editor.defineTheme('pycharm-darcula', {
+  base: 'vs-dark',
+  inherit: true,
+  rules: [
+    // 注释
+    { token: 'comment', foreground: '808080', fontStyle: 'italic' },
+    { token: 'comment.line', foreground: '808080', fontStyle: 'italic' },
+    { token: 'comment.block', foreground: '808080', fontStyle: 'italic' },
+
+    // 关键字 - 橙色
+    { token: 'keyword', foreground: 'cc7832' },
+    { token: 'keyword.control', foreground: 'cc7832' },
+    { token: 'keyword.operator', foreground: 'cc7832' },
+    { token: 'storage', foreground: 'cc7832' },
+    { token: 'storage.type', foreground: 'cc7832' },
+
+    // 字符串 - 绿色
+    { token: 'string', foreground: '6a8759' },
+    { token: 'string.escape', foreground: 'cc7832' },
+
+    // 数字 - 蓝色
+    { token: 'number', foreground: '6897bb' },
+    { token: 'number.float', foreground: '6897bb' },
+    { token: 'number.hex', foreground: '6897bb' },
+
+    // 函数 - 黄色
+    { token: 'entity.name.function', foreground: 'ffc66d' },
+    { token: 'support.function', foreground: 'ffc66d' },
+    { token: 'function', foreground: 'ffc66d' },
+
+    // 类 - 浅黄
+    { token: 'entity.name.class', foreground: 'a9b7c6' },
+    { token: 'entity.name.type', foreground: 'a9b7c6' },
+    { token: 'support.class', foreground: 'a9b7c6' },
+    { token: 'type', foreground: 'a9b7c6' },
+
+    // 变量
+    { token: 'variable', foreground: 'a9b7c6' },
+    { token: 'variable.parameter', foreground: 'a9b7c6' },
+    { token: 'variable.other', foreground: 'a9b7c6' },
+
+    // 装饰器 - 黄绿色
+    { token: 'meta.decorator', foreground: 'bbb529' },
+    { token: 'tag', foreground: 'e8bf6a' },
+
+    // 运算符
+    { token: 'operator', foreground: 'a9b7c6' },
+    { token: 'delimiter', foreground: 'a9b7c6' },
+
+    // 常量
+    { token: 'constant', foreground: '9876aa' },
+    { token: 'constant.language', foreground: 'cc7832' },
+    { token: 'constant.numeric', foreground: '6897bb' },
+
+    // Python 特定
+    { token: 'keyword.python', foreground: 'cc7832' },
+    { token: 'identifier.python', foreground: 'a9b7c6' },
+
+    // JSON
+    { token: 'string.key.json', foreground: '9876aa' },
+    { token: 'string.value.json', foreground: '6a8759' },
+
+    // YAML
+    { token: 'type.yaml', foreground: 'cc7832' },
+
+    // 默认
+    { token: '', foreground: 'a9b7c6' }
+  ],
+  colors: {
+    // 编辑器背景
+    'editor.background': '#2b2b2b',
+    'editor.foreground': '#a9b7c6',
+
+    // 行号
+    'editorLineNumber.foreground': '#606366',
+    'editorLineNumber.activeForeground': '#a4a3a3',
+
+    // 光标
+    'editorCursor.foreground': '#bbbbbb',
+
+    // 选中
+    'editor.selectionBackground': '#214283',
+    'editor.inactiveSelectionBackground': '#323232',
+
+    // 当前行
+    'editor.lineHighlightBackground': '#323232',
+    'editor.lineHighlightBorder': '#323232',
+
+    // 匹配括号
+    'editorBracketMatch.background': '#3b514d',
+    'editorBracketMatch.border': '#3b514d',
+
+    // 缩进线
+    'editorIndentGuide.background': '#373737',
+    'editorIndentGuide.activeBackground': '#505050',
+
+    // 小地图
+    'minimap.background': '#2b2b2b',
+
+    // 滚动条
+    'scrollbarSlider.background': '#4e4e4e80',
+    'scrollbarSlider.hoverBackground': '#5a5a5a80',
+    'scrollbarSlider.activeBackground': '#6e6e6e80',
+
+    // 查找匹配
+    'editor.findMatchBackground': '#32593d',
+    'editor.findMatchHighlightBackground': '#274a2d80',
+
+    // 侧边栏
+    'editorGutter.background': '#2b2b2b',
+
+    // 代码折叠
+    'editorGutter.foldingControlForeground': '#a9b7c6'
+  }
+})
+
 const isPythonFile = computed(() =>
   store.activeTab?.name.endsWith('.py') ?? false
 )
@@ -84,7 +201,7 @@ onMounted(() => {
       editor = monaco.editor.create(editorContainer.value, {
         value: store.activeTab?.content || '',
         language: store.activeTab?.language || 'plaintext',
-        theme: 'vs-dark',
+        theme: 'pycharm-darcula',
         automaticLayout: true,
         minimap: { enabled: true },
         fontSize: 14,
@@ -198,7 +315,7 @@ function handleRun() {
   align-items: center;
   justify-content: center;
   color: #6e6e6e;
-  background: #1e1e1e;
+  background: #2b2b2b;
 }
 
 .empty-editor p {
