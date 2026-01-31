@@ -67,18 +67,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '图片管理', icon: 'Picture' }
       },
       {
-        path: 'processor',
-        name: 'Processor',
-        component: () => import('@/views/processor/ProcessorManage.vue'),
-        meta: { title: '数据加工', icon: 'Operation' }
-      },
-      {
-        path: 'worker',
-        name: 'WorkerCode',
-        component: () => import('@/views/worker/WorkerCodeEditor.vue'),
-        meta: { title: '数据加工代码', icon: 'EditPen' }
-      },
-      {
         path: 'spiders/projects',
         name: 'SpiderProjects',
         component: () => import('@/views/spiders/ProjectList.vue'),
@@ -101,6 +89,18 @@ const routes: RouteRecordRaw[] = [
         name: 'SpiderStats',
         component: () => import('@/views/spiders/SpiderStats.vue'),
         meta: { title: '抓取统计', icon: 'TrendCharts' }
+      },
+      {
+        path: 'processor',
+        name: 'Processor',
+        component: () => import('@/views/processor/ProcessorManage.vue'),
+        meta: { title: '数据加工', icon: 'Operation' }
+      },
+      {
+        path: 'worker',
+        name: 'WorkerCode',
+        component: () => import('@/views/worker/WorkerCodeEditor.vue'),
+        meta: { title: '数据加工代码', icon: 'EditPen' }
       },
       {
         path: 'generators',
