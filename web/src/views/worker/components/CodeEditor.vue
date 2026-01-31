@@ -194,15 +194,15 @@ monaco.languages.setMonarchTokensProvider('python', {
   }
 })
 
-// PyCharm Darcula 主题配色
+// PyCharm Darcula 主题配色（精确匹配）
 monaco.editor.defineTheme('pycharm-darcula', {
   base: 'vs-dark',
   inherit: false,
   rules: [
-    // 默认文本 - 浅灰蓝
-    { token: '', foreground: 'a9b7c6' },
-    { token: 'identifier', foreground: 'a9b7c6' },
-    { token: 'white', foreground: 'a9b7c6' },
+    // 默认文本/变量 - 更亮的白色（PyCharm 实际颜色）
+    { token: '', foreground: 'bababa' },
+    { token: 'identifier', foreground: 'bababa' },
+    { token: 'white', foreground: 'bababa' },
 
     // self, cls - 紫色斜体
     { token: 'variable.self', foreground: '94558d', fontStyle: 'italic' },
@@ -210,16 +210,16 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // 实例属性（self.xxx, _xxx）- 紫色
     { token: 'variable.instance', foreground: '9876aa' },
 
-    // 注释 - 灰色斜体
+    // 注释 - 灰色（PyCharm 实际颜色）
     { token: 'comment', foreground: '808080', fontStyle: 'italic' },
 
-    // 关键字 - 橙色（不加粗，PyCharm 风格）
+    // 关键字 - 橙色
     { token: 'keyword', foreground: 'cc7832' },
     { token: 'keyword.constant', foreground: 'cc7832' },
 
-    // 字符串 - 绿色
+    // 字符串 - 绿色（PyCharm 实际颜色）
     { token: 'string', foreground: '6a8759' },
-    { token: 'string.docstring', foreground: '629755', fontStyle: 'italic' },
+    { token: 'string.docstring', foreground: '6a8759', fontStyle: 'italic' },
     { token: 'string.fstring', foreground: '6a8759' },
     { token: 'string.fstring.bracket', foreground: 'cc7832' },
     { token: 'string.escape', foreground: 'cc7832' },
@@ -235,8 +235,8 @@ monaco.editor.defineTheme('pycharm-darcula', {
     { token: 'function.declaration', foreground: 'ffc66d' },
     { token: 'function.magic', foreground: 'b200b2' },
 
-    // 类声明名 - 浅灰蓝（普通色）
-    { token: 'class.declaration', foreground: 'a9b7c6' },
+    // 类声明名 - 普通色
+    { token: 'class.declaration', foreground: 'bababa' },
 
     // 类型注解 - 橙色
     { token: 'type', foreground: 'cc7832' },
@@ -244,17 +244,17 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // 常量（全大写）- 紫色
     { token: 'constant', foreground: '9876aa' },
 
-    // 装饰器 - 黄绿色
+    // 装饰器 - 黄色
     { token: 'decorator', foreground: 'bbb529' },
 
-    // 运算符 - 浅灰蓝
-    { token: 'operator', foreground: 'a9b7c6' },
+    // 运算符 - 白色
+    { token: 'operator', foreground: 'bababa' },
 
-    // 分隔符 - 浅灰蓝
-    { token: 'delimiter', foreground: 'a9b7c6' },
-    { token: 'delimiter.parenthesis', foreground: 'a9b7c6' },
-    { token: 'delimiter.bracket', foreground: 'a9b7c6' },
-    { token: 'delimiter.curly', foreground: 'a9b7c6' },
+    // 分隔符 - 白色
+    { token: 'delimiter', foreground: 'bababa' },
+    { token: 'delimiter.parenthesis', foreground: 'bababa' },
+    { token: 'delimiter.bracket', foreground: 'bababa' },
+    { token: 'delimiter.curly', foreground: 'bababa' },
 
     // JSON
     { token: 'string.key.json', foreground: '9876aa' },
@@ -265,50 +265,62 @@ monaco.editor.defineTheme('pycharm-darcula', {
     { token: 'string.yaml', foreground: '6a8759' }
   ],
   colors: {
-    // 编辑器背景
+    // 编辑器背景 - PyCharm Darcula 精确颜色
     'editor.background': '#2b2b2b',
-    'editor.foreground': '#a9b7c6',
+    'editor.foreground': '#bababa',
 
     // 行号
     'editorLineNumber.foreground': '#606366',
     'editorLineNumber.activeForeground': '#a4a3a3',
 
-    // 光标
-    'editorCursor.foreground': '#bbbbbb',
+    // 光标 - 白色
+    'editorCursor.foreground': '#ffffff',
 
-    // 选中
+    // 选中 - PyCharm 蓝色选中
     'editor.selectionBackground': '#214283',
     'editor.inactiveSelectionBackground': '#323232',
 
-    // 当前行
+    // 当前行 - 稍微亮一点
     'editor.lineHighlightBackground': '#323232',
-    'editor.lineHighlightBorder': '#323232',
+    'editor.lineHighlightBorder': '#00000000',
 
     // 匹配括号
     'editorBracketMatch.background': '#3b514d',
-    'editorBracketMatch.border': '#3b514d',
+    'editorBracketMatch.border': '#ffef28',
 
-    // 缩进线
-    'editorIndentGuide.background': '#373737',
+    // 缩进线 - 更暗
+    'editorIndentGuide.background': '#393939',
     'editorIndentGuide.activeBackground': '#505050',
 
     // 小地图
     'minimap.background': '#2b2b2b',
+    'minimap.foregroundOpacity': '#000000c0',
 
-    // 滚动条
+    // 滚动条 - 更清晰
     'scrollbarSlider.background': '#4e4e4e80',
-    'scrollbarSlider.hoverBackground': '#5a5a5a80',
-    'scrollbarSlider.activeBackground': '#6e6e6e80',
+    'scrollbarSlider.hoverBackground': '#5a5a5a',
+    'scrollbarSlider.activeBackground': '#6e6e6e',
 
     // 查找匹配
     'editor.findMatchBackground': '#32593d',
     'editor.findMatchHighlightBackground': '#274a2d80',
 
-    // 侧边栏
-    'editorGutter.background': '#2b2b2b',
+    // 侧边栏/边距
+    'editorGutter.background': '#313335',
 
     // 代码折叠
-    'editorGutter.foldingControlForeground': '#a9b7c6'
+    'editorGutter.foldingControlForeground': '#bababa',
+
+    // 禁用一些效果使其更清晰
+    'editor.lineHighlightBorder': '#00000000',
+
+    // 编辑器边框
+    'editorWidget.background': '#3c3f41',
+    'editorWidget.border': '#454647',
+
+    // 悬停提示
+    'editorHoverWidget.background': '#3c3f41',
+    'editorHoverWidget.border': '#454647'
   }
 })
 
@@ -432,13 +444,13 @@ function handleRun() {
   justify-content: space-between;
   align-items: center;
   padding: 4px 12px;
-  background: #2d2d2d;
-  border-bottom: 1px solid #3c3c3c;
+  background: #3c3f41;
+  border-bottom: 1px solid #323232;
 }
 
 .file-path {
   font-size: 12px;
-  color: #969696;
+  color: #bbbbbb;
 }
 
 .actions {
