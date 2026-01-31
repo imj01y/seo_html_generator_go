@@ -119,6 +119,12 @@ const routes: RouteRecordRaw[] = [
         name: 'Settings',
         component: () => import('@/views/settings/Settings.vue'),
         meta: { title: '系统设置', icon: 'Setting' }
+      },
+      {
+        path: 'settings/pool-config',
+        name: 'PoolConfig',
+        component: () => import('@/views/settings/PoolConfig.vue'),
+        meta: { title: '渲染并发配置', icon: 'Setting', hidden: true }
       }
     ]
   },
