@@ -16,12 +16,16 @@ import (
 
 // TemplatesHandler 模板管理 handler
 type TemplatesHandler struct {
-	db *sqlx.DB
+	db               *sqlx.DB
+	templateAnalyzer *core.TemplateAnalyzer
 }
 
 // NewTemplatesHandler 创建 TemplatesHandler
-func NewTemplatesHandler(db *sqlx.DB) *TemplatesHandler {
-	return &TemplatesHandler{db: db}
+func NewTemplatesHandler(db *sqlx.DB, templateAnalyzer *core.TemplateAnalyzer) *TemplatesHandler {
+	return &TemplatesHandler{
+		db:               db,
+		templateAnalyzer: templateAnalyzer,
+	}
 }
 
 // TemplateListItem 模板列表项（不含 content）
@@ -287,6 +291,10 @@ func (h *TemplatesHandler) Create(c *gin.Context) {
 	}
 
 	id, _ := result.LastInsertId()
+
+	// 异步分析模板
+	h.analyzeTemplateAsync(int(id), req.Name, req.SiteGroupID, req.Content)
+
 	core.Success(c, gin.H{"success": true, "id": id})
 }
 
@@ -310,9 +318,12 @@ func (h *TemplatesHandler) Update(c *gin.Context) {
 		return
 	}
 
-	// 检查模板是否存在
-	var exists int
-	if err := h.db.Get(&exists, "SELECT 1 FROM templates WHERE id = ?", id); err != nil {
+	// 获取模板信息（用于异步分析）
+	var templateInfo struct {
+		Name        string `db:"name"`
+		SiteGroupID int    `db:"site_group_id"`
+	}
+	if err := h.db.Get(&templateInfo, "SELECT name, site_group_id FROM templates WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": "模板不存在"})
 		return
 	}
@@ -355,6 +366,16 @@ func (h *TemplatesHandler) Update(c *gin.Context) {
 		log.Error().Err(err).Int("id", id).Msg("Failed to update template")
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
+	}
+
+	// 如果更新了 Content，异步分析模板
+	if req.Content != nil {
+		// 如果 SiteGroupID 也被更新，使用新值
+		siteGroupID := templateInfo.SiteGroupID
+		if req.SiteGroupID != nil {
+			siteGroupID = *req.SiteGroupID
+		}
+		h.analyzeTemplateAsync(id, templateInfo.Name, siteGroupID, *req.Content)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -401,4 +422,33 @@ func (h *TemplatesHandler) Delete(c *gin.Context) {
 	}
 
 	core.Success(c, gin.H{"success": true})
+}
+
+// analyzeTemplateAsync 异步分析模板并更新数据库
+func (h *TemplatesHandler) analyzeTemplateAsync(templateID int, name string, siteGroupID int, content string) {
+	go func() {
+		if h.templateAnalyzer == nil {
+			return
+		}
+
+		analysis := h.templateAnalyzer.AnalyzeTemplate(name, siteGroupID, content)
+		if analysis == nil {
+			return
+		}
+
+		// 更新数据库中的统计字段
+		_, err := h.db.Exec(`UPDATE templates SET
+			cls_count = ?, url_count = ?, keyword_emoji_count = ?,
+			keyword_count = ?, image_count = ?, title_count = ?, content_count = ?,
+			analyzed_at = NOW()
+			WHERE id = ?`,
+			analysis.Stats.Cls, analysis.Stats.RandomURL, analysis.Stats.KeywordWithEmoji,
+			analysis.Stats.RandomKeyword, analysis.Stats.RandomImage, analysis.Stats.RandomTitle,
+			analysis.Stats.RandomContent, templateID)
+		if err != nil {
+			log.Error().Err(err).Int("id", templateID).Msg("Failed to update template stats")
+		} else {
+			log.Debug().Int("id", templateID).Str("name", name).Msg("Template stats updated")
+		}
+	}()
 }

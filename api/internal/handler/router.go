@@ -79,7 +79,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Templates routes (require JWT)
-	templatesHandler := NewTemplatesHandler(deps.DB)
+	templatesHandler := NewTemplatesHandler(deps.DB, deps.TemplateAnalyzer)
 	templatesGroup := r.Group("/api/templates")
 	templatesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{
