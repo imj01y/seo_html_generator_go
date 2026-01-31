@@ -52,6 +52,9 @@ export const useWorkerEditorStore = defineStore('workerEditor', () => {
     treeLoading.value = true
     try {
       fileTree.value = await getFileTree()
+    } catch (e) {
+      console.error('Failed to load file tree:', e)
+      throw e
     } finally {
       treeLoading.value = false
     }
@@ -69,6 +72,9 @@ export const useWorkerEditorStore = defineStore('workerEditor', () => {
     return expandedDirs.value.has(path)
   }
 
+  // ID 计数器，确保唯一性
+  let tabIdCounter = 0
+
   // 标签页操作
   async function openFile(path: string, name: string) {
     // 检查是否已打开
@@ -83,7 +89,7 @@ export const useWorkerEditorStore = defineStore('workerEditor', () => {
     const language = getLanguageByExtension(name)
 
     const newTab: Tab = {
-      id: `tab-${Date.now()}`,
+      id: `tab-${Date.now()}-${++tabIdCounter}`,
       path,
       name,
       content: res.content,
