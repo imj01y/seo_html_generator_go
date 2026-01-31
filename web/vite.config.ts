@@ -4,6 +4,7 @@ import { resolve } from 'path'
 import AutoImport from 'unplugin-auto-import/vite'
 import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
+import monacoEditorPlugin from 'vite-plugin-monaco-editor'
 
 export default defineConfig({
   base: '/',
@@ -18,6 +19,7 @@ export default defineConfig({
       resolvers: [ElementPlusResolver()],
       dts: 'src/components.d.ts',
     }),
+    (monacoEditorPlugin as any).default({}),
   ],
   resolve: {
     alias: {
@@ -47,6 +49,12 @@ export default defineConfig({
       },
       // 系统日志 WebSocket
       '/api/logs/ws': {
+        target: 'http://localhost:8009',
+        changeOrigin: true,
+        ws: true,
+      },
+      // Worker 运行 WebSocket
+      '/ws/worker': {
         target: 'http://localhost:8009',
         changeOrigin: true,
         ws: true,
