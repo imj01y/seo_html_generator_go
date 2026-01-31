@@ -1,8 +1,12 @@
 package api
 
 import (
+	"bufio"
 	"context"
+	"encoding/json"
 	"net/http"
+	"os/exec"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -122,6 +126,233 @@ func (h *WebSocketHandler) SpiderStats(c *gin.Context) {
 			return
 		}
 	}
+}
+
+// WorkerRestart Worker 重启 WebSocket
+// 实时推送 pip install 和 docker restart 的日志，重启后自动监听 15 秒容器日志
+// GET /ws/worker-restart
+func (h *WebSocketHandler) WorkerRestart(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	containerName := "seo-generator-worker"
+
+	// 发送日志的辅助函数
+	sendLog := func(logType, message string) {
+		data, _ := json.Marshal(map[string]string{
+			"type": logType,
+			"data": message,
+		})
+		conn.WriteMessage(websocket.TextMessage, data)
+	}
+
+	// 发送完成信号
+	sendDone := func(success bool, message string) {
+		data, _ := json.Marshal(map[string]interface{}{
+			"type":    "done",
+			"success": success,
+			"data":    message,
+		})
+		conn.WriteMessage(websocket.TextMessage, data)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// 步骤 1: 安装依赖
+	sendLog("info", "> 正在安装依赖...")
+
+	pipCmd := exec.CommandContext(ctx,
+		"docker", "exec", containerName,
+		"pip", "install", "-r", "/app/requirements.txt",
+	)
+
+	// 获取 stdout 和 stderr 管道
+	stdout, err := pipCmd.StdoutPipe()
+	if err != nil {
+		sendDone(false, "无法创建输出管道: "+err.Error())
+		return
+	}
+	stderr, err := pipCmd.StderrPipe()
+	if err != nil {
+		sendDone(false, "无法创建错误管道: "+err.Error())
+		return
+	}
+
+	if err := pipCmd.Start(); err != nil {
+		sendDone(false, "启动命令失败: "+err.Error())
+		return
+	}
+
+	// 实时读取 stdout
+	go func() {
+		scanner := bufio.NewScanner(stdout)
+		for scanner.Scan() {
+			sendLog("stdout", scanner.Text())
+		}
+	}()
+
+	// 实时读取 stderr
+	go func() {
+		scanner := bufio.NewScanner(stderr)
+		for scanner.Scan() {
+			sendLog("stderr", scanner.Text())
+		}
+	}()
+
+	if err := pipCmd.Wait(); err != nil {
+		sendDone(false, "安装依赖失败: "+err.Error())
+		return
+	}
+
+	sendLog("info", "> 依赖安装完成")
+
+	// 步骤 2: 重启容器
+	sendLog("info", "> 正在重启容器...")
+
+	restartCmd := exec.CommandContext(ctx,
+		"docker", "restart", containerName,
+	)
+	restartOutput, err := restartCmd.CombinedOutput()
+	if err != nil {
+		sendDone(false, "重启容器失败: "+err.Error())
+		return
+	}
+
+	if len(restartOutput) > 0 {
+		sendLog("stdout", string(restartOutput))
+	}
+
+	sendLog("info", "> 容器已重启，正在监听启动日志...")
+
+	// 步骤 3: 监听容器日志 15 秒
+	logCtx, logCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer logCancel()
+
+	// 使用 docker logs -f --since 来获取重启后的日志
+	logCmd := exec.CommandContext(logCtx,
+		"docker", "logs", "-f", "--since", "5s", containerName,
+	)
+
+	logStdout, _ := logCmd.StdoutPipe()
+	logStderr, _ := logCmd.StderrPipe()
+
+	if err := logCmd.Start(); err != nil {
+		sendLog("stderr", "无法获取容器日志: "+err.Error())
+	} else {
+		// 实时读取日志
+		go func() {
+			scanner := bufio.NewScanner(logStdout)
+			for scanner.Scan() {
+				sendLog("stdout", scanner.Text())
+			}
+		}()
+		go func() {
+			scanner := bufio.NewScanner(logStderr)
+			for scanner.Scan() {
+				sendLog("stderr", scanner.Text())
+			}
+		}()
+
+		// 等待超时或命令结束
+		logCmd.Wait()
+	}
+
+	sendLog("info", "> 日志监听结束（15秒）")
+	sendDone(true, "Worker 重启完成")
+}
+
+// WorkerLogs Worker 实时日志 WebSocket
+// 持续监听容器日志直到客户端断开
+// GET /ws/worker-logs
+func (h *WebSocketHandler) WorkerLogs(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	containerName := "seo-generator-worker"
+
+	// 发送日志的辅助函数
+	sendLog := func(logType, message string) {
+		data, _ := json.Marshal(map[string]string{
+			"type": logType,
+			"data": message,
+		})
+		conn.WriteMessage(websocket.TextMessage, data)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 监听客户端断开
+	go func() {
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	sendLog("info", "> 开始监听容器日志...")
+
+	// 使用 docker logs -f --tail 获取最近日志并持续监听
+	logCmd := exec.CommandContext(ctx,
+		"docker", "logs", "-f", "--tail", "50", containerName,
+	)
+
+	logStdout, err := logCmd.StdoutPipe()
+	if err != nil {
+		sendLog("stderr", "无法创建输出管道: "+err.Error())
+		return
+	}
+	logStderr, err := logCmd.StderrPipe()
+	if err != nil {
+		sendLog("stderr", "无法创建错误管道: "+err.Error())
+		return
+	}
+
+	if err := logCmd.Start(); err != nil {
+		sendLog("stderr", "无法获取容器日志: "+err.Error())
+		return
+	}
+
+	// 实时读取 stdout
+	go func() {
+		scanner := bufio.NewScanner(logStdout)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				sendLog("stdout", scanner.Text())
+			}
+		}
+	}()
+
+	// 实时读取 stderr
+	go func() {
+		scanner := bufio.NewScanner(logStderr)
+		for scanner.Scan() {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				sendLog("stderr", scanner.Text())
+			}
+		}
+	}()
+
+	// 等待上下文取消或命令结束
+	<-ctx.Done()
+	logCmd.Process.Kill()
+	sendLog("info", "> 日志监听已停止")
 }
 
 // SpiderLogs 爬虫日志 WebSocket

@@ -77,7 +77,7 @@ services:
       - ./api/templates:/app/templates
       - ./data/cache:/data/cache
       - ./data/emojis.json:/app/data/emojis.json:ro
-      - ./worker:/project/worker                              # Worker 代码目录
+      - ./content_worker:/project/content_worker              # 内容处理代码目录
       - ./docker-compose.yml:/project/docker-compose.yml:ro   # Docker Compose 配置
       - /var/run/docker.sock:/var/run/docker.sock             # Docker socket (rebuild 需要)
     depends_on:
@@ -99,8 +99,8 @@ services:
   # ========================================
   worker:
     build:
-      context: ./worker
-      dockerfile: ../docker/worker.Dockerfile
+      context: content_worker
+      dockerfile: ../docker/content_worker.Dockerfile
     container_name: seo-generator-worker
     restart: unless-stopped
     environment:
@@ -117,7 +117,7 @@ services:
       - ENV_FOR_DYNACONF=${ENV_FOR_DYNACONF:-production}
       - TZ=${TZ:-Asia/Shanghai}
     volumes:
-      - ./worker:/app                     # 代码目录挂载
+      - ./content_worker:/app              # 代码目录挂载
       - ./config.yaml:/app/config.yaml:ro
       - ./data/logs:/app/logs
     depends_on:

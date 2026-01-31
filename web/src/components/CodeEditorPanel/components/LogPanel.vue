@@ -1,5 +1,6 @@
 <template>
   <div
+    ref="logPanel"
     class="log-panel"
     :class="{ expanded: store.logExpanded.value }"
     :style="{ height: store.logExpanded.value ? height + 'px' : '28px' }"
@@ -23,15 +24,6 @@
         <span v-else-if="store.logs.value.length === 0 && activeTab === 'logs'" class="empty-badge">无输出</span>
       </div>
       <div class="header-right" @click.stop>
-        <el-button
-          v-if="store.logRunning.value"
-          text
-          size="small"
-          type="danger"
-          @click="$emit('stop')"
-        >
-          停止
-        </el-button>
         <el-button text size="small" @click="handleCopy">复制</el-button>
         <el-button text size="small" @click="store.clearLogs">清空</el-button>
       </div>
@@ -103,6 +95,7 @@ defineEmits<{
 }>()
 
 const logContent = ref<HTMLElement>()
+const logPanel = ref<HTMLElement>()
 const height = ref(200)
 const activeTab = ref('logs')
 
@@ -119,15 +112,26 @@ function toggleExpand() {
 function startResize(event: MouseEvent) {
   const startY = event.clientY
   const startHeight = height.value
+  // 最大高度为视口高度的 80%
+  const maxHeight = Math.floor(window.innerHeight * 0.8)
+
+  // 拖动时禁用过渡效果
+  if (logPanel.value) {
+    logPanel.value.style.transition = 'none'
+  }
 
   function onMouseMove(e: MouseEvent) {
-    const newHeight = Math.max(100, Math.min(500, startHeight - (e.clientY - startY)))
+    const newHeight = Math.max(100, Math.min(maxHeight, startHeight - (e.clientY - startY)))
     height.value = newHeight
   }
 
   function onMouseUp() {
     document.removeEventListener('mousemove', onMouseMove)
     document.removeEventListener('mouseup', onMouseUp)
+    // 拖动结束后恢复过渡效果
+    if (logPanel.value) {
+      logPanel.value.style.transition = ''
+    }
   }
 
   document.addEventListener('mousemove', onMouseMove)
@@ -160,6 +164,7 @@ watch(() => props.store.logs.value.length, () => {
 
 <style scoped>
 .log-panel {
+  position: relative;
   background: #1e1e1e;
   border-top: 1px solid #3c3c3c;
   display: flex;

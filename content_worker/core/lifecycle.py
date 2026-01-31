@@ -11,8 +11,6 @@ from loguru import logger
 
 from core.redis_client import close_redis_client
 from database.db import close_db_pool
-from core.keyword_cache_pool import stop_keyword_cache_pool
-from core.image_cache_pool import stop_image_cache_pool
 from core.class_generator import stop_class_string_pool
 from core.link_generator import stop_url_pool
 from core.random_number_pool import stop_random_number_pool
@@ -48,8 +46,6 @@ async def cleanup_components():
         await _safe_stop(_scheduler_worker.stop(), "Spider scheduler worker")
 
     # 停止缓存池
-    await _safe_stop(stop_keyword_cache_pool(), "Keyword cache pool")
-    await _safe_stop(stop_image_cache_pool(), "Image cache pool")
     await _safe_stop(stop_class_string_pool(), "Class string pool")
     await _safe_stop(stop_url_pool(), "URL pool")
     await _safe_stop(stop_random_number_pool(), "Random number pool")

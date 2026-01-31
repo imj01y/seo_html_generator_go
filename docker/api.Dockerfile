@@ -31,7 +31,8 @@ FROM alpine:3.19
 WORKDIR /app
 
 # Install ca-certificates for HTTPS and tzdata for timezone
-RUN apk add --no-cache ca-certificates tzdata wget
+# Install docker-cli and docker-cli-compose for rebuild functionality
+RUN apk add --no-cache ca-certificates tzdata wget docker-cli docker-cli-compose
 
 # Copy binary from builder
 COPY --from=builder /build/server .

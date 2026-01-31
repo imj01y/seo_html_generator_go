@@ -3,6 +3,9 @@
 池配置热更新监听器
 
 监听 Redis pool:reload 频道，动态调整缓存池大小。
+
+注意：关键词和图片池已迁移到 Go API 的 DataManager 管理，
+此模块仅保留框架，用于未来可能的其他池类型扩展。
 """
 
 import asyncio
@@ -12,8 +15,6 @@ from typing import Optional
 from loguru import logger
 
 from core.redis_client import get_redis_client
-from core.keyword_cache_pool import get_keyword_cache_pool
-from core.image_cache_pool import get_image_cache_pool
 
 
 class PoolReloader:
@@ -31,7 +32,7 @@ class PoolReloader:
 
         self._redis = get_redis_client()
         if not self._redis:
-            logger.error("Redis client not available, cannot start pool reloader")
+            logger.warning("Redis client not available, pool reloader disabled")
             return
 
         self._running = True
@@ -75,7 +76,7 @@ class PoolReloader:
                     pass
 
     async def _handle_message(self, data):
-        """处理消息"""
+        """处理消息（关键词和图片池已迁移到 Go API）"""
         try:
             if isinstance(data, bytes):
                 data = data.decode('utf-8')
@@ -86,22 +87,8 @@ class PoolReloader:
                 return
 
             sizes = msg.get("sizes", {})
-            keyword_size = sizes.get("keyword_pool_size")
-            image_size = sizes.get("image_pool_size")
-
-            logger.info(f"Received pool reload: keyword={keyword_size}, image={image_size}")
-
-            # Resize pools
-            keyword_pool = get_keyword_cache_pool()
-            image_pool = get_image_cache_pool()
-
-            if keyword_pool and keyword_size and isinstance(keyword_size, int) and keyword_size > 0:
-                await keyword_pool.resize(keyword_size)
-
-            if image_pool and image_size and isinstance(image_size, int) and image_size > 0:
-                await image_pool.resize(image_size)
-
-            logger.info("Pool sizes updated successfully")
+            logger.info(f"Received pool reload message: {sizes}")
+            logger.info("Note: Keyword/Image pools are now managed by Go API DataManager")
 
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse pool reload message: {e}")

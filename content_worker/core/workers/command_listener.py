@@ -84,6 +84,50 @@ class CommandListener:
             json.dumps(stats_msg, ensure_ascii=False)
         )
 
+    async def _batch_insert_keywords(self, keywords: list, group_id: int) -> int:
+        """批量插入关键词到数据库（INSERT IGNORE 去重）"""
+        if not keywords:
+            return 0
+
+        try:
+            db_pool = get_db_pool()
+            if not db_pool:
+                return 0
+
+            async with db_pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.executemany(
+                        "INSERT IGNORE INTO keywords (group_id, keyword) VALUES (%s, %s)",
+                        [(group_id, kw) for kw in keywords]
+                    )
+                    await conn.commit()
+                    return cursor.rowcount
+        except Exception as e:
+            logger.error(f"批量插入关键词失败: {e}")
+            return 0
+
+    async def _batch_insert_images(self, urls: list, group_id: int) -> int:
+        """批量插入图片URL到数据库（INSERT IGNORE 去重）"""
+        if not urls:
+            return 0
+
+        try:
+            db_pool = get_db_pool()
+            if not db_pool:
+                return 0
+
+            async with db_pool.acquire() as conn:
+                async with conn.cursor() as cursor:
+                    await cursor.executemany(
+                        "INSERT IGNORE INTO images (group_id, url, status) VALUES (%s, %s, 1)",
+                        [(group_id, url) for url in urls]
+                    )
+                    await conn.commit()
+                    return cursor.rowcount
+        except Exception as e:
+            logger.error(f"批量插入图片失败: {e}")
+            return 0
+
     async def start(self):
         """启动监听器"""
         self.rdb = get_redis_client()
@@ -240,38 +284,28 @@ class CommandListener:
 
                 try:
                     if item_type == 'keywords':
-                        # 写入关键词表
+                        # 写入关键词表（直接写入 MySQL）
                         keywords = item.get('keywords', [])
                         target_group = item.get('group_id', group_id)
 
                         if keywords:
-                            from core.keyword_group_manager import get_keyword_group
-                            keyword_manager = get_keyword_group()
-                            if keyword_manager:
-                                result = await keyword_manager.add_keywords_batch(keywords, target_group)
-                                added = result.get('added', 0)
-                                items_count += added
-                                await log.info(f"关键词写入: 新增 {result['added']}, 跳过 {result['skipped']}")
-                                # 发布实时统计
-                                if added > 0:
-                                    await self._publish_stats(project_id, items_count)
+                            added = await self._batch_insert_keywords(keywords, target_group)
+                            items_count += added
+                            await log.info(f"关键词写入: 新增 {added}, 跳过 {len(keywords) - added}")
+                            if added > 0:
+                                await self._publish_stats(project_id, items_count)
 
                     elif item_type == 'images':
-                        # 写入图片表
+                        # 写入图片表（直接写入 MySQL）
                         urls = item.get('urls', [])
                         target_group = item.get('group_id', group_id)
 
                         if urls:
-                            from core.image_group_manager import get_image_group
-                            image_manager = get_image_group()
-                            if image_manager:
-                                result = await image_manager.add_urls_batch(urls, target_group)
-                                added = result.get('added', 0)
-                                items_count += added
-                                await log.info(f"图片写入: 新增 {result['added']}, 跳过 {result['skipped']}")
-                                # 发布实时统计
-                                if added > 0:
-                                    await self._publish_stats(project_id, items_count)
+                            added = await self._batch_insert_images(urls, target_group)
+                            items_count += added
+                            await log.info(f"图片写入: 新增 {added}, 跳过 {len(urls) - added}")
+                            if added > 0:
+                                await self._publish_stats(project_id, items_count)
 
                     else:
                         # 写入文章表

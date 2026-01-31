@@ -5,24 +5,33 @@
       <h2>{{ title }}</h2>
       <div class="header-actions">
         <slot name="header-actions">
-          <el-button
+          <el-tooltip
             v-if="showRestartButton"
-            type="warning"
-            :icon="Refresh"
-            :loading="restarting"
-            @click="$emit('restart')"
+            content="安装依赖并重启服务（会中断当前任务）"
+            placement="bottom"
           >
-            重启
-          </el-button>
-          <el-button
-            v-if="showRebuildButton"
-            type="danger"
-            :icon="Setting"
-            :loading="rebuilding"
-            @click="$emit('rebuild')"
+            <el-button
+              type="warning"
+              :icon="Refresh"
+              :loading="restarting"
+              @click="$emit('restart')"
+            >
+              重启
+            </el-button>
+          </el-tooltip>
+          <el-tooltip
+            v-if="showLogsButton"
+            :content="logsActive ? '停止监听日志' : '查看实时运行日志'"
+            placement="bottom"
           >
-            重新构建
-          </el-button>
+            <el-button
+              :type="logsActive ? 'danger' : 'info'"
+              :icon="Document"
+              @click="$emit('toggle-logs')"
+            >
+              {{ logsActive ? '停止日志' : '实时日志' }}
+            </el-button>
+          </el-tooltip>
         </slot>
         <el-tooltip :content="isMaximized ? '还原 (Esc)' : '最大化'" placement="bottom">
           <el-button
@@ -87,7 +96,7 @@
 <script setup lang="ts">
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Refresh, Setting, FullScreen, Close } from '@element-plus/icons-vue'
+import { Refresh, FullScreen, Close, Document } from '@element-plus/icons-vue'
 import type { TreeNode, CodeEditorApi, CodeEditorPanelProps, ExtraTab } from './types'
 import { useEditorStore } from './composables/useEditorStore'
 
@@ -99,18 +108,20 @@ import PromptDialog from './components/PromptDialog.vue'
 
 const props = withDefaults(defineProps<CodeEditorPanelProps & {
   extraTabs?: ExtraTab[]
+  logsActive?: boolean
 }>(), {
   title: '代码编辑器',
   runnable: false,
   showLogPanel: false,
   showRestartButton: false,
-  showRebuildButton: false,
+  showLogsButton: false,
+  logsActive: false,
   runnableExtensions: () => ['.py']
 })
 
 const emit = defineEmits<{
   (e: 'restart'): void
-  (e: 'rebuild'): void
+  (e: 'toggle-logs'): void
 }>()
 
 // 创建 store 实例
@@ -122,7 +133,6 @@ provide('editorApi', props.api)
 
 // 控制状态
 const restarting = ref(false)
-const rebuilding = ref(false)
 const isMaximized = ref(false)
 
 // 最大化/还原

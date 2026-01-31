@@ -28,6 +28,16 @@
         <el-button v-if="testing" type="danger" @click="handleStopTest">
           停止
         </el-button>
+        <el-tooltip :content="isRunning ? (logsActive ? '停止监听日志' : '查看实时运行日志') : '项目未在运行'" placement="top">
+          <el-button
+            :type="logsActive ? 'danger' : 'info'"
+            :disabled="!isRunning"
+            @click="handleToggleLogs"
+          >
+            <el-icon><Document /></el-icon>
+            {{ logsActive ? '停止日志' : '实时日志' }}
+          </el-button>
+        </el-tooltip>
         <el-button @click="goBack">
           <el-icon><ArrowLeft /></el-icon>
           返回
@@ -44,7 +54,7 @@
 import { ref, computed, onMounted, onUnmounted, markRaw } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { ArrowLeft, QuestionFilled } from '@element-plus/icons-vue'
+import { ArrowLeft, QuestionFilled, Document } from '@element-plus/icons-vue'
 import CodeEditorPanel from '@/components/CodeEditorPanel/index.vue'
 import SpiderGuide from '@/components/SpiderGuide.vue'
 import DataPreview from './components/DataPreview.vue'
@@ -54,6 +64,7 @@ import {
   testProject,
   stopTestProject,
   subscribeTestLogs,
+  subscribeProjectLogs,
   type SpiderProject
 } from '@/api/spiderProjects'
 import type { ExtraTab } from '@/components/CodeEditorPanel/types'
@@ -76,6 +87,12 @@ const testing = ref(false)
 const testMaxItems = ref(0)
 const testItems = ref<Record<string, any>[]>([])
 let unsubscribeTest: (() => void) | null = null
+
+// 实时日志状态
+const logsActive = ref(false)
+const isRunning = computed(() => project.value?.status === 'running')
+let unsubscribeLogs: (() => void) | null = null
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
 
 // 日志面板额外标签页
 const extraTabs = computed<ExtraTab[]>(() => [
@@ -175,12 +192,85 @@ function goBack() {
   router.push('/spiders/projects')
 }
 
+// 切换实时日志
+function handleToggleLogs() {
+  if (logsActive.value) {
+    stopLogs()
+  } else {
+    startLogs()
+  }
+}
+
+// 开始监听日志
+function startLogs() {
+  const store = editorRef.value?.store
+  if (!store) return
+
+  store.clearLogs()
+  store.logExpanded.value = true
+  store.addLog({ type: 'command', data: '> 正在连接实时日志...' })
+
+  logsActive.value = true
+
+  unsubscribeLogs = subscribeProjectLogs(
+    projectId.value,
+    (level, message) => {
+      store.addLog({
+        type: level === 'ERROR' ? 'stderr' : 'stdout',
+        data: `[${level}] ${message}`
+      })
+    },
+    () => {
+      store.addLog({ type: 'info', data: '> 日志监听已结束' })
+      logsActive.value = false
+    },
+    (error) => {
+      store.addLog({ type: 'stderr', data: error })
+      logsActive.value = false
+    }
+  )
+}
+
+// 停止监听日志
+function stopLogs() {
+  unsubscribeLogs?.()
+  unsubscribeLogs = null
+  logsActive.value = false
+  editorRef.value?.store?.addLog({ type: 'info', data: '> 已停止日志监听' })
+}
+
+// 轮询项目状态
+function startStatusPoll() {
+  // 每 5 秒检查一次项目状态
+  statusPollTimer = setInterval(async () => {
+    try {
+      project.value = await getProject(projectId.value)
+      // 如果项目停止运行且正在监听日志，则停止监听
+      if (!isRunning.value && logsActive.value) {
+        stopLogs()
+      }
+    } catch {
+      // 忽略轮询错误
+    }
+  }, 5000)
+}
+
+function stopStatusPoll() {
+  if (statusPollTimer) {
+    clearInterval(statusPollTimer)
+    statusPollTimer = null
+  }
+}
+
 onMounted(() => {
   loadProject()
+  startStatusPoll()
 })
 
 onUnmounted(() => {
   unsubscribeTest?.()
+  unsubscribeLogs?.()
+  stopStatusPoll()
 })
 </script>
 

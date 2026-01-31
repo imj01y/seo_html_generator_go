@@ -119,7 +119,7 @@ func (m *DataManager) LoadImageURLs(ctx context.Context, groupID int, limit int)
 
 // LoadTitles loads titles for a group from the database
 func (m *DataManager) LoadTitles(ctx context.Context, groupID int, limit int) (int, error) {
-	query := `SELECT title FROM titles WHERE group_id = ? ORDER BY batch_id DESC, RAND() LIMIT ?`
+	query := `SELECT title FROM titles WHERE group_id = ? AND status = 1 ORDER BY batch_id DESC, RAND() LIMIT ?`
 
 	var titles []string
 	if err := m.db.SelectContext(ctx, &titles, query, groupID, limit); err != nil {
@@ -136,7 +136,7 @@ func (m *DataManager) LoadTitles(ctx context.Context, groupID int, limit int) (i
 
 // LoadContents loads contents for a group from the database
 func (m *DataManager) LoadContents(ctx context.Context, groupID int, limit int) (int, error) {
-	query := `SELECT content FROM contents WHERE group_id = ? ORDER BY batch_id DESC, RAND() LIMIT ?`
+	query := `SELECT content FROM contents WHERE group_id = ? AND status = 1 ORDER BY batch_id DESC, RAND() LIMIT ?`
 
 	var contents []string
 	if err := m.db.SelectContext(ctx, &contents, query, groupID, limit); err != nil {

@@ -18,16 +18,11 @@ from core.spider_detector import init_spider_detector
 from core.seo_core import init_seo_core, get_seo_core
 from core.emoji import get_emoji_manager
 from core.auth import ensure_default_admin
-from core.keyword_group_manager import init_keyword_group, get_keyword_group
-from core.image_group_manager import init_image_group, get_image_group
-from core.keyword_cache_pool import init_keyword_cache_pool, get_keyword_cache_pool
-from core.image_cache_pool import init_image_cache_pool, get_image_cache_pool
 from core.class_generator import init_class_string_pool, get_class_string_pool
 from core.link_generator import init_url_pool, get_url_pool
 from core.random_number_pool import init_random_number_pool, get_random_number_pool
 from core.title_manager import init_title_manager, get_title_manager
 from core.content_manager import init_content_manager, get_content_manager
-from core.content_pool_manager import init_content_pool_manager
 
 
 # 全局变量：worker 引用（用于清理）
@@ -166,7 +161,7 @@ async def init_cache_components(config):
 
 
 async def init_pool_components():
-    """初始化各类缓存池组件"""
+    """初始化各类缓存池组件（已简化）"""
     redis_client = get_redis_client()
     db_pool = get_db_pool()
 
@@ -174,19 +169,7 @@ async def init_pool_components():
         logger.warning("Pool components not initialized (Redis client or DB not ready)")
         return
 
-    # 关键词分组
-    try:
-        await init_keyword_group(db_pool)
-        logger.info("Keyword group initialized from MySQL")
-    except Exception as e:
-        logger.warning(f"Keyword group initialization failed: {e}")
-
-    # 图片分组
-    try:
-        await init_image_group(db_pool)
-        logger.info("Image group initialized from MySQL")
-    except Exception as e:
-        logger.warning(f"Image group initialization failed: {e}")
+    logger.info("Pool components initialized")
 
 
 async def init_seo_components(project_root: Path):
@@ -271,54 +254,8 @@ async def init_seo_components(project_root: Path):
 
 
 async def init_keyword_image_cache_pools():
-    """初始化关键词和图片缓存池"""
-    redis_client = get_redis_client()
-    keyword_group = get_keyword_group()
-    image_group = get_image_group()
-    seo_core = get_seo_core()
-
-    # 关键词缓存池
-    if redis_client and keyword_group:
-        try:
-            await init_keyword_cache_pool(
-                keyword_manager=keyword_group,
-                redis_client=redis_client,
-                cache_size=10000,
-                low_watermark_ratio=0.2,
-                refill_batch_size=2000,
-                check_interval=1.0,
-                encoder=seo_core.encoder if seo_core else None
-            )
-            pool = get_keyword_cache_pool()
-            if pool:
-                stats = pool.get_stats()
-                if stats['cache_size'] == 0:
-                    logger.warning("Keyword cache pool started empty - will populate when data is added")
-                else:
-                    logger.info(f"Keyword cache pool initialized: {stats['cache_size']} pre-encoded keywords")
-        except Exception as e:
-            logger.warning(f"Keyword cache pool initialization failed: {e}")
-
-    # 图片缓存池
-    if redis_client and image_group:
-        try:
-            await init_image_cache_pool(
-                image_manager=image_group,
-                redis_client=redis_client,
-                cache_size=30000,
-                low_watermark_ratio=0.3,
-                refill_batch_size=5000,
-                check_interval=0.5
-            )
-            pool = get_image_cache_pool()
-            if pool:
-                stats = pool.get_stats()
-                if stats['cache_size'] == 0:
-                    logger.warning("Image cache pool started empty - will populate when data is added")
-                else:
-                    logger.info(f"Image cache pool initialized: {stats['cache_size']} URLs")
-        except Exception as e:
-            logger.warning(f"Image cache pool initialization failed: {e}")
+    """初始化关键词和图片缓存池（已移除，Go API 有自己的 DataManager）"""
+    logger.info("Keyword/Image cache pools skipped (handled by Go API DataManager)")
 
 
 async def init_content_components():
@@ -348,20 +285,6 @@ async def init_content_components():
             logger.info(f"Content manager (group 1) initialized: {stats['total']} contents loaded")
     except Exception as e:
         logger.warning(f"Content manager initialization failed: {e}")
-
-    # 段落池管理器
-    try:
-        content_pool = await init_content_pool_manager(
-            redis_client, db_pool, group_id=1, auto_initialize=True
-        )
-        if content_pool:
-            stats = await content_pool.get_pool_stats()
-            logger.info(
-                f"Content pool manager initialized: "
-                f"{stats['pool_size']} available, {stats['used_size']} used"
-            )
-    except Exception as e:
-        logger.warning(f"Content pool manager initialization failed: {e}")
 
 
 async def init_background_workers():
@@ -398,25 +321,8 @@ async def init_background_workers():
 
 
 async def preload_sync_caches():
-    """预加载同步缓存（作为缓存池的降级方案）"""
-    seo_core = get_seo_core()
-    keyword_group = get_keyword_group()
-    image_group = get_image_group()
-
-    if not seo_core:
-        return
-
-    # 关键词同步缓存
-    if keyword_group and keyword_group._loaded:
-        keywords = await keyword_group.get_random(1000)
-        seo_core.load_keywords_sync(keywords)
-        logger.info(f"Preloaded {len(keywords)} keywords to sync cache (fallback)")
-
-    # 图片同步缓存
-    if image_group and image_group._loaded:
-        urls = await image_group.get_random(1000)
-        seo_core.load_image_urls_sync(urls)
-        logger.info(f"Preloaded {len(urls)} image URLs to sync cache")
+    """预加载同步缓存（已移除，Go API 有自己的 DataManager）"""
+    logger.info("Sync cache preload skipped (handled by Go API DataManager)")
 
 
 async def init_components(project_root: Optional[Path] = None):

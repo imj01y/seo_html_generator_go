@@ -1,5 +1,5 @@
-# Python Worker Dockerfile
-# 用于运行爬虫和内容生成任务
+# Content Worker Dockerfile
+# 内容处理服务：爬虫执行、内容生成、定时任务
 
 FROM python:3.11.9-slim
 

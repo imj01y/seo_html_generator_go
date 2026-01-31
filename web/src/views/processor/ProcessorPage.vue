@@ -5,7 +5,7 @@
         <ProcessorManage />
       </el-tab-pane>
       <el-tab-pane label="代码编辑" name="code">
-        <WorkerCodeEditor />
+        <ContentWorkerEditor />
       </el-tab-pane>
     </el-tabs>
   </div>
@@ -14,7 +14,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import ProcessorManage from './ProcessorManage.vue'
-import WorkerCodeEditor from '@/views/worker/WorkerCodeEditor.vue'
+import ContentWorkerEditor from '@/views/content-worker/ContentWorkerEditor.vue'
 
 const activeTab = ref('monitor')
 </script>

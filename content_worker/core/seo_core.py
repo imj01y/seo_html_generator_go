@@ -35,10 +35,6 @@ from .class_generator import ClassGenerator
 from .emoji import get_emoji_manager
 from .link_generator import (LinkGenerator, AnchorGenerator)
 from .title_generator import TitleGenerator
-from .keyword_group_manager import get_keyword_group
-from .keyword_cache_pool import get_keyword_cache_pool
-from .image_group_manager import get_image_group
-from .content_pool_manager import get_content_pool_manager
 from .random_number_pool import get_random_number_pool
 from loguru import logger
 
@@ -245,31 +241,17 @@ class SEOCore:
         获取正文内容
 
         Returns:
-            正文内容，内容池不可用时返回空字符串
+            正文内容，预加载内容不可用时返回空字符串
         """
-        # 优先使用预加载的内容（由 render_template_content 预先获取）
+        # 使用预加载的内容（由 render_template_content 预先获取）
         if hasattr(self, '_preloaded_content') and self._preloaded_content:
             content = self._preloaded_content
             self._preloaded_content = None  # 使用后清空，避免重复
             return content
 
-        # 降级：尝试同步获取（仅在非异步环境中有效）
-        content_pool = get_content_pool_manager()
-        if not content_pool:
-            return ""
-
-        try:
-            loop = asyncio.get_event_loop()
-            if not loop.is_running():
-                content = loop.run_until_complete(content_pool.get_content())
-                return content or ""
-            else:
-                # 在异步环境中，应该使用预加载的内容
-                logger.warning("content() called in async context without preloaded content")
-                return ""
-        except Exception as e:
-            logger.warning(f"Failed to get content from pool: {e}")
-            return ""
+        # 无预加载内容时返回空字符串
+        logger.warning("content() called without preloaded content")
+        return ""
 
     def _get_from_local_cache(self, cache: list, cursor_attr: str) -> str:
         """从本地缓存获取随机项（通用方法）"""
@@ -290,23 +272,12 @@ class SEOCore:
         """
         同步获取随机图片URL（用于模板渲染）
 
-        优先使用全局缓存池，降级到本地缓存。
+        从本地缓存获取图片URL。
 
         Returns:
             图片URL字符串
         """
         t_start = time_module.perf_counter()
-        # 优先使用全局缓存池
-        from .image_cache_pool import get_image_cache_pool
-        pool = get_image_cache_pool()
-        if pool:
-            url = pool.get_url_sync()
-            if url:
-                self._perf_img_time += time_module.perf_counter() - t_start
-                self._perf_img_count += 1
-                return url
-
-        # 降级到本地缓存
         result = self._get_from_local_cache(self._image_url_cache, '_image_cursor')
         self._perf_img_time += time_module.perf_counter() - t_start
         self._perf_img_count += 1
@@ -356,26 +327,18 @@ class SEOCore:
         同步获取随机关键词（用于模板渲染）
 
         优先从全局缓存池获取（生产者消费者模型），
-        降级到本地缓存（旧逻辑）。
+        从本地缓存获取关键词。
 
         Returns:
             关键词字符串
         """
-        # 优先使用全局缓存池
-        pool = get_keyword_cache_pool()
-        if pool:
-            keyword = pool.get_keyword_sync()
-            if keyword:
-                return keyword
-
-        # 降级到本地缓存
         return self._get_from_local_cache(self._keyword_cache, '_keyword_cursor')
 
     def _get_keywords_sync(self, count: int) -> List[str]:
         """
         同步获取多个随机关键词（用于模板渲染）
 
-        优先从全局缓存池获取，降级到本地缓存。
+        从本地缓存获取。
 
         Args:
             count: 需要的关键词数量
@@ -383,14 +346,6 @@ class SEOCore:
         Returns:
             关键词列表
         """
-        # 优先使用全局缓存池
-        pool = get_keyword_cache_pool()
-        if pool:
-            keywords = pool.get_keywords_sync(count)
-            if keywords:
-                return keywords
-
-        # 降级到本地缓存
         return [
             self._get_from_local_cache(self._keyword_cache, '_keyword_cursor')
             for _ in range(count)
@@ -674,23 +629,11 @@ class SEOCore:
         Returns:
             统计信息字典
         """
-        # 获取图片分组统计（如果可用）
-        image_group = get_image_group()
-        image_stats = image_group.get_stats() if image_group else {'total': 0, 'cursor': 0}
-
-        # 获取关键词分组统计（如果可用）
-        keyword_group = get_keyword_group()
-        keyword_stats = keyword_group.get_stats() if keyword_group else {'total': 0, 'cursor': 0}
-
         return {
             'encoding_count': self._encoding_count,
             'emojis_used': len(self._used_emojis),
-            'keywords_total': keyword_stats.get('total', 0),
-            'images_total': image_stats.get('total', 0),
             'keyword_cache_size': len(self._keyword_cache),
             'image_cache_size': len(self._image_url_cache),
-            'keyword_group_stats': keyword_stats,
-            'image_group_stats': image_stats,
         }
 
     def reload_caches(self) -> Dict[str, Dict[str, int]]:

@@ -23,7 +23,6 @@ from loguru import logger
 
 from core.dedup import ContentDeduplicator
 from core.processors import PinyinAnnotator, TextCleaner
-from core.content_pool_manager import get_content_pool_manager
 
 
 class GeneratorWorker:
@@ -400,14 +399,6 @@ class GeneratorWorker:
                             count += 1
 
                 await conn.commit()
-
-            # 将生成的 ID 加入段落池
-            content_pool = get_content_pool_manager()
-            if content_pool:
-                for group_id, ids in inserted_ids.items():
-                    if ids:
-                        await content_pool.add_batch_to_pool(ids)
-                        logger.debug(f"Added {len(ids)} content IDs to pool")
 
             self._content_buffer.clear()
             logger.debug(f"Flushed {count} contents to database")

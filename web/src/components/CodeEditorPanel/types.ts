@@ -98,8 +98,8 @@ export interface CodeEditorPanelProps {
   /** 是否显示重启按钮 */
   showRestartButton?: boolean
 
-  /** 是否显示重建按钮 */
-  showRebuildButton?: boolean
+  /** 是否显示实时日志按钮 */
+  showLogsButton?: boolean
 
   /** 文件扩展名到语言的映射 */
   languageMap?: Record<string, string>

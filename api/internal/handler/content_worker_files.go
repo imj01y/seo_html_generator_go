@@ -1,20 +1,13 @@
 package api
 
 import (
-	"bufio"
-	"context"
-	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/gorilla/websocket"
-	"github.com/redis/go-redis/v9"
 	core "seo-generator/api/internal/service"
 )
 
@@ -40,14 +33,14 @@ func isTextFile(filename string) bool {
 	return textExtensions[ext]
 }
 
-// WorkerFilesHandler Worker 文件管理 handler
-type WorkerFilesHandler struct {
-	workerDir string
+// ContentWorkerFilesHandler 内容处理代码文件管理 handler
+type ContentWorkerFilesHandler struct {
+	baseDir string
 }
 
-// NewWorkerFilesHandler 创建 WorkerFilesHandler
-func NewWorkerFilesHandler(workerDir string) *WorkerFilesHandler {
-	return &WorkerFilesHandler{workerDir: workerDir}
+// NewContentWorkerFilesHandler 创建 ContentWorkerFilesHandler
+func NewContentWorkerFilesHandler(baseDir string) *ContentWorkerFilesHandler {
+	return &ContentWorkerFilesHandler{baseDir: baseDir}
 }
 
 // FileInfo 文件信息
@@ -67,13 +60,13 @@ type TreeNode struct {
 }
 
 // validatePath 验证路径安全性，防止路径穿越
-func (h *WorkerFilesHandler) validatePath(relativePath string) (string, bool) {
+func (h *ContentWorkerFilesHandler) validatePath(relativePath string) (string, bool) {
 	// 清理路径
 	cleanPath := filepath.Clean(relativePath)
 
 	// 空路径或当前目录指向 workerDir 根目录，这是允许的（用于列出根目录）
 	if cleanPath == "." || cleanPath == "" {
-		return h.workerDir, true
+		return h.baseDir, true
 	}
 
 	// 检查是否包含 ".."
@@ -81,10 +74,10 @@ func (h *WorkerFilesHandler) validatePath(relativePath string) (string, bool) {
 		return "", false
 	}
 
-	fullPath := filepath.Join(h.workerDir, cleanPath)
+	fullPath := filepath.Join(h.baseDir, cleanPath)
 
 	// 使用 filepath.Rel 确保路径在 workerDir 内
-	rel, err := filepath.Rel(h.workerDir, fullPath)
+	rel, err := filepath.Rel(h.baseDir, fullPath)
 	if err != nil || strings.HasPrefix(rel, "..") {
 		return "", false
 	}
@@ -94,7 +87,7 @@ func (h *WorkerFilesHandler) validatePath(relativePath string) (string, bool) {
 
 // ListDir 列出目录内容或读取文件
 // GET /api/worker/files/*path
-func (h *WorkerFilesHandler) ListDir(c *gin.Context) {
+func (h *ContentWorkerFilesHandler) ListDir(c *gin.Context) {
 	path := c.Param("path")
 	if path == "" || path == "/" {
 		path = ""
@@ -171,7 +164,7 @@ func (h *WorkerFilesHandler) ListDir(c *gin.Context) {
 }
 
 // readFile 读取文件内容并返回 JSON
-func (h *WorkerFilesHandler) readFile(c *gin.Context, fullPath, relativePath string, info os.FileInfo) {
+func (h *ContentWorkerFilesHandler) readFile(c *gin.Context, fullPath, relativePath string, info os.FileInfo) {
 	// 检查文件大小
 	if info.Size() > maxFileSize {
 		core.FailWithMessage(c, core.ErrInvalidParam, "文件过大，最大支持 10MB")
@@ -200,13 +193,13 @@ func (h *WorkerFilesHandler) readFile(c *gin.Context, fullPath, relativePath str
 
 // GetTree 获取目录树
 // GET /api/worker/files?tree=true
-func (h *WorkerFilesHandler) GetTree(c *gin.Context) {
-	tree := h.buildTree(h.workerDir, "/")
+func (h *ContentWorkerFilesHandler) GetTree(c *gin.Context) {
+	tree := h.buildTree(h.baseDir, "/")
 	core.Success(c, tree)
 }
 
 // buildTree 递归构建目录树（包含文件和目录）
-func (h *WorkerFilesHandler) buildTree(dirPath, relativePath string) *TreeNode {
+func (h *ContentWorkerFilesHandler) buildTree(dirPath, relativePath string) *TreeNode {
 	info, err := os.Stat(dirPath)
 	if err != nil {
 		return nil
@@ -274,7 +267,7 @@ type CreateRequest struct {
 
 // Create 创建文件或目录
 // POST /api/worker/files/*path
-func (h *WorkerFilesHandler) Create(c *gin.Context) {
+func (h *ContentWorkerFilesHandler) Create(c *gin.Context) {
 	path := c.Param("path")
 	if path == "" || path == "/" {
 		path = ""
@@ -350,7 +343,7 @@ type SaveRequest struct {
 
 // Save 保存文件
 // PUT /api/worker/files/*path
-func (h *WorkerFilesHandler) Save(c *gin.Context) {
+func (h *ContentWorkerFilesHandler) Save(c *gin.Context) {
 	path := c.Param("path")
 	if path == "" || path == "/" {
 		core.FailWithMessage(c, core.ErrInvalidParam, "路径不能为空")
@@ -414,7 +407,7 @@ func (h *WorkerFilesHandler) Save(c *gin.Context) {
 
 // Delete 删除文件或目录
 // DELETE /api/worker/files/*path
-func (h *WorkerFilesHandler) Delete(c *gin.Context) {
+func (h *ContentWorkerFilesHandler) Delete(c *gin.Context) {
 	path := c.Param("path")
 	if path == "" || path == "/" {
 		core.FailWithMessage(c, core.ErrInvalidParam, "不能删除根目录")
@@ -428,7 +421,7 @@ func (h *WorkerFilesHandler) Delete(c *gin.Context) {
 	}
 
 	// 再次检查是否试图删除根目录
-	if fullPath == h.workerDir {
+	if fullPath == h.baseDir {
 		core.FailWithMessage(c, core.ErrInvalidParam, "不能删除根目录")
 		return
 	}
@@ -459,7 +452,7 @@ type MoveRequest struct {
 
 // Move 重命名或移动文件/目录
 // PATCH /api/worker/files/*path
-func (h *WorkerFilesHandler) Move(c *gin.Context) {
+func (h *ContentWorkerFilesHandler) Move(c *gin.Context) {
 	path := c.Param("path")
 	if path == "" || path == "/" {
 		core.FailWithMessage(c, core.ErrInvalidParam, "不能移动根目录")
@@ -516,7 +509,7 @@ func (h *WorkerFilesHandler) Move(c *gin.Context) {
 
 // Upload 上传文件
 // POST /api/worker/upload/*path
-func (h *WorkerFilesHandler) Upload(c *gin.Context) {
+func (h *ContentWorkerFilesHandler) Upload(c *gin.Context) {
 	path := c.Param("path")
 	if path == "" || path == "/" {
 		path = ""
@@ -575,7 +568,7 @@ func (h *WorkerFilesHandler) Upload(c *gin.Context) {
 
 // Download 下载文件
 // GET /api/worker/download/*path
-func (h *WorkerFilesHandler) Download(c *gin.Context) {
+func (h *ContentWorkerFilesHandler) Download(c *gin.Context) {
 	path := c.Param("path")
 
 	fullPath, ok := h.validatePath(path)
@@ -600,176 +593,4 @@ func (h *WorkerFilesHandler) Download(c *gin.Context) {
 	}
 
 	c.FileAttachment(fullPath, filepath.Base(path))
-}
-
-// RunFile 运行 Python 文件（WebSocket）
-// WS /ws/worker/run
-func (h *WorkerFilesHandler) RunFile(c *gin.Context) {
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
-	// 读取运行请求
-	var req struct {
-		Action string `json:"action"`
-		File   string `json:"file"`
-	}
-	if err := conn.ReadJSON(&req); err != nil {
-		h.sendWSError(conn, "读取请求失败: "+err.Error())
-		return
-	}
-
-	if req.Action != "run" || req.File == "" {
-		h.sendWSError(conn, "无效的请求")
-		return
-	}
-
-	// 验证路径
-	fullPath, ok := h.validatePath(req.File)
-	if !ok {
-		h.sendWSError(conn, "无效的文件路径")
-		return
-	}
-
-	// 检查文件存在
-	if _, err := os.Stat(fullPath); err != nil {
-		h.sendWSError(conn, "文件不存在")
-		return
-	}
-
-	// 创建上下文用于取消（5分钟超时）
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
-	// 执行 Python 文件
-	cmd := exec.CommandContext(ctx, "python", fullPath)
-	cmd.Dir = h.workerDir
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		h.sendWSError(conn, "创建 stdout 管道失败")
-		return
-	}
-
-	stderr, err := cmd.StderrPipe()
-	if err != nil {
-		h.sendWSError(conn, "创建 stderr 管道失败")
-		return
-	}
-
-	start := time.Now()
-	if err := cmd.Start(); err != nil {
-		h.sendWSError(conn, "启动进程失败: "+err.Error())
-		return
-	}
-
-	// 并发读取输出
-	var wg sync.WaitGroup
-	wg.Add(2)
-
-	go func() {
-		defer wg.Done()
-		h.pipeToWS(stdout, conn, "stdout")
-	}()
-
-	go func() {
-		defer wg.Done()
-		h.pipeToWS(stderr, conn, "stderr")
-	}()
-
-	wg.Wait()
-	cmd.Wait()
-
-	// 发送完成消息
-	duration := time.Since(start).Milliseconds()
-	exitCode := 0
-	if cmd.ProcessState != nil {
-		exitCode = cmd.ProcessState.ExitCode()
-	}
-
-	conn.WriteJSON(map[string]interface{}{
-		"type":        "done",
-		"exit_code":   exitCode,
-		"duration_ms": duration,
-	})
-}
-
-// pipeToWS 将输出流发送到 WebSocket
-func (h *WorkerFilesHandler) pipeToWS(r io.Reader, conn *websocket.Conn, typ string) {
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		msg := map[string]string{
-			"type": typ,
-			"data": scanner.Text(),
-		}
-		if err := conn.WriteJSON(msg); err != nil {
-			return
-		}
-	}
-}
-
-// sendWSError 发送 WebSocket 错误
-func (h *WorkerFilesHandler) sendWSError(conn *websocket.Conn, msg string) {
-	conn.WriteJSON(map[string]string{
-		"type": "stderr",
-		"data": msg,
-	})
-	conn.WriteJSON(map[string]interface{}{
-		"type":      "done",
-		"exit_code": 1,
-	})
-}
-
-// Restart 重启 Worker 进程
-// POST /api/worker/restart
-func (h *WorkerFilesHandler) Restart(c *gin.Context) {
-	rdb, exists := c.Get("redis")
-	if !exists {
-		core.FailWithMessage(c, core.ErrInternalServer, "Redis 未连接")
-		return
-	}
-	redisClient := rdb.(*redis.Client)
-
-	// 发送重启信号到 Redis
-	err := redisClient.Publish(c.Request.Context(), "worker:command", "restart").Err()
-	if err != nil {
-		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
-		return
-	}
-
-	core.Success(c, gin.H{"message": "重启指令已发送"})
-}
-
-// Rebuild 重新构建 Worker 镜像
-// POST /api/worker/rebuild
-func (h *WorkerFilesHandler) Rebuild(c *gin.Context) {
-	// 获取 docker-compose 路径
-	composeFile := "/project/docker-compose.yml"
-	if _, err := os.Stat(composeFile); err != nil {
-		core.FailWithMessage(c, core.ErrInternalServer, "docker-compose.yml 未找到")
-		return
-	}
-
-	// 使用 context 设置超时（10分钟）
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx,
-		"docker-compose",
-		"-f", composeFile,
-		"up", "-d", "--build", "worker",
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		core.FailWithMessage(c, core.ErrInternalServer, string(output))
-		return
-	}
-
-	core.Success(c, gin.H{
-		"message": "Worker 重新构建完成",
-		"output":  string(output),
-	})
 }
