@@ -5,11 +5,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"seo-generator/api/pkg/config"
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
+
+// testSecretKey 测试用的密钥
+const testSecretKey = "test-secret-key-for-testing"
 
 // setupTestRouter 创建测试路由器和依赖
 func setupTestRouter() (*gin.Engine, *Dependencies) {
@@ -19,7 +23,7 @@ func setupTestRouter() (*gin.Engine, *Dependencies) {
 	// 创建测试配置
 	testConfig := &config.Config{
 		Auth: config.AuthConfig{
-			SecretKey:                "test-secret-key-for-testing",
+			SecretKey:                testSecretKey,
 			Algorithm:                "HS256",
 			AccessTokenExpireMinutes: 60,
 		},
@@ -32,6 +36,20 @@ func setupTestRouter() (*gin.Engine, *Dependencies) {
 	}
 
 	return r, deps
+}
+
+// createTestToken 创建测试用的 JWT token
+func createTestToken() string {
+	token, _ := core.CreateAccessToken(map[string]interface{}{
+		"sub":      "admin",
+		"admin_id": 1,
+	}, testSecretKey, time.Hour)
+	return token
+}
+
+// setAuthHeader 为请求设置认证 header
+func setAuthHeader(req *http.Request) {
+	req.Header.Set("Authorization", "Bearer "+createTestToken())
 }
 
 // apiResponse 用于解析 API 响应
@@ -54,6 +72,7 @@ func TestPoolHandler_GetPresets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建请求失败: %v", err)
 	}
+	setAuthHeader(req)
 
 	// 执行请求
 	w := httptest.NewRecorder()
@@ -122,6 +141,7 @@ func TestTemplateHandler_GetAnalysis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建请求失败: %v", err)
 	}
+	setAuthHeader(req)
 
 	// 执行请求
 	w := httptest.NewRecorder()
@@ -179,6 +199,7 @@ func TestSystemHandler_Health(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建请求失败: %v", err)
 	}
+	setAuthHeader(req)
 
 	// 执行请求
 	w := httptest.NewRecorder()
@@ -248,6 +269,7 @@ func TestSystemHandler_Info(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建请求失败: %v", err)
 	}
+	setAuthHeader(req)
 
 	// 执行请求
 	w := httptest.NewRecorder()
@@ -333,6 +355,7 @@ func TestPoolHandler_GetPresetByName(t *testing.T) {
 			if err != nil {
 				t.Fatalf("创建请求失败: %v", err)
 			}
+			setAuthHeader(req)
 
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
@@ -387,6 +410,7 @@ func TestTemplateHandler_GetAnalysisByID(t *testing.T) {
 			if err != nil {
 				t.Fatalf("创建请求失败: %v", err)
 			}
+			setAuthHeader(req)
 
 			w := httptest.NewRecorder()
 			r.ServeHTTP(w, req)
@@ -411,12 +435,13 @@ func TestPoolHandler_StatsWithNilDeps(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建请求失败: %v", err)
 	}
+	setAuthHeader(req)
 
 	// 执行请求
 	w := httptest.NewRecorder()
 	r.ServeHTTP(w, req)
 
-	// 应该返回 500 错误
+	// 应该返回 500 错误（因为 TemplateFuncs 为 nil，返回 ErrPoolInvalid）
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("期望状态码 %d，实际 %d", http.StatusInternalServerError, w.Code)
 	}
@@ -437,6 +462,7 @@ func TestTemplateHandler_PoolConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("创建请求失败: %v", err)
 	}
+	setAuthHeader(req)
 
 	// 执行请求
 	w := httptest.NewRecorder()

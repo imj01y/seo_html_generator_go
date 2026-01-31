@@ -51,8 +51,8 @@ func TestTemplatesList_NoDb(t *testing.T) {
 	}
 
 	data := resp["data"].(map[string]interface{})
-	if _, ok := data["list"]; !ok {
-		t.Error("Response should contain list field")
+	if _, ok := data["items"]; !ok {
+		t.Error("Response should contain items field")
 	}
 	if _, ok := data["total"]; !ok {
 		t.Error("Response should contain total field")
