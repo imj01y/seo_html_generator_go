@@ -344,6 +344,38 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		processorRoutes.GET("/stats", processorHandler.GetStats)
 	}
 
+	// Worker Files routes (代码编辑器，require JWT)
+	workerFilesHandler := NewWorkerFilesHandler("/project/worker")
+	workerRoutes := r.Group("/api/worker")
+	workerRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		// 目录树（用于移动弹窗）
+		workerRoutes.GET("/files", func(c *gin.Context) {
+			if c.Query("tree") == "true" {
+				workerFilesHandler.GetTree(c)
+			} else {
+				workerFilesHandler.ListDir(c)
+			}
+		})
+		// 文件/目录操作
+		workerRoutes.GET("/files/*path", workerFilesHandler.ListDir)
+		workerRoutes.POST("/files/*path", workerFilesHandler.Create)
+		workerRoutes.PUT("/files/*path", workerFilesHandler.Save)
+		workerRoutes.DELETE("/files/*path", workerFilesHandler.Delete)
+		workerRoutes.PATCH("/files/*path", workerFilesHandler.Move)
+
+		// 上传下载
+		workerRoutes.POST("/upload/*path", workerFilesHandler.Upload)
+		workerRoutes.GET("/download/*path", workerFilesHandler.Download)
+
+		// 控制
+		workerRoutes.POST("/restart", workerFilesHandler.Restart)
+		workerRoutes.POST("/rebuild", workerFilesHandler.Rebuild)
+	}
+
+	// Worker Run WebSocket (需要认证)
+	r.GET("/ws/worker/run", AuthMiddleware(deps.Config.Auth.SecretKey), workerFilesHandler.RunFile)
+
 	// WebSocket routes (不需要认证)
 	wsHandler := &WebSocketHandler{}
 	r.GET("/ws/spider-logs/:id", wsHandler.SpiderLogs)
