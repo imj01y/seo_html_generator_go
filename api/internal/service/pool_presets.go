@@ -4,108 +4,71 @@ import "fmt"
 
 // PoolPreset 池预设配置
 type PoolPreset struct {
-	Name          string  `json:"name"`
-	Description   string  `json:"description"`
-	TargetQPS     int     `json:"target_qps"`
-	SafetyFactor  float64 `json:"safety_factor"`
-	BufferSeconds float64 `json:"buffer_seconds"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Concurrency int    `json:"concurrency"`
 }
 
-// 预定义的预设配置
+// 预定义的预设配置 (map 结构，key 为预设标识)
 var PoolPresets = map[string]PoolPreset{
-	"low": {
-		Name:          "低并发",
-		Description:   "适用于 100 QPS 以下的场景",
-		TargetQPS:     100,
-		SafetyFactor:  1.5,
-		BufferSeconds: 1.0,
-	},
-	"medium": {
-		Name:          "中并发",
-		Description:   "适用于 500 QPS 左右的场景",
-		TargetQPS:     500,
-		SafetyFactor:  1.5,
-		BufferSeconds: 1.0,
-	},
-	"high": {
-		Name:          "高并发",
-		Description:   "适用于 1000 QPS 左右的场景",
-		TargetQPS:     1000,
-		SafetyFactor:  1.5,
-		BufferSeconds: 1.0,
-	},
-	"extreme": {
-		Name:          "超高并发",
-		Description:   "适用于 2000+ QPS 的场景",
-		TargetQPS:     2000,
-		SafetyFactor:  1.5,
-		BufferSeconds: 1.0,
-	},
+	"low":     {Name: "低", Description: "适用于小站点、低配服务器", Concurrency: 50},
+	"medium":  {Name: "中", Description: "适用于中等规模站群", Concurrency: 200},
+	"high":    {Name: "高", Description: "适用于大规模站群", Concurrency: 500},
+	"extreme": {Name: "极高", Description: "适用于高性能服务器", Concurrency: 1000},
 }
 
-// GetPoolPreset 获取预设配置
-func GetPoolPreset(name string) (PoolPreset, bool) {
-	preset, ok := PoolPresets[name]
+// GetAllPoolPresets 获取所有预设
+func GetAllPoolPresets() map[string]PoolPreset {
+	return PoolPresets
+}
+
+// GetPoolPreset 根据 key 获取预设
+func GetPoolPreset(key string) (PoolPreset, bool) {
+	preset, ok := PoolPresets[key]
 	return preset, ok
 }
 
-// GetAllPoolPresets 获取所有预设配置
-func GetAllPoolPresets() map[string]PoolPreset {
-	// 返回副本，避免外部修改
-	result := make(map[string]PoolPreset, len(PoolPresets))
-	for k, v := range PoolPresets {
-		result[k] = v
-	}
-	return result
-}
+// 默认缓冲秒数
+const DefaultBufferSeconds = 3
 
-// CalculatePoolSizes 根据预设和模板分析计算池大小
-// 参数 maxStats 是 TemplateFuncStats 类型（已在 template_analyzer.go 定义）
-// 计算公式：poolSize = calls * targetQPS * safetyFactor * bufferSeconds
+// 单条数据大小估算（字节）
+const (
+	AvgClsSize          = 20
+	AvgURLSize          = 100
+	AvgKeywordEmojiSize = 60
+	AvgNumberSize       = 8
+)
+
+// CalculatePoolSizes 根据预设和模板统计计算池大小
 func CalculatePoolSizes(preset PoolPreset, maxStats TemplateFuncStats) *PoolSizeConfig {
-	multiplier := float64(preset.TargetQPS) * preset.SafetyFactor * preset.BufferSeconds
+	multiplier := preset.Concurrency * DefaultBufferSeconds
 
 	return &PoolSizeConfig{
-		ClsPoolSize:          int(float64(maxStats.Cls) * multiplier),
-		URLPoolSize:          int(float64(maxStats.RandomURL) * multiplier),
-		KeywordEmojiPoolSize: int(float64(maxStats.KeywordWithEmoji) * multiplier),
-		NumberPoolSize:       int(float64(maxStats.RandomNumber) * multiplier),
+		ClsPoolSize:          maxStats.Cls * multiplier,
+		URLPoolSize:          maxStats.RandomURL * multiplier,
+		KeywordEmojiPoolSize: maxStats.KeywordWithEmoji * multiplier,
+		NumberPoolSize:       maxStats.RandomNumber * multiplier,
 	}
 }
 
 // EstimateMemoryUsage 估算内存使用量（字节）
-// 假设：
-// - 每个字符串平均 20 字节
-// - emoji 相关的字符串可能更大，按 2 倍计算（40 字节）
-func EstimateMemoryUsage(config *PoolSizeConfig) int64 {
-	const (
-		avgStringSize      = 20 // 普通字符串平均大小
-		avgEmojiStringSize = 40 // emoji 字符串平均大小（x2）
-	)
+func EstimateMemoryUsage(sizes *PoolSizeConfig) int64 {
+	const overhead = 1.2 // 20% 额外开销
 
-	var totalBytes int64
+	clsBytes := int64(float64(sizes.ClsPoolSize*AvgClsSize) * overhead)
+	urlBytes := int64(float64(sizes.URLPoolSize*AvgURLSize) * overhead)
+	keywordEmojiBytes := int64(float64(sizes.KeywordEmojiPoolSize*AvgKeywordEmojiSize) * overhead)
+	numberBytes := int64(float64(sizes.NumberPoolSize*AvgNumberSize) * overhead)
 
-	// cls 池：普通字符串
-	totalBytes += int64(config.ClsPoolSize) * avgStringSize
-
-	// URL 池：普通字符串
-	totalBytes += int64(config.URLPoolSize) * avgStringSize
-
-	// emoji 关键词池：emoji 字符串
-	totalBytes += int64(config.KeywordEmojiPoolSize) * avgEmojiStringSize
-
-	// 数字池：普通字符串（数字转字符串通常很短，但按平均算）
-	totalBytes += int64(config.NumberPoolSize) * avgStringSize
-
-	return totalBytes
+	return clsBytes + urlBytes + keywordEmojiBytes + numberBytes
 }
 
 // FormatMemorySize 格式化内存大小为人类可读格式
 func FormatMemorySize(bytes int64) string {
 	const (
 		KB = 1024
-		MB = 1024 * KB
-		GB = 1024 * MB
+		MB = KB * 1024
+		GB = MB * 1024
 	)
 
 	switch {
