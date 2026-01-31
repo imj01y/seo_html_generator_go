@@ -54,8 +54,8 @@ let stopRun: (() => void) | null = null
 
 // 注册自定义 Python 语法高亮（精确匹配 PyCharm Darcula 配色）
 monaco.languages.setMonarchTokensProvider('python', {
-  defaultToken: '',
-  tokenPostfix: '.python',
+  defaultToken: 'identifier',
+  tokenPostfix: '',
 
   brackets: [
     { open: '{', close: '}', token: 'delimiter.curly' },
