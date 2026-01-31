@@ -11,6 +11,28 @@ import (
 	core "seo-generator/api/internal/service"
 )
 
+// 文件大小限制
+const maxFileSize = 10 * 1024 * 1024 // 10MB
+
+// 支持的文本文件扩展名
+var textExtensions = map[string]bool{
+	".py": true, ".txt": true, ".json": true, ".yaml": true, ".yml": true,
+	".md": true, ".html": true, ".css": true, ".js": true, ".ts": true,
+	".go": true, ".sh": true, ".conf": true, ".ini": true, ".toml": true,
+	".xml": true, ".sql": true, ".env": true, ".gitignore": true,
+}
+
+// isTextFile 判断文件是否为文本文件
+func isTextFile(filename string) bool {
+	ext := strings.ToLower(filepath.Ext(filename))
+	if ext == "" {
+		// 无扩展名的文件（如 Dockerfile, Makefile）
+		base := filepath.Base(filename)
+		return base == "Dockerfile" || base == "Makefile" || base == "requirements"
+	}
+	return textExtensions[ext]
+}
+
 // WorkerFilesHandler Worker 文件管理 handler
 type WorkerFilesHandler struct {
 	workerDir string
@@ -143,6 +165,18 @@ func (h *WorkerFilesHandler) ListDir(c *gin.Context) {
 
 // readFile 读取文件内容并返回 JSON
 func (h *WorkerFilesHandler) readFile(c *gin.Context, fullPath, relativePath string, info os.FileInfo) {
+	// 检查文件大小
+	if info.Size() > maxFileSize {
+		core.FailWithMessage(c, core.ErrInvalidParam, "文件过大，最大支持 10MB")
+		return
+	}
+
+	// 检查是否为文本文件
+	if !isTextFile(relativePath) {
+		core.FailWithMessage(c, core.ErrInvalidParam, "不支持编辑二进制文件")
+		return
+	}
+
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
