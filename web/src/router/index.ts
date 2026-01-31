@@ -76,13 +76,13 @@ const routes: RouteRecordRaw[] = [
         path: 'worker',
         name: 'WorkerCode',
         component: () => import('@/views/worker/WorkerCodeEditor.vue'),
-        meta: { title: 'Worker代码', icon: 'EditPen' }
+        meta: { title: '数据加工代码', icon: 'EditPen' }
       },
       {
         path: 'spiders/projects',
         name: 'SpiderProjects',
         component: () => import('@/views/spiders/ProjectList.vue'),
-        meta: { title: '爬虫项目', icon: 'Cpu' }
+        meta: { title: '数据抓取', icon: 'Cpu' }
       },
       {
         path: 'spiders/projects/:id',
@@ -100,7 +100,7 @@ const routes: RouteRecordRaw[] = [
         path: 'spiders/stats',
         name: 'SpiderStats',
         component: () => import('@/views/spiders/SpiderStats.vue'),
-        meta: { title: '爬虫统计', icon: 'TrendCharts' }
+        meta: { title: '抓取统计', icon: 'TrendCharts' }
       },
       {
         path: 'generators',
