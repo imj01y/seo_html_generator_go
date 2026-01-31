@@ -99,3 +99,81 @@ export const formatMemorySize = (bytes: number): string => {
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`
   }
 }
+
+// ========== 池状态监控类型 ==========
+
+// 池状态类型
+export type PoolStatus = 'running' | 'paused' | 'stopped'
+
+// 单个池的统计
+export interface PoolStats {
+  name: string
+  size: number
+  available: number
+  used: number
+  utilization: number
+  status: PoolStatus
+  num_workers: number
+  last_refresh: string | null
+  // Go 对象池特有字段
+  total_generated?: number
+  total_consumed?: number
+  paused?: boolean
+  refill_count?: number
+}
+
+// Go 对象池统计响应
+export interface ObjectPoolStatsResponse {
+  cls: PoolStats
+  url: PoolStats
+  keyword_emoji?: PoolStats
+}
+
+// Python 数据池统计响应
+export interface DataPoolStatsResponse {
+  pools: PoolStats[]
+}
+
+// ========== 池状态监控 API ==========
+
+/**
+ * 获取 Go 对象池统计
+ */
+export const getObjectPoolStats = (): Promise<ObjectPoolStatsResponse> => {
+  return request.get('/admin/pool/stats')
+}
+
+/**
+ * 获取 Python 数据池统计
+ */
+export const getDataPoolStats = (): Promise<DataPoolStatsResponse> => {
+  return request.get('/admin/data/stats')
+}
+
+/**
+ * 预热对象池
+ */
+export const warmupPool = (percent?: number): Promise<void> => {
+  return request.post('/admin/pool/warmup', { percent: percent || 0.5 })
+}
+
+/**
+ * 暂停对象池补充
+ */
+export const pausePool = (): Promise<void> => {
+  return request.post('/admin/pool/pause')
+}
+
+/**
+ * 恢复对象池补充
+ */
+export const resumePool = (): Promise<void> => {
+  return request.post('/admin/pool/resume')
+}
+
+/**
+ * 刷新数据池
+ */
+export const refreshDataPool = (pool?: string): Promise<void> => {
+  return request.post('/admin/data/refresh', { pool: pool || 'all' })
+}
