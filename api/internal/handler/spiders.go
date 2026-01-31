@@ -705,7 +705,7 @@ func (h *SpidersHandler) GetFile(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	path := "/" + c.Param("path") // 路由参数不包含前导 /
+	path := c.Param("path") // *path 通配符已包含前导 /
 
 	var file SpiderProjectFile
 	err := sqlxDB.Get(&file, `
@@ -734,11 +734,9 @@ func (h *SpidersHandler) CreateItem(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	parentPath := c.Param("path")
+	parentPath := c.Param("path") // *path 通配符已包含前导 /，根目录时为空
 	if parentPath == "" {
 		parentPath = "/"
-	} else {
-		parentPath = "/" + parentPath
 	}
 
 	var status string
@@ -809,7 +807,7 @@ func (h *SpidersHandler) UpdateFile(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	path := "/" + c.Param("path")
+	path := c.Param("path") // *path 通配符已包含前导 /
 
 	var status string
 	err := sqlxDB.Get(&status, "SELECT status FROM spider_projects WHERE id = ?", id)
@@ -853,7 +851,7 @@ func (h *SpidersHandler) DeleteFile(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	path := "/" + c.Param("path")
+	path := c.Param("path") // *path 通配符已包含前导 /
 
 	var project struct {
 		Status    string `db:"status"`
@@ -906,7 +904,7 @@ func (h *SpidersHandler) MoveItem(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	oldPath := "/" + c.Param("path")
+	oldPath := c.Param("path") // *path 通配符已包含前导 /
 
 	var status string
 	err := sqlxDB.Get(&status, "SELECT status FROM spider_projects WHERE id = ?", id)
