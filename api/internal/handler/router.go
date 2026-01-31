@@ -282,23 +282,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		poolConfigGroup.PUT("", poolConfigHandler.UpdateConfig)
 	}
 
-	// Generators routes (require JWT)
-	generatorsHandler := &GeneratorsHandler{}
-	genRoutes := r.Group("/api/generators")
-	genRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
-	{
-		genRoutes.GET("", generatorsHandler.List)
-		genRoutes.POST("", generatorsHandler.Create)
-		genRoutes.GET("/templates/list", generatorsHandler.GetTemplates)
-		genRoutes.POST("/test", generatorsHandler.Test)
-		genRoutes.GET("/:id", generatorsHandler.Get)
-		genRoutes.PUT("/:id", generatorsHandler.Update)
-		genRoutes.DELETE("/:id", generatorsHandler.Delete)
-		genRoutes.POST("/:id/set-default", generatorsHandler.SetDefault)
-		genRoutes.POST("/:id/toggle", generatorsHandler.Toggle)
-		genRoutes.POST("/:id/reload", generatorsHandler.Reload)
-	}
-
 	// Settings routes (require JWT)
 	settingsHandler := &SettingsHandler{}
 	settingsRoutes := r.Group("/api/settings")
