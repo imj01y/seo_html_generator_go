@@ -2,7 +2,7 @@
   <div class="page-container">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h2>爬虫项目管理</h2>
+      <h2>数据抓取管理</h2>
       <el-button type="primary" @click="handleCreate">
         <el-icon><Plus /></el-icon>
         新建项目
@@ -58,7 +58,7 @@
 
     <!-- 数据表格 -->
     <el-table :data="projects" v-loading="loading" border stripe>
-      <el-table-column prop="name" label="项目名称" width="180">
+      <el-table-column prop="name" label="名称" width="180">
         <template #default="{ row }">
           <el-link type="primary" @click="handleEdit(row)">{{ row.name }}</el-link>
         </template>
