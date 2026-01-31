@@ -93,6 +93,19 @@
       </el-col>
     </el-row>
 
+    <!-- 更多设置 -->
+    <el-row :gutter="20" style="margin-top: 20px">
+      <el-col :xs="24" :lg="12">
+        <div class="card nav-card" @click="router.push('/settings/pool-config')">
+          <div class="card-header">
+            <span class="title">渲染并发配置</span>
+            <el-icon><ArrowRight /></el-icon>
+          </div>
+          <p class="description">配置页面渲染时的对象池和数据池大小，根据并发数自动计算最优配置</p>
+        </div>
+      </el-col>
+    </el-row>
+
     <!-- API Token 设置 -->
     <el-row :gutter="20" style="margin-top: 20px">
       <el-col :xs="24" :lg="12">
@@ -149,11 +162,13 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, FormInstance, FormRules } from 'element-plus'
-import { View, Hide, QuestionFilled } from '@element-plus/icons-vue'
+import { View, Hide, QuestionFilled, ArrowRight } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
 import { getSettings, updateSettings, getApiTokenSettings, updateApiTokenSettings, generateApiToken } from '@/api/settings'
 import ApiTokenGuide from '@/components/ApiTokenGuide.vue'
 import { changePassword } from '@/api/auth'
 
+const router = useRouter()
 const settingsLoading = ref(false)
 const saveLoading = ref(false)
 const passwordLoading = ref(false)
@@ -378,6 +393,34 @@ onMounted(() => {
     display: flex;
     align-items: center;
     gap: 12px;
+  }
+
+  .nav-card {
+    cursor: pointer;
+    transition: all 0.3s;
+
+    &:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
+    }
+
+    .card-header {
+      .el-icon {
+        color: #909399;
+        transition: color 0.3s;
+      }
+    }
+
+    &:hover .card-header .el-icon {
+      color: #409eff;
+    }
+
+    .description {
+      color: #909399;
+      font-size: 13px;
+      margin: 0;
+      line-height: 1.5;
+    }
   }
 }
 </style>

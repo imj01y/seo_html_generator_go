@@ -407,6 +407,17 @@ func main() {
 		log.Info().Msg("StatsArchiver skipped (Redis not available)")
 	}
 
+	// Initialize and start PoolReloader for hot-reload of pool configurations (requires Redis)
+	var poolReloader *core.PoolReloader
+	if redisClient != nil && funcsManager != nil {
+		poolReloader = core.NewPoolReloader(redisClient, funcsManager)
+		poolReloader.Start()
+		defer poolReloader.Stop()
+		log.Info().Msg("PoolReloader initialized and started")
+	} else {
+		log.Info().Msg("PoolReloader skipped (Redis or TemplateFuncsManager not available)")
+	}
+
 	// Create server
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
 	srv := &http.Server{

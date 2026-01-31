@@ -79,7 +79,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Templates routes (require JWT)
-	templatesHandler := NewTemplatesHandler(deps.DB)
+	templatesHandler := NewTemplatesHandler(deps.DB, deps.TemplateAnalyzer)
 	templatesGroup := r.Group("/api/templates")
 	templatesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{
@@ -269,6 +269,15 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		statsRoutes.GET("/chart", spiderStatsHandler.GetChart)
 		statsRoutes.GET("/scheduled", spiderStatsHandler.GetScheduled)
 		statsRoutes.GET("/by-project", spiderStatsHandler.GetByProject)
+	}
+
+	// Pool config routes (require JWT) - 使用 PoolConfigHandler
+	poolConfigHandler := NewPoolConfigHandler(deps.DB, deps.Redis, deps.TemplateAnalyzer)
+	poolConfigGroup := r.Group("/api/pool-config")
+	poolConfigGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		poolConfigGroup.GET("", poolConfigHandler.GetConfig)
+		poolConfigGroup.PUT("", poolConfigHandler.UpdateConfig)
 	}
 
 	// Generators routes (require JWT)
