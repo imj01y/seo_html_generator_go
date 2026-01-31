@@ -119,7 +119,7 @@
             查看日志
           </el-button>
           <el-button size="small" @click="handleConfig(row)">配置</el-button>
-          <el-button size="small" type="primary" @click="handleEditCode(row)">代码</el-button>
+          <el-button size="small" @click="handleEditCode(row)">编辑代码</el-button>
           <el-button
             v-if="row.status !== 'running'"
             type="warning"
