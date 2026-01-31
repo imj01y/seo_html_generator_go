@@ -24,6 +24,18 @@ type DataManagerStats struct {
 	RefreshCount int64     `json:"refresh_count"`
 }
 
+// PoolStatusStats 单个数据池的运行状态统计（与 Go 对象池格式一致）
+type PoolStatusStats struct {
+	Name        string     `json:"name"`
+	Size        int        `json:"size"`
+	Available   int        `json:"available"`
+	Used        int        `json:"used"`
+	Utilization float64    `json:"utilization"`
+	Status      string     `json:"status"`
+	NumWorkers  int        `json:"num_workers"`
+	LastRefresh *time.Time `json:"last_refresh"`
+}
+
 // DataManager manages keywords, images, titles, and content data
 type DataManager struct {
 	db           *sqlx.DB
@@ -484,4 +496,60 @@ func (m *DataManager) GetDetailedStats() map[string]interface{} {
 		"auto_refresh":  m.running.Load(),
 		"refresh_count": m.refreshCount.Load(),
 	}
+}
+
+// GetDataPoolsStats 返回数据池运行状态统计（与 Go 对象池格式一致）
+func (m *DataManager) GetDataPoolsStats() []PoolStatusStats {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	// 计算状态
+	status := "running"
+	if !m.running.Load() {
+		status = "stopped"
+	}
+
+	// 获取 lastRefresh 指针
+	var lastRefresh *time.Time
+	if !m.lastReload.IsZero() {
+		t := m.lastReload
+		lastRefresh = &t
+	}
+
+	// 计算关键词池总数
+	var totalKeywords int
+	for _, items := range m.keywords {
+		totalKeywords += len(items)
+	}
+
+	// 计算图片池总数
+	var totalImages int
+	for _, items := range m.imageURLs {
+		totalImages += len(items)
+	}
+
+	pools := []PoolStatusStats{
+		{
+			Name:        "关键词缓存池",
+			Size:        totalKeywords,
+			Available:   totalKeywords,
+			Used:        0,
+			Utilization: 100.0,
+			Status:      status,
+			NumWorkers:  1,
+			LastRefresh: lastRefresh,
+		},
+		{
+			Name:        "图片缓存池",
+			Size:        totalImages,
+			Available:   totalImages,
+			Used:        0,
+			Utilization: 100.0,
+			Status:      status,
+			NumWorkers:  1,
+			LastRefresh: lastRefresh,
+		},
+	}
+
+	return pools
 }
