@@ -2,11 +2,16 @@
   <div class="tree-node">
     <!-- 节点行 -->
     <div
-      :class="['node-row', { active: isActive, selected: isSelected }]"
+      :class="['node-row', { active: isActive, selected: isSelected, 'drag-over': isDragOver }]"
       :style="{ paddingLeft: depth * 16 + 8 + 'px' }"
+      draggable="true"
       @click="handleClick"
       @dblclick="handleDblClick"
-      @contextmenu.prevent="handleContextMenu"
+      @contextmenu.prevent.stop="handleContextMenu"
+      @dragstart="handleDragStart"
+      @dragover.prevent="handleDragOver"
+      @dragleave="handleDragLeave"
+      @drop.prevent="handleDrop"
     >
       <!-- 展开图标 -->
       <span v-if="node.type === 'dir'" class="expand-icon" @click.stop="toggleExpand">
@@ -41,13 +46,14 @@
         @select="$emit('select', $event)"
         @open="$emit('open', $event)"
         @context-menu="$emit('context-menu', $event)"
+        @move="$emit('move', $event)"
       />
     </template>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 import { CaretRight, Folder, Document } from '@element-plus/icons-vue'
 import type { TreeNode } from '../types'
 import type { EditorStore } from '../composables/useEditorStore'
@@ -63,7 +69,10 @@ const emit = defineEmits<{
   (e: 'select', node: TreeNode): void
   (e: 'open', node: TreeNode): void
   (e: 'context-menu', payload: { event: MouseEvent; node: TreeNode }): void
+  (e: 'move', payload: { sourcePath: string; targetPath: string }): void
 }>()
+
+const isDragOver = ref(false)
 
 const depth = computed(() => props.depth ?? 0)
 
@@ -106,6 +115,43 @@ function handleDblClick() {
 function handleContextMenu(event: MouseEvent) {
   emit('context-menu', { event, node: props.node })
 }
+
+// 拖放处理
+function handleDragStart(event: DragEvent) {
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+    event.dataTransfer.setData('text/plain', props.node.path)
+  }
+}
+
+function handleDragOver(event: DragEvent) {
+  // 只有目录可以作为放置目标
+  if (props.node.type === 'dir') {
+    isDragOver.value = true
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = 'move'
+    }
+  }
+}
+
+function handleDragLeave() {
+  isDragOver.value = false
+}
+
+function handleDrop(event: DragEvent) {
+  isDragOver.value = false
+  if (props.node.type !== 'dir') return
+
+  const sourcePath = event.dataTransfer?.getData('text/plain')
+  if (!sourcePath) return
+
+  // 不能移动到自身或自身的子目录
+  if (sourcePath === props.node.path || props.node.path.startsWith(sourcePath + '/')) {
+    return
+  }
+
+  emit('move', { sourcePath, targetPath: props.node.path })
+}
 </script>
 
 <style scoped>
@@ -128,6 +174,12 @@ function handleContextMenu(event: MouseEvent) {
 
 .node-row.active {
   background: #094771;
+}
+
+.node-row.drag-over {
+  background: #264f78;
+  outline: 1px dashed #007acc;
+  outline-offset: -1px;
 }
 
 .expand-icon {

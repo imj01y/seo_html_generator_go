@@ -24,6 +24,7 @@ export interface Tab {
   content: string
   originalContent: string
   language: string
+  lastSavedAt?: Date
 }
 
 // ============================================

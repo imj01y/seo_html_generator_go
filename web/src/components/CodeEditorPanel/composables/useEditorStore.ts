@@ -32,6 +32,7 @@ export interface EditorStore {
   closeTab: (tabId: string) => void
   closeOtherTabs: (tabId: string) => void
   closeTabsToRight: (tabId: string) => void
+  closeAllTabs: () => void
   setActiveTab: (tabId: string) => void
   updateTabContent: (tabId: string, content: string) => void
   saveTab: (tabId: string) => Promise<void>
@@ -172,6 +173,11 @@ export function useEditorStore(
     }
   }
 
+  function closeAllTabs() {
+    tabs.value = []
+    activeTabId.value = null
+  }
+
   function setActiveTab(tabId: string) {
     activeTabId.value = tabId
   }
@@ -189,6 +195,7 @@ export function useEditorStore(
 
     await api.saveFile(tab.path, tab.content)
     tab.originalContent = tab.content
+    tab.lastSavedAt = new Date()
   }
 
   function isTabModified(tabId: string): boolean {
@@ -245,6 +252,7 @@ export function useEditorStore(
     closeTab,
     closeOtherTabs,
     closeTabsToRight,
+    closeAllTabs,
     setActiveTab,
     updateTabContent,
     saveTab,

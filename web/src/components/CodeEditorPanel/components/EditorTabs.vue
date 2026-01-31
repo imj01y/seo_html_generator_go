@@ -44,6 +44,7 @@ const tabMenuItems: MenuItem[] = [
   { key: 'close', label: '关闭' },
   { key: 'close-others', label: '关闭其他' },
   { key: 'close-right', label: '关闭右侧' },
+  { key: 'close-all', label: '关闭所有' },
   { key: 'divider', divider: true },
   { key: 'copy-path', label: '复制路径' }
 ]
@@ -66,6 +67,9 @@ function handleTabMenuSelect(key: string) {
       break
     case 'close-right':
       props.store.closeTabsToRight(tab.id)
+      break
+    case 'close-all':
+      props.store.closeAllTabs()
       break
     case 'copy-path':
       navigator.clipboard.writeText(tab.path)

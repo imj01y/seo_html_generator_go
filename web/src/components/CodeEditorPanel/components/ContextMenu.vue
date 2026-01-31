@@ -2,19 +2,22 @@
   <Teleport to="body">
     <div
       v-if="visible"
-      class="context-menu"
+      ref="menuRef"
+      class="ce-context-menu"
       :style="{ left: x + 'px', top: y + 'px' }"
       @contextmenu.prevent
     >
-      <div
-        v-for="item in items"
-        :key="item.key"
-        :class="['menu-item', { divider: item.divider, danger: item.danger, disabled: item.disabled }]"
-        @click="handleClick(item)"
-      >
-        <span v-if="!item.divider" class="label">{{ item.label }}</span>
-        <span v-if="item.shortcut" class="shortcut">{{ item.shortcut }}</span>
-      </div>
+      <template v-for="item in items" :key="item.key">
+        <div v-if="item.divider" class="ce-menu-divider"></div>
+        <div
+          v-else
+          :class="['ce-menu-item', { danger: item.danger, disabled: item.disabled }]"
+          @click="handleClick(item)"
+        >
+          <span class="ce-menu-label">{{ item.label }}</span>
+          <span v-if="item.shortcut" class="ce-menu-shortcut">{{ item.shortcut }}</span>
+        </div>
+      </template>
     </div>
   </Teleport>
 </template>
@@ -35,6 +38,7 @@ const emit = defineEmits<{
 const visible = ref(false)
 const x = ref(0)
 const y = ref(0)
+const menuRef = ref<HTMLElement>()
 
 function show(event: MouseEvent) {
   x.value = event.clientX
@@ -42,9 +46,8 @@ function show(event: MouseEvent) {
   visible.value = true
 
   setTimeout(() => {
-    const menu = document.querySelector('.context-menu') as HTMLElement
-    if (menu) {
-      const rect = menu.getBoundingClientRect()
+    if (menuRef.value) {
+      const rect = menuRef.value.getBoundingClientRect()
       if (rect.right > window.innerWidth) {
         x.value = window.innerWidth - rect.width - 5
       }
@@ -61,44 +64,45 @@ function hide() {
 }
 
 function handleClick(item: MenuItem & { disabled?: boolean }) {
-  if (item.divider || item.disabled) return
+  if (item.disabled) return
   emit('select', item.key)
   hide()
 }
 
 function handleClickOutside(event: MouseEvent) {
   const target = event.target as HTMLElement
-  if (!target.closest('.context-menu')) {
+  if (!target.closest('.ce-context-menu')) {
     hide()
   }
 }
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
-  document.addEventListener('contextmenu', hide)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
-  document.removeEventListener('contextmenu', hide)
 })
 
 defineExpose({ show, hide })
 </script>
 
-<style scoped>
-.context-menu {
+<style>
+/* 不使用 scoped，因为 Teleport 到 body 时 scoped 样式可能不生效 */
+/* 使用 ce- 前缀避免全局样式冲突 */
+
+.ce-context-menu {
   position: fixed;
   z-index: 9999;
-  min-width: 160px;
-  background: #1e1e1e;
-  border: 1px solid #454545;
-  border-radius: 4px;
+  background: #252526;
+  border: 1px solid #3c3c3c;
+  border-radius: 6px;
   padding: 4px 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  min-width: 120px;
 }
 
-.menu-item {
+.ce-menu-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -106,32 +110,35 @@ defineExpose({ show, hide })
   cursor: pointer;
   color: #cccccc;
   font-size: 13px;
+  line-height: 20px;
 }
 
-.menu-item:hover:not(.divider):not(.disabled) {
+.ce-menu-item:hover:not(.disabled) {
   background: #094771;
 }
 
-.menu-item.divider {
-  height: 1px;
-  background: #454545;
-  margin: 4px 0;
-  padding: 0;
-  cursor: default;
-}
-
-.menu-item.danger .label {
+.ce-menu-item.danger .ce-menu-label {
   color: #f48771;
 }
 
-.menu-item.disabled {
+.ce-menu-item.disabled {
   color: #6e6e6e;
   cursor: not-allowed;
 }
 
-.shortcut {
+.ce-menu-divider {
+  height: 1px;
+  background: #3c3c3c;
+  margin: 4px 0;
+}
+
+.ce-menu-label {
+  flex: 1;
+}
+
+.ce-menu-shortcut {
   color: #6e6e6e;
   font-size: 12px;
-  margin-left: 20px;
+  margin-left: 16px;
 }
 </style>

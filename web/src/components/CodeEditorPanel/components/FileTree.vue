@@ -17,7 +17,14 @@
     </div>
 
     <!-- 树内容 -->
-    <div class="tree-content" v-loading="store.treeLoading.value">
+    <div
+      :class="['tree-content', { 'drag-over-root': isDragOverRoot }]"
+      v-loading="store.treeLoading.value"
+      @contextmenu.prevent="handleTreeContextMenu"
+      @dragover.prevent="handleRootDragOver"
+      @dragleave="handleRootDragLeave"
+      @drop.prevent="handleRootDrop"
+    >
       <template v-if="store.fileTree.value">
         <FileTreeNode
           v-for="child in sortedRootChildren"
@@ -29,6 +36,7 @@
           @select="handleSelect"
           @open="handleOpen"
           @context-menu="handleContextMenu"
+          @move="handleMove"
         />
       </template>
       <div v-else-if="!store.treeLoading.value" class="empty-tip">
@@ -53,6 +61,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Refresh, DocumentAdd, FolderAdd } from '@element-plus/icons-vue'
 import type { TreeNode, MenuItem, CodeEditorApi } from '../types'
 import type { EditorStore } from '../composables/useEditorStore'
@@ -79,6 +88,7 @@ const emit = defineEmits<{
 
 const contextMenuRef = ref<InstanceType<typeof ContextMenu>>()
 const contextNode = ref<TreeNode | null>(null)
+const isDragOverRoot = ref(false)
 
 const activePath = computed(() => props.store.activeTab.value?.path || null)
 
@@ -93,8 +103,17 @@ const sortedRootChildren = computed(() => {
 const runnableExts = computed(() => props.runnableExtensions || ['.py'])
 
 const contextMenuItems = computed<MenuItem[]>(() => {
-  if (!contextNode.value) return []
   const node = contextNode.value
+
+  // 空白区域右键：只显示新建选项
+  if (!node) {
+    return [
+      { key: 'new-file', label: '新建文件' },
+      { key: 'new-dir', label: '新建目录' },
+    ]
+  }
+
+  // 节点上右键：显示完整菜单
   const isFile = node.type === 'file'
   const isRunnable = isFile && runnableExts.value.some(ext => node.name.endsWith(ext))
 
@@ -146,10 +165,35 @@ function handleContextMenu(payload: { event: MouseEvent; node: TreeNode }) {
   contextMenuRef.value?.show(payload.event)
 }
 
+function handleTreeContextMenu(event: MouseEvent) {
+  // 检查是否点击在节点上（由 FileTreeNode 处理）
+  const target = event.target as HTMLElement
+  if (target.closest('.node-row')) {
+    return // 让 FileTreeNode 的事件处理
+  }
+
+  // 空白区域右键
+  contextNode.value = null
+  contextMenuRef.value?.show(event)
+}
+
 function handleMenuSelect(key: string) {
-  if (!contextNode.value) return
   const node = contextNode.value
 
+  // 空白区域右键的菜单选项
+  if (!node) {
+    switch (key) {
+      case 'new-file':
+        emit('create-file', '') // 根目录
+        break
+      case 'new-dir':
+        emit('create-dir', '') // 根目录
+        break
+    }
+    return
+  }
+
+  // 节点上右键的菜单选项
   switch (key) {
     case 'new-file':
       emit('create-file', node.type === 'dir' ? node.path : getParentPath(node.path))
@@ -184,6 +228,63 @@ function getParentPath(path: string): string {
   const parts = path.split('/')
   parts.pop()
   return parts.join('/')
+}
+
+async function handleMove(payload: { sourcePath: string; targetPath: string }) {
+  const { sourcePath, targetPath } = payload
+  const fileName = sourcePath.split('/').pop()
+  const newPath = targetPath ? targetPath + '/' + fileName : fileName
+
+  try {
+    await props.api.moveItem(sourcePath, newPath!)
+    await props.store.loadFileTree()
+    ElMessage.success('移动成功')
+  } catch (e: any) {
+    ElMessage.error(e.message || '移动失败')
+  }
+}
+
+// 根目录拖放处理
+function handleRootDragOver(event: DragEvent) {
+  // 检查是否拖到了节点上（由 FileTreeNode 处理）
+  const target = event.target as HTMLElement
+  if (target.closest('.node-row')) {
+    isDragOverRoot.value = false
+    return
+  }
+  isDragOverRoot.value = true
+  if (event.dataTransfer) {
+    event.dataTransfer.dropEffect = 'move'
+  }
+}
+
+function handleRootDragLeave(event: DragEvent) {
+  // 检查是否离开了 tree-content 区域
+  const relatedTarget = event.relatedTarget as HTMLElement
+  if (!relatedTarget?.closest('.tree-content')) {
+    isDragOverRoot.value = false
+  }
+}
+
+function handleRootDrop(event: DragEvent) {
+  isDragOverRoot.value = false
+
+  // 检查是否放到了节点上（由 FileTreeNode 处理）
+  const target = event.target as HTMLElement
+  if (target.closest('.node-row')) {
+    return
+  }
+
+  const sourcePath = event.dataTransfer?.getData('text/plain')
+  if (!sourcePath) return
+
+  // 如果文件已经在根目录，不需要移动
+  if (!sourcePath.includes('/')) {
+    return
+  }
+
+  // 移动到根目录
+  handleMove({ sourcePath, targetPath: '' })
 }
 
 // 拖拽调整宽度
@@ -257,6 +358,13 @@ onMounted(() => {
   flex: 1;
   overflow-y: auto;
   padding: 4px 0;
+  transition: background-color 0.2s;
+}
+
+.tree-content.drag-over-root {
+  background-color: rgba(0, 122, 204, 0.1);
+  outline: 1px dashed #007acc;
+  outline-offset: -2px;
 }
 
 .empty-tip {

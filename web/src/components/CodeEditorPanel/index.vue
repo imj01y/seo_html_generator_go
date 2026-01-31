@@ -1,5 +1,5 @@
 <template>
-  <div class="code-editor-panel">
+  <div :class="['code-editor-panel', { maximized: isMaximized }]">
     <!-- 页面头部 -->
     <div class="panel-header">
       <h2>{{ title }}</h2>
@@ -24,6 +24,12 @@
             重新构建
           </el-button>
         </slot>
+        <el-tooltip :content="isMaximized ? '还原 (Esc)' : '最大化'" placement="bottom">
+          <el-button
+            :icon="isMaximized ? Close : FullScreen"
+            @click="toggleMaximize"
+          />
+        </el-tooltip>
       </div>
     </div>
 
@@ -62,26 +68,25 @@
       </div>
     </div>
 
-    <!-- 新建弹窗 -->
-    <CreateDialog
-      v-model="createDialogVisible"
-      :type="createType"
-      @confirm="handleCreate"
-    />
-
-    <!-- 重命名弹窗 -->
-    <RenameDialog
-      v-model="renameDialogVisible"
-      :current-name="renamingNode?.name || ''"
-      @confirm="handleRename"
+    <!-- 统一弹窗 -->
+    <PromptDialog
+      :visible="dialogVisible"
+      :title="dialogConfig.title"
+      :mode="dialogConfig.mode"
+      :type="dialogConfig.type"
+      :message="dialogConfig.message"
+      :placeholder="dialogConfig.placeholder"
+      :default-value="dialogConfig.defaultValue"
+      @confirm="handleDialogConfirm"
+      @cancel="dialogVisible = false"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, provide, onMounted } from 'vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, Setting } from '@element-plus/icons-vue'
+import { ref, provide, onMounted, onUnmounted } from 'vue'
+import { ElMessage } from 'element-plus'
+import { Refresh, Setting, FullScreen, Close } from '@element-plus/icons-vue'
 import type { TreeNode, CodeEditorApi, CodeEditorPanelProps } from './types'
 import { useEditorStore } from './composables/useEditorStore'
 
@@ -89,8 +94,7 @@ import FileTree from './components/FileTree.vue'
 import EditorTabs from './components/EditorTabs.vue'
 import MonacoEditor from './components/MonacoEditor.vue'
 import LogPanel from './components/LogPanel.vue'
-import CreateDialog from './components/CreateDialog.vue'
-import RenameDialog from './components/RenameDialog.vue'
+import PromptDialog from './components/PromptDialog.vue'
 
 const props = withDefaults(defineProps<CodeEditorPanelProps>(), {
   title: '代码编辑器',
@@ -116,14 +120,65 @@ provide('editorApi', props.api)
 // 控制状态
 const restarting = ref(false)
 const rebuilding = ref(false)
+const isMaximized = ref(false)
 
-// 弹窗状态
-const createDialogVisible = ref(false)
-const createType = ref<'file' | 'dir'>('file')
-const createParentPath = ref('')
+// 最大化/还原
+function toggleMaximize() {
+  isMaximized.value = !isMaximized.value
+}
 
-const renameDialogVisible = ref(false)
-const renamingNode = ref<TreeNode | null>(null)
+function handleKeyDown(event: KeyboardEvent) {
+  // Esc 退出最大化
+  if (event.key === 'Escape' && isMaximized.value) {
+    isMaximized.value = false
+    return
+  }
+
+  // Ctrl+S 保存
+  if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+    event.preventDefault()
+    event.stopPropagation()
+    handleSave()
+  }
+}
+
+async function handleSave() {
+  const tab = store.activeTab.value
+  if (!tab) return
+
+  // 检查是否有修改
+  if (!store.isTabModified(tab.id)) {
+    return
+  }
+
+  try {
+    await store.saveTab(tab.id)
+    ElMessage.success('保存成功')
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeyDown)
+})
+
+// 统一弹窗状态
+const dialogVisible = ref(false)
+const dialogConfig = ref({
+  title: '',
+  mode: 'input' as 'input' | 'confirm',
+  type: 'info' as 'warning' | 'danger' | 'info',
+  message: '',
+  placeholder: '',
+  defaultValue: ''
+})
+const dialogAction = ref<string>('') // 'create-file', 'create-dir', 'rename', 'delete'
+const dialogContext = ref<{ parentPath?: string; node?: TreeNode }>({})
 
 // 运行控制
 let stopRun: (() => void) | null = null
@@ -131,66 +186,99 @@ let stopRun: (() => void) | null = null
 // 计算属性
 const fileTreeTitle = props.title?.replace(/管理|编辑器/g, '').trim() || 'FILES'
 
-// 新建
+// 显示新建弹窗
 function showCreateDialog(type: 'file' | 'dir', parentPath?: string) {
-  createType.value = type
-  createParentPath.value = parentPath || ''
-  createDialogVisible.value = true
-}
-
-async function handleCreate(name: string) {
-  try {
-    await props.api.createItem(createParentPath.value, name, createType.value)
-    ElMessage.success('创建成功')
-    store.loadFileTree()
-  } catch (e: any) {
-    ElMessage.error(e.message || '创建失败')
+  dialogAction.value = type === 'file' ? 'create-file' : 'create-dir'
+  dialogContext.value = { parentPath: parentPath || '' }
+  dialogConfig.value = {
+    title: type === 'file' ? '新建文件' : '新建文件夹',
+    mode: 'input',
+    type: 'info',
+    message: '',
+    placeholder: type === 'file' ? '请输入文件名' : '请输入文件夹名',
+    defaultValue: ''
   }
+  dialogVisible.value = true
 }
 
-// 重命名
+// 显示重命名弹窗
 function showRenameDialog(node: TreeNode) {
-  renamingNode.value = node
-  renameDialogVisible.value = true
-}
-
-async function handleRename(newName: string) {
-  if (!renamingNode.value) return
-
-  const oldPath = renamingNode.value.path
-  const parentPath = oldPath.split('/').slice(0, -1).join('/')
-  const newPath = parentPath ? `${parentPath}/${newName}` : newName
-
-  try {
-    await props.api.moveItem(oldPath, newPath)
-    ElMessage.success('重命名成功')
-    store.loadFileTree()
-  } catch (e: any) {
-    ElMessage.error(e.message || '重命名失败')
+  dialogAction.value = 'rename'
+  dialogContext.value = { node }
+  dialogConfig.value = {
+    title: '重命名',
+    mode: 'input',
+    type: 'info',
+    message: '',
+    placeholder: '请输入新名称',
+    defaultValue: node.name
   }
+  dialogVisible.value = true
 }
 
-// 删除
-async function handleDelete(node: TreeNode) {
-  try {
-    await ElMessageBox.confirm(
-      `确定删除 ${node.name} 吗？${node.type === 'dir' ? '目录下所有文件都将被删除。' : ''}`,
-      '确认删除',
-      { type: 'warning' }
-    )
-    await props.api.deleteItem(node.path)
-    ElMessage.success('删除成功')
-    store.loadFileTree()
+// 显示删除确认弹窗
+function handleDelete(node: TreeNode) {
+  dialogAction.value = 'delete'
+  dialogContext.value = { node }
+  dialogConfig.value = {
+    title: '删除确认',
+    mode: 'confirm',
+    type: 'danger',
+    message: `确定删除 ${node.name} 吗？${node.type === 'dir' ? '目录下所有文件都将被删除。' : ''}`,
+    placeholder: '',
+    defaultValue: ''
+  }
+  dialogVisible.value = true
+}
 
-    // 如果删除的文件已打开，关闭对应标签
-    const tab = store.tabs.value.find(t => t.path === node.path)
-    if (tab) {
-      store.closeTab(tab.id)
+// 统一处理弹窗确认
+async function handleDialogConfirm(value?: string) {
+  dialogVisible.value = false
+
+  try {
+    switch (dialogAction.value) {
+      case 'create-file':
+      case 'create-dir': {
+        const type = dialogAction.value === 'create-file' ? 'file' : 'dir'
+        await props.api.createItem(dialogContext.value.parentPath || '', value!, type)
+        ElMessage.success('创建成功')
+        store.loadFileTree()
+        break
+      }
+
+      case 'rename': {
+        const node = dialogContext.value.node!
+        const oldPath = node.path
+        const parentPath = oldPath.split('/').slice(0, -1).join('/')
+        const newPath = parentPath ? `${parentPath}/${value}` : value!
+        await props.api.moveItem(oldPath, newPath)
+        ElMessage.success('重命名成功')
+        store.loadFileTree()
+        break
+      }
+
+      case 'delete': {
+        const node = dialogContext.value.node!
+        await props.api.deleteItem(node.path)
+        ElMessage.success('删除成功')
+        store.loadFileTree()
+
+        // 如果删除的文件已打开，关闭对应标签
+        const tab = store.tabs.value.find(t => t.path === node.path)
+        if (tab) {
+          store.closeTab(tab.id)
+        }
+        break
+      }
     }
   } catch (e: any) {
-    if (e !== 'cancel') {
-      ElMessage.error(e.message || '删除失败')
-    }
+    const actionName = {
+      'create-file': '创建',
+      'create-dir': '创建',
+      'rename': '重命名',
+      'delete': '删除'
+    }[dialogAction.value] || '操作'
+    ElMessage.error(e.message || `${actionName}失败`)
   }
 }
 
@@ -255,6 +343,18 @@ defineExpose({
   background: #1e1e1e;
   border-radius: 4px;
   overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.code-editor-panel.maximized {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100vh;
+  z-index: 9999;
+  border-radius: 0;
 }
 
 .panel-header {
