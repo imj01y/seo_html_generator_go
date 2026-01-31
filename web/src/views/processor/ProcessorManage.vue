@@ -1,15 +1,13 @@
 <template>
   <div class="processor-manage-page">
-    <div class="page-header">
-      <h2 class="title">数据加工管理</h2>
-      <el-button size="small" @click="loadAll" :loading="loading">
-        <el-icon><Refresh /></el-icon>
-        刷新
-      </el-button>
-    </div>
-
     <!-- 状态卡片 -->
     <el-row :gutter="16" class="status-cards">
+      <el-col :xs="24" class="status-header">
+        <el-button size="small" @click="loadAll" :loading="loading">
+          <el-icon><Refresh /></el-icon>
+          刷新
+        </el-button>
+      </el-col>
       <el-col :xs="12" :sm="8" :md="4">
         <div class="stat-card">
           <div class="stat-label">待处理队列</div>
@@ -428,17 +426,10 @@ onUnmounted(() => {
 
 <style lang="scss" scoped>
 .processor-manage-page {
-  .page-header {
+  .status-header {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 20px;
-
-    .title {
-      font-size: 20px;
-      font-weight: 600;
-      color: #303133;
-    }
+    justify-content: flex-end;
+    margin-bottom: 12px;
   }
 
   .status-cards {
