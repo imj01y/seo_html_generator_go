@@ -122,6 +122,9 @@ function handleRefresh() {
 function handleSelect(node: TreeNode) {
   if (node.type === 'dir') {
     store.toggleDir(node.path)
+  } else {
+    // 单击文件时打开
+    store.openFile(node.path, node.name)
   }
 }
 
