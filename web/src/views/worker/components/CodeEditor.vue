@@ -78,8 +78,8 @@ monaco.languages.setMonarchTokensProvider('python-pycharm', {
       // 装饰器 - 黄绿色
       [/@[a-zA-Z_]\w*/, 'decorator'],
 
-      // self.属性 或 cls.属性 - 整体处理：self 紫色斜体，属性紫色
-      [/\b(self|cls)(\.)([a-zA-Z_]\w*)/, ['variable.self', 'delimiter', 'variable.instance']],
+      // self.属性 或 cls.属性 - 整体处理：self 紫色斜体，属性普通色
+      [/\b(self|cls)(\.)([a-zA-Z_]\w*)/, ['variable.self', 'delimiter', 'identifier']],
 
       // 单独的 self, cls - 紫色斜体
       [/\b(self|cls)\b/, 'variable.self'],
@@ -90,26 +90,26 @@ monaco.languages.setMonarchTokensProvider('python-pycharm', {
       // 类定义：class ClassName
       [/\b(class)(\s+)([a-zA-Z_]\w*)/, ['keyword', 'white', 'class.declaration']],
 
-      // 全大写常量 - 紫色
-      [/\b[A-Z][A-Z_0-9]+\b/, 'constant'],
-
-      // 私有属性（以下划线开头）- 紫色
-      [/\b_[a-zA-Z_]\w*\b/, 'variable.instance'],
-
       // 关键字 - 橙色（不加粗）
       [/\b(and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b/, 'keyword'],
 
       // 布尔和 None - 橙色
       [/\b(True|False|None)\b/, 'keyword.constant'],
 
+      // Python 内置类型和异常 - 紫蓝色 #8888c6
+      [/\b(int|float|str|bool|list|dict|set|tuple|bytes|bytearray|memoryview|object|type|range|slice|frozenset|complex|super|property|classmethod|staticmethod|enumerate|zip|map|filter|reversed|sorted|min|max|sum|abs|round|len|repr|hash|id|input|print|open|format|iter|next|callable|isinstance|issubclass|hasattr|getattr|setattr|delattr|vars|dir|globals|locals|eval|exec|compile|Exception|BaseException|TypeError|ValueError|KeyError|IndexError|AttributeError|RuntimeError|StopIteration|GeneratorExit|AssertionError|ImportError|ModuleNotFoundError|FileNotFoundError|OSError|IOError|PermissionError|TimeoutError|ConnectionError|SyntaxError|IndentationError|SystemError|SystemExit|KeyboardInterrupt|MemoryError|RecursionError|ArithmeticError|FloatingPointError|OverflowError|ZeroDivisionError|LookupError|EOFError|NotImplementedError|Warning|UserWarning|DeprecationWarning|RuntimeWarning|FutureWarning|ResourceWarning)\b/, 'builtin'],
+
       // 返回类型注解 -> type
       [/(->)(\s*)([a-zA-Z_]\w*)/, ['operator', 'white', 'type']],
 
       // 类型注解 : type (在参数中)
-      [/(:)(\s*)(int|float|str|bool|list|dict|set|tuple|bytes|object|Optional|List|Dict|Set|Tuple|Any|Union|Callable|Iterable|Iterator|Generator)\b/, ['delimiter', 'white', 'type']],
+      [/(:)(\s*)(int|float|str|bool|list|dict|set|tuple|bytes|object|Optional|List|Dict|Set|Tuple|Any|Union|Callable|Iterable|Iterator|Generator)\b/, ['delimiter', 'white', 'builtin']],
 
-      // 魔术方法名 __xxx__
-      [/__[a-zA-Z_]+__/, 'function.magic'],
+      // 魔术变量名 __xxx__ - 普通变量色
+      [/__[a-zA-Z_]+__/, 'identifier'],
+
+      // 全大写常量 - 紫色
+      [/\b[A-Z][A-Z_0-9]+\b/, 'constant'],
 
       // 普通标识符
       [/[a-zA-Z_]\w*/, 'identifier'],
@@ -215,15 +215,15 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // self, cls - RGB(148, 85, 141) = #94558d
     { token: 'variable.self', foreground: '94558d', fontStyle: 'italic' },
 
-    // 实例属性（self.xxx, _xxx）- 紫色
-    { token: 'variable.instance', foreground: '94558d' },
-
     // 注释 - 灰色
     { token: 'comment', foreground: '808080', fontStyle: 'italic' },
 
     // 关键字 (async, def, import 等) - RGB(206, 141, 97) = #ce8d61
     { token: 'keyword', foreground: 'ce8d61' },
     { token: 'keyword.constant', foreground: 'ce8d61' },
+
+    // Python 内置类型和异常 - RGB(136, 136, 198) = #8888c6
+    { token: 'builtin', foreground: '8888c6' },
 
     // 字符串 - RGB(92, 170, 114) = #5caa72
     { token: 'string', foreground: '5caa72' },
@@ -242,20 +242,14 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // 函数名 - RGB(85, 167, 242) = #55a7f2 (蓝色)
     { token: 'function.declaration', foreground: '55a7f2' },
 
-    // 魔术变量 (__name__ 等) - 普通变量色 #bbbdc0
-    { token: 'function.magic', foreground: 'bbbdc0' },
-
     // 类声明名 - 普通变量色 #bbbdc0
     { token: 'class.declaration', foreground: 'bbbdc0' },
 
-    // 类型注解 - 关键字色 #ce8d61
-    { token: 'type', foreground: 'ce8d61' },
+    // 类型注解 - 内置类型色 #8888c6
+    { token: 'type', foreground: '8888c6' },
 
     // 常量（全大写）- 紫色
     { token: 'constant', foreground: '94558d' },
-
-    // 系统保留变量名 - RGB(135, 126, 134) = #877e86
-    { token: 'predefined', foreground: '877e86' },
 
     // 装饰器 - 黄色
     { token: 'decorator', foreground: 'bbb529' },
