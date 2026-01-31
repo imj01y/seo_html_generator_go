@@ -50,8 +50,9 @@ class ProjectLoader:
 
         # 按依赖顺序编译模块（简单实现：先编译非入口文件）
         for file in files:
-            filename = file['filename']
+            filepath = file['path']  # 路径格式如 /spider.py
             content = file['content']
+            filename = filepath.lstrip('/')  # 去掉前导斜杠
             module_name = filename.replace('.py', '')
             full_module_name = f"{package_name}.{module_name}"
 
@@ -75,10 +76,10 @@ class ProjectLoader:
         from database.db import fetch_all
 
         sql = """
-            SELECT filename, content
+            SELECT path, content
             FROM spider_project_files
-            WHERE project_id = %s
-            ORDER BY filename
+            WHERE project_id = %s AND type = 'file'
+            ORDER BY path
         """
         return await fetch_all(sql, (self.project_id,))
 
