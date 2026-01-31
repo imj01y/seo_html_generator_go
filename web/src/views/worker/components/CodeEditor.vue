@@ -213,16 +213,16 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // 注释 - 灰色
     { token: 'comment', foreground: '808080', fontStyle: 'italic' },
 
-    // 关键字 - 橙色
-    { token: 'keyword', foreground: 'cc7832' },
-    { token: 'keyword.constant', foreground: 'cc7832' },
+    // 关键字 (async, def, import 等) - RGB(206, 141, 97) = #ce8d61
+    { token: 'keyword', foreground: 'ce8d61' },
+    { token: 'keyword.constant', foreground: 'ce8d61' },
 
     // 字符串 - RGB(92, 170, 114) = #5caa72
     { token: 'string', foreground: '5caa72' },
     { token: 'string.docstring', foreground: '5caa72', fontStyle: 'italic' },
     { token: 'string.fstring', foreground: '5caa72' },
-    { token: 'string.fstring.bracket', foreground: 'cc7832' },
-    { token: 'string.escape', foreground: 'cc7832' },
+    { token: 'string.fstring.bracket', foreground: 'ce8d61' },
+    { token: 'string.escape', foreground: 'ce8d61' },
 
     // 数字 - 蓝色
     { token: 'number', foreground: '6897bb' },
@@ -233,13 +233,15 @@ monaco.editor.defineTheme('pycharm-darcula', {
 
     // 函数名 - RGB(85, 167, 242) = #55a7f2 (蓝色)
     { token: 'function.declaration', foreground: '55a7f2' },
-    { token: 'function.magic', foreground: '55a7f2' },
+
+    // 魔术变量 (__name__ 等) - 普通变量色 #b7bdc3
+    { token: 'function.magic', foreground: 'b7bdc3' },
 
     // 类声明名 - 普通色
     { token: 'class.declaration', foreground: 'b7bdc3' },
 
-    // 类型注解 - 橙色
-    { token: 'type', foreground: 'cc7832' },
+    // 类型注解 - 关键字色 #ce8d61
+    { token: 'type', foreground: 'ce8d61' },
 
     // 常量（全大写）- 紫色
     { token: 'constant', foreground: '94558d' },
@@ -264,7 +266,7 @@ monaco.editor.defineTheme('pycharm-darcula', {
     { token: 'string.value.json', foreground: '5caa72' },
 
     // YAML
-    { token: 'type.yaml', foreground: 'cc7832' },
+    { token: 'type.yaml', foreground: 'ce8d61' },
     { token: 'string.yaml', foreground: '5caa72' }
   ],
   colors: {
