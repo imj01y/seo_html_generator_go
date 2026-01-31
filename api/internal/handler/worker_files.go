@@ -1,9 +1,14 @@
 package api
 
 import (
+	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	core "seo-generator/api/internal/service"
 )
 
 // WorkerFilesHandler Worker 文件管理 handler
@@ -56,4 +61,98 @@ func (h *WorkerFilesHandler) validatePath(relativePath string) (string, bool) {
 	}
 
 	return fullPath, true
+}
+
+// ListDir 列出目录内容或读取文件
+// GET /api/worker/files/*path
+func (h *WorkerFilesHandler) ListDir(c *gin.Context) {
+	path := c.Param("path")
+	if path == "" || path == "/" {
+		path = ""
+	}
+
+	fullPath, ok := h.validatePath(path)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的路径")
+		return
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			core.FailWithCode(c, core.ErrNotFound)
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	// 如果是文件，返回文件内容
+	if !info.IsDir() {
+		h.readFile(c, fullPath, path, info)
+		return
+	}
+
+	// 读取目录内容
+	entries, err := os.ReadDir(fullPath)
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	var files []FileInfo
+	for _, entry := range entries {
+		name := entry.Name()
+
+		// 跳过隐藏文件和 __pycache__ 目录
+		if strings.HasPrefix(name, ".") || name == "__pycache__" {
+			continue
+		}
+
+		entryInfo, err := entry.Info()
+		if err != nil {
+			continue
+		}
+
+		fileType := "file"
+		if entry.IsDir() {
+			fileType = "dir"
+		}
+
+		files = append(files, FileInfo{
+			Name:  name,
+			Type:  fileType,
+			Size:  entryInfo.Size(),
+			Mtime: entryInfo.ModTime(),
+		})
+	}
+
+	// 排序：目录在前，按名称排序
+	sort.Slice(files, func(i, j int) bool {
+		if files[i].Type != files[j].Type {
+			return files[i].Type == "dir"
+		}
+		return files[i].Name < files[j].Name
+	})
+
+	core.Success(c, gin.H{
+		"path":  path,
+		"files": files,
+	})
+}
+
+// readFile 读取文件内容并返回 JSON
+func (h *WorkerFilesHandler) readFile(c *gin.Context, fullPath, relativePath string, info os.FileInfo) {
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	core.Success(c, gin.H{
+		"path":    relativePath,
+		"content": string(content),
+		"size":    info.Size(),
+		"mtime":   info.ModTime(),
+	})
 }
