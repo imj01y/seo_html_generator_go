@@ -445,6 +445,10 @@ type MoveRequest struct {
 // PATCH /api/worker/files/*path
 func (h *WorkerFilesHandler) Move(c *gin.Context) {
 	path := c.Param("path")
+	if path == "" || path == "/" {
+		core.FailWithMessage(c, core.ErrInvalidParam, "不能移动根目录")
+		return
+	}
 
 	oldPath, ok := h.validatePath(path)
 	if !ok {
@@ -528,8 +532,13 @@ func (h *WorkerFilesHandler) Upload(c *gin.Context) {
 
 	uploaded := make([]string, 0, len(files))
 	for _, file := range files {
-		// 验证文件名
-		if strings.ContainsAny(file.Filename, "/\\:*?\"<>|") {
+		// 检查文件大小
+		if file.Size > maxFileSize {
+			continue // 跳过过大的文件
+		}
+
+		// 验证文件名（非法字符和隐藏文件）
+		if strings.ContainsAny(file.Filename, "/\\:*?\"<>|") || strings.HasPrefix(file.Filename, ".") {
 			continue
 		}
 
