@@ -244,6 +244,34 @@ class KeywordCachePool:
         with self._consume_lock:
             return max(0, len(self._cache) - self._cursor)
 
+    async def resize(self, new_size: int) -> None:
+        """
+        动态调整缓存池大小
+
+        Args:
+            new_size: 新的缓存池大小
+        """
+        old_size = self._cache_size
+        self._cache_size = new_size
+        self._low_watermark = int(new_size * self._low_watermark_ratio)
+
+        logger.info(f"KeywordCachePool resized: {old_size} -> {new_size}, low_watermark: {self._low_watermark}")
+
+        # If new size is larger, trigger refill
+        if new_size > old_size:
+            await self._refill_cache()
+        elif new_size < old_size:
+            # Truncate if cache exceeds new size
+            with self._consume_lock:
+                current_remaining = len(self._cache) - self._cursor
+                if current_remaining > new_size:
+                    # Keep items from cursor position
+                    remaining = self._cache[self._cursor:self._cursor + new_size]
+                    self._cache = remaining
+                    self._keyword_set = set(remaining)
+                    self._cursor = 0
+                    logger.info(f"KeywordCachePool truncated to {len(self._cache)} keywords")
+
     def get_stats(self) -> Dict[str, Any]:
         """
         获取统计信息
