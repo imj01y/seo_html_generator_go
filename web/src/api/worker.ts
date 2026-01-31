@@ -38,24 +38,21 @@ export interface TreeNode {
  * 获取目录内容
  */
 export const getDir = async (path: string = ''): Promise<DirContent> => {
-  const res = await request.get(`/worker/files/${path}`)
-  return res.data
+  return request.get(`/worker/files/${path}`)
 }
 
 /**
  * 获取文件内容
  */
 export const getFile = async (path: string): Promise<FileContent> => {
-  const res = await request.get(`/worker/files/${path}`)
-  return res.data
+  return request.get(`/worker/files/${path}`)
 }
 
 /**
  * 获取目录树
  */
 export const getFileTree = async (): Promise<TreeNode> => {
-  const res = await request.get('/worker/files', { params: { tree: 'true' } })
-  return res.data
+  return request.get('/worker/files', { params: { tree: 'true' } })
 }
 
 /**
@@ -106,16 +103,14 @@ export const getDownloadUrl = (path: string): string => {
  * 重启 Worker
  */
 export const restartWorker = async (): Promise<{ message: string }> => {
-  const res = await request.post('/worker/restart')
-  return res.data
+  return request.post('/worker/restart')
 }
 
 /**
  * 重新构建 Worker
  */
 export const rebuildWorker = async (): Promise<{ message: string; output: string }> => {
-  const res = await request.post('/worker/rebuild')
-  return res.data
+  return request.post('/worker/rebuild')
 }
 
 // ============================================
