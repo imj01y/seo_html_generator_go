@@ -228,12 +228,14 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		spiderRoutes.DELETE("/:id", spidersHandler.Delete)
 		spiderRoutes.POST("/:id/toggle", spidersHandler.Toggle)
 
-		// 文件管理
-		spiderRoutes.GET("/:id/files", spidersHandler.ListFiles)
-		spiderRoutes.GET("/:id/files/:filename", spidersHandler.GetFile)
-		spiderRoutes.POST("/:id/files", spidersHandler.CreateFile)
-		spiderRoutes.PUT("/:id/files/:filename", spidersHandler.UpdateFile)
-		spiderRoutes.DELETE("/:id/files/:filename", spidersHandler.DeleteFile)
+		// 文件管理 - 支持树形结构
+		spiderRoutes.GET("/:id/files", spidersHandler.ListFiles)           // ?tree=true 返回树形结构
+		spiderRoutes.GET("/:id/files/*path", spidersHandler.GetFile)       // 获取文件内容
+		spiderRoutes.POST("/:id/files", spidersHandler.CreateItem)         // 根目录创建
+		spiderRoutes.POST("/:id/files/*path", spidersHandler.CreateItem)   // 指定目录创建
+		spiderRoutes.PUT("/:id/files/*path", spidersHandler.UpdateFile)    // 更新文件
+		spiderRoutes.DELETE("/:id/files/*path", spidersHandler.DeleteFile) // 删除文件/目录
+		spiderRoutes.PATCH("/:id/files/*path", spidersHandler.MoveItem)    // 移动/重命名
 
 		// 任务控制
 		spiderRoutes.POST("/:id/run", spidersHandler.Run)

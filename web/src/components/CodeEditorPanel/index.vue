@@ -63,6 +63,7 @@
         <LogPanel
           v-if="showLogPanel"
           :store="store"
+          :extra-tabs="extraTabs"
           @stop="handleStop"
         />
       </div>
@@ -87,7 +88,7 @@
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Setting, FullScreen, Close } from '@element-plus/icons-vue'
-import type { TreeNode, CodeEditorApi, CodeEditorPanelProps } from './types'
+import type { TreeNode, CodeEditorApi, CodeEditorPanelProps, ExtraTab } from './types'
 import { useEditorStore } from './composables/useEditorStore'
 
 import FileTree from './components/FileTree.vue'
@@ -96,7 +97,9 @@ import MonacoEditor from './components/MonacoEditor.vue'
 import LogPanel from './components/LogPanel.vue'
 import PromptDialog from './components/PromptDialog.vue'
 
-const props = withDefaults(defineProps<CodeEditorPanelProps>(), {
+const props = withDefaults(defineProps<CodeEditorPanelProps & {
+  extraTabs?: ExtraTab[]
+}>(), {
   title: '代码编辑器',
   runnable: false,
   showLogPanel: false,

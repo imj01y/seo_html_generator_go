@@ -4,6 +4,14 @@ import request from '@/utils/request'
 // 类型定义
 // ============================================
 
+// 树形文件结构
+export interface SpiderTreeNode {
+  name: string
+  path: string
+  type: 'file' | 'dir'
+  children?: SpiderTreeNode[]
+}
+
 export interface SpiderProject {
   id: number
   name: string
@@ -278,6 +286,102 @@ export const deleteProjectFile = async (
   filename: string
 ): Promise<MutationResponse> => {
   return await request.delete(`/spider-projects/${projectId}/files/${filename}`)
+}
+
+// ============================================
+// 树形文件操作 API（CodeEditorPanel 适配）
+// ============================================
+
+/**
+ * 获取项目文件树
+ */
+export const getProjectFileTree = async (projectId: number): Promise<SpiderTreeNode> => {
+  const res = await request.get(`/spider-projects/${projectId}/files`, {
+    params: { tree: 'true' }
+  })
+  return res.data
+}
+
+/**
+ * 获取文件内容（路径版本）
+ */
+export const getProjectFileByPath = async (
+  projectId: number,
+  path: string
+): Promise<{ content: string }> => {
+  // 移除前导 /
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path
+  const res = await request.get(`/spider-projects/${projectId}/files/${cleanPath}`)
+  return res.data
+}
+
+/**
+ * 保存文件（路径版本）
+ */
+export const saveProjectFileByPath = async (
+  projectId: number,
+  path: string,
+  content: string
+): Promise<void> => {
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path
+  await request.put(`/spider-projects/${projectId}/files/${cleanPath}`, { content })
+}
+
+/**
+ * 创建文件或目录
+ */
+export const createProjectItem = async (
+  projectId: number,
+  parentPath: string,
+  name: string,
+  type: 'file' | 'dir'
+): Promise<void> => {
+  const cleanPath = parentPath.startsWith('/') ? parentPath.slice(1) : parentPath
+  const url = cleanPath
+    ? `/spider-projects/${projectId}/files/${cleanPath}`
+    : `/spider-projects/${projectId}/files`
+  await request.post(url, { name, type })
+}
+
+/**
+ * 删除文件或目录
+ */
+export const deleteProjectItem = async (
+  projectId: number,
+  path: string
+): Promise<void> => {
+  const cleanPath = path.startsWith('/') ? path.slice(1) : path
+  await request.delete(`/spider-projects/${projectId}/files/${cleanPath}`)
+}
+
+/**
+ * 移动/重命名文件或目录
+ */
+export const moveProjectItem = async (
+  projectId: number,
+  oldPath: string,
+  newPath: string
+): Promise<void> => {
+  const cleanPath = oldPath.startsWith('/') ? oldPath.slice(1) : oldPath
+  await request.patch(`/spider-projects/${projectId}/files/${cleanPath}`, {
+    new_path: newPath
+  })
+}
+
+/**
+ * 创建 CodeEditorPanel API 适配器
+ */
+export function createSpiderEditorApi(projectId: number) {
+  return {
+    getFileTree: () => getProjectFileTree(projectId),
+    getFile: (path: string) => getProjectFileByPath(projectId, path),
+    saveFile: (path: string, content: string) => saveProjectFileByPath(projectId, path, content),
+    createItem: (parentPath: string, name: string, type: 'file' | 'dir') =>
+      createProjectItem(projectId, parentPath, name, type),
+    deleteItem: (path: string) => deleteProjectItem(projectId, path),
+    moveItem: (oldPath: string, newPath: string) => moveProjectItem(projectId, oldPath, newPath),
+    // 不提供 runFile，因为爬虫使用项目级测试运行
+  }
 }
 
 // ============================================

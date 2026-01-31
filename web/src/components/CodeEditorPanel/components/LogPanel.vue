@@ -18,9 +18,9 @@
           <CaretRight v-if="!store.logExpanded.value" />
           <CaretBottom v-else />
         </el-icon>
-        <span class="title">运行日志</span>
+        <span class="title">{{ currentTabLabel }}</span>
         <span v-if="store.logRunning.value" class="running-badge">运行中...</span>
-        <span v-else-if="store.logs.value.length === 0" class="empty-badge">无输出</span>
+        <span v-else-if="store.logs.value.length === 0 && activeTab === 'logs'" class="empty-badge">无输出</span>
       </div>
       <div class="header-right" @click.stop>
         <el-button
@@ -37,31 +37,65 @@
       </div>
     </div>
 
-    <!-- 日志内容 -->
-    <div v-if="store.logExpanded.value" class="log-content" ref="logContent">
-      <div
-        v-for="(log, index) in store.logs.value"
-        :key="index"
-        :class="['log-line', log.type]"
-      >
-        <span class="log-text">{{ log.data }}</span>
-        <span class="log-time">{{ formatTime(log.timestamp) }}</span>
+    <!-- 内容区 -->
+    <div v-if="store.logExpanded.value" class="log-body">
+      <!-- 标签页切换（如果有额外标签页） -->
+      <div v-if="extraTabs && extraTabs.length > 0" class="tab-bar">
+        <div
+          :class="['tab-item', { active: activeTab === 'logs' }]"
+          @click="activeTab = 'logs'"
+        >
+          日志
+        </div>
+        <div
+          v-for="tab in extraTabs"
+          :key="tab.key"
+          :class="['tab-item', { active: activeTab === tab.key }]"
+          @click="activeTab = tab.key"
+        >
+          {{ tab.label }}
+          <span v-if="tab.badge" class="tab-badge">{{ tab.badge }}</span>
+        </div>
       </div>
-      <div v-if="store.logs.value.length === 0" class="empty-log">
-        运行文件查看输出
+
+      <!-- 日志内容 -->
+      <div v-show="activeTab === 'logs'" class="log-content" ref="logContent">
+        <div
+          v-for="(log, index) in store.logs.value"
+          :key="index"
+          :class="['log-line', log.type]"
+        >
+          <span class="log-text">{{ log.data }}</span>
+          <span class="log-time">{{ formatTime(log.timestamp) }}</span>
+        </div>
+        <div v-if="store.logs.value.length === 0" class="empty-log">
+          运行文件查看输出
+        </div>
+      </div>
+
+      <!-- 额外标签页内容 -->
+      <div
+        v-for="tab in extraTabs"
+        :key="tab.key"
+        v-show="activeTab === tab.key"
+        class="extra-tab-content"
+      >
+        <component :is="tab.component" v-bind="tab.props" />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed } from 'vue'
 import { CaretRight, CaretBottom } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import type { EditorStore } from '../composables/useEditorStore'
+import type { ExtraTab } from '../types'
 
 const props = defineProps<{
   store: EditorStore
+  extraTabs?: ExtraTab[]
 }>()
 
 defineEmits<{
@@ -70,6 +104,13 @@ defineEmits<{
 
 const logContent = ref<HTMLElement>()
 const height = ref(200)
+const activeTab = ref('logs')
+
+const currentTabLabel = computed(() => {
+  if (activeTab.value === 'logs') return '运行日志'
+  const tab = props.extraTabs?.find(t => t.key === activeTab.value)
+  return tab?.label || '运行日志'
+})
 
 function toggleExpand() {
   props.store.logExpanded.value = !props.store.logExpanded.value
@@ -80,7 +121,7 @@ function startResize(event: MouseEvent) {
   const startHeight = height.value
 
   function onMouseMove(e: MouseEvent) {
-    const newHeight = Math.max(100, Math.min(400, startHeight - (e.clientY - startY)))
+    const newHeight = Math.max(100, Math.min(500, startHeight - (e.clientY - startY)))
     height.value = newHeight
   }
 
@@ -185,7 +226,50 @@ watch(() => props.store.logs.value.length, () => {
   gap: 4px;
 }
 
-.log-content {
+.log-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tab-bar {
+  display: flex;
+  gap: 0;
+  padding: 0 12px;
+  background: #252526;
+  border-bottom: 1px solid #3c3c3c;
+}
+
+.tab-item {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: #808080;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab-item:hover {
+  color: #cccccc;
+}
+
+.tab-item.active {
+  color: #cccccc;
+  border-bottom-color: #007acc;
+}
+
+.tab-badge {
+  margin-left: 4px;
+  padding: 0 6px;
+  font-size: 10px;
+  background: #007acc;
+  color: #fff;
+  border-radius: 10px;
+}
+
+.log-content,
+.extra-tab-content {
   flex: 1;
   overflow-y: auto;
   padding: 8px 12px;

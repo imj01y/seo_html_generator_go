@@ -91,6 +91,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '编辑项目', icon: 'Cpu', hidden: true }
       },
       {
+        path: 'spiders/projects/:id/code',
+        name: 'SpiderProjectCode',
+        component: () => import('@/views/spiders/ProjectCode.vue'),
+        meta: { title: '代码编辑', icon: 'Cpu', hidden: true }
+      },
+      {
         path: 'spiders/stats',
         name: 'SpiderStats',
         component: () => import('@/views/spiders/SpiderStats.vue'),

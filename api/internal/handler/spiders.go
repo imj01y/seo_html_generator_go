@@ -43,7 +43,8 @@ type SpiderProject struct {
 type SpiderProjectFile struct {
 	ID        int       `db:"id" json:"id"`
 	ProjectID int       `db:"project_id" json:"project_id"`
-	Filename  string    `db:"filename" json:"filename"`
+	Path      string    `db:"path" json:"path"`
+	Type      string    `db:"type" json:"type"` // "file" or "dir"
 	Content   string    `db:"content" json:"content"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
@@ -121,6 +122,25 @@ type SpiderStats struct {
 	Pending     int     `json:"pending"`
 	Processing  int     `json:"processing"`
 	SuccessRate float64 `json:"success_rate"`
+}
+
+// SpiderTreeNode 文件树节点
+type SpiderTreeNode struct {
+	Name     string            `json:"name"`
+	Path     string            `json:"path"`
+	Type     string            `json:"type"` // "file" or "dir"
+	Children []*SpiderTreeNode `json:"children,omitempty"`
+}
+
+// SpiderCreateItemRequest 创建文件或目录请求
+type SpiderCreateItemRequest struct {
+	Name string `json:"name" binding:"required"`
+	Type string `json:"type" binding:"required,oneof=file dir"`
+}
+
+// SpiderMoveRequest 移动/重命名请求
+type SpiderMoveRequest struct {
+	NewPath string `json:"new_path" binding:"required"`
 }
 
 // SpidersHandler 爬虫处理器
@@ -572,6 +592,12 @@ func (h *SpidersHandler) ListFiles(c *gin.Context) {
 		return
 	}
 
+	// 检查是否请求树形结构
+	if c.Query("tree") == "true" {
+		h.GetFileTree(c)
+		return
+	}
+
 	var exists2 int
 	sqlxDB.Get(&exists2, "SELECT COUNT(*) FROM spider_projects WHERE id = ?", id)
 	if exists2 == 0 {
@@ -581,11 +607,92 @@ func (h *SpidersHandler) ListFiles(c *gin.Context) {
 
 	var files []SpiderProjectFile
 	sqlxDB.Select(&files, `
-		SELECT id, project_id, filename, content, created_at, updated_at
-		FROM spider_project_files WHERE project_id = ? ORDER BY filename
+		SELECT id, project_id, path, type, content, created_at, updated_at
+		FROM spider_project_files WHERE project_id = ? ORDER BY path
 	`, id)
 
 	c.JSON(200, gin.H{"success": true, "data": files})
+}
+
+// GetFileTree 获取项目文件树
+func (h *SpidersHandler) GetFileTree(c *gin.Context) {
+	db, exists := c.Get("db")
+	if !exists {
+		c.JSON(500, gin.H{"success": false, "message": "数据库未连接"})
+		return
+	}
+	sqlxDB := db.(*sqlx.DB)
+
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(400, gin.H{"success": false, "message": "无效的ID"})
+		return
+	}
+
+	// 检查项目是否存在
+	var exists2 int
+	sqlxDB.Get(&exists2, "SELECT COUNT(*) FROM spider_projects WHERE id = ?", id)
+	if exists2 == 0 {
+		c.JSON(404, gin.H{"success": false, "message": "项目不存在"})
+		return
+	}
+
+	// 获取所有文件和目录
+	var files []SpiderProjectFile
+	sqlxDB.Select(&files, `
+		SELECT id, project_id, path, type, content, created_at, updated_at
+		FROM spider_project_files WHERE project_id = ? ORDER BY path
+	`, id)
+
+	// 构建树结构
+	root := &SpiderTreeNode{
+		Name:     "project",
+		Path:     "/",
+		Type:     "dir",
+		Children: []*SpiderTreeNode{},
+	}
+
+	for _, file := range files {
+		h.insertNode(root, file.Path, file.Type)
+	}
+
+	c.JSON(200, gin.H{"success": true, "data": root})
+}
+
+// insertNode 将文件/目录插入树结构
+func (h *SpidersHandler) insertNode(root *SpiderTreeNode, path string, nodeType string) {
+	parts := strings.Split(strings.TrimPrefix(path, "/"), "/")
+	current := root
+
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+
+		isLast := i == len(parts)-1
+		found := false
+
+		for _, child := range current.Children {
+			if child.Name == part {
+				current = child
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			newNode := &SpiderTreeNode{
+				Name: part,
+				Path: "/" + strings.Join(parts[:i+1], "/"),
+				Type: "dir",
+			}
+			if isLast {
+				newNode.Type = nodeType
+			}
+			current.Children = append(current.Children, newNode)
+			current = newNode
+		}
+	}
 }
 
 // GetFile 获取单个文件内容
@@ -598,24 +705,27 @@ func (h *SpidersHandler) GetFile(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	filename := c.Param("filename")
+	path := "/" + c.Param("path") // 路由参数不包含前导 /
 
 	var file SpiderProjectFile
 	err := sqlxDB.Get(&file, `
-		SELECT id, project_id, filename, content, created_at, updated_at
-		FROM spider_project_files WHERE project_id = ? AND filename = ?
-	`, id, filename)
+		SELECT id, project_id, path, type, content, created_at, updated_at
+		FROM spider_project_files WHERE project_id = ? AND path = ?
+	`, id, path)
 
 	if err != nil {
 		c.JSON(404, gin.H{"success": false, "message": "文件不存在"})
 		return
 	}
 
-	c.JSON(200, gin.H{"success": true, "data": file})
+	c.JSON(200, gin.H{"success": true, "data": gin.H{
+		"path":    file.Path,
+		"content": file.Content,
+	}})
 }
 
-// CreateFile 创建文件
-func (h *SpidersHandler) CreateFile(c *gin.Context) {
+// CreateItem 创建文件或目录
+func (h *SpidersHandler) CreateItem(c *gin.Context) {
 	db, exists := c.Get("db")
 	if !exists {
 		c.JSON(500, gin.H{"success": false, "message": "数据库未连接"})
@@ -624,6 +734,12 @@ func (h *SpidersHandler) CreateFile(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
+	parentPath := c.Param("path")
+	if parentPath == "" {
+		parentPath = "/"
+	} else {
+		parentPath = "/" + parentPath
+	}
 
 	var status string
 	err := sqlxDB.Get(&status, "SELECT status FROM spider_projects WHERE id = ?", id)
@@ -636,35 +752,51 @@ func (h *SpidersHandler) CreateFile(c *gin.Context) {
 		return
 	}
 
-	var req SpiderFileCreate
+	var req SpiderCreateItemRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"success": false, "message": "参数错误"})
+		c.JSON(400, gin.H{"success": false, "message": "参数错误: " + err.Error()})
 		return
 	}
 
-	if !strings.HasSuffix(req.Filename, ".py") {
-		c.JSON(400, gin.H{"success": false, "message": "文件名必须以 .py 结尾"})
+	// 验证文件名
+	if strings.ContainsAny(req.Name, `/\:*?"<>|`) || strings.HasPrefix(req.Name, ".") {
+		c.JSON(400, gin.H{"success": false, "message": "文件名包含非法字符"})
 		return
 	}
 
+	// 构建完整路径
+	var fullPath string
+	if parentPath == "/" {
+		fullPath = "/" + req.Name
+	} else {
+		fullPath = parentPath + "/" + req.Name
+	}
+
+	// 检查是否已存在
 	var existsCount int
-	sqlxDB.Get(&existsCount, "SELECT COUNT(*) FROM spider_project_files WHERE project_id = ? AND filename = ?", id, req.Filename)
+	sqlxDB.Get(&existsCount, "SELECT COUNT(*) FROM spider_project_files WHERE project_id = ? AND path = ?", id, fullPath)
 	if existsCount > 0 {
-		c.JSON(400, gin.H{"success": false, "message": "文件已存在"})
+		c.JSON(400, gin.H{"success": false, "message": "文件或目录已存在"})
 		return
+	}
+
+	// 创建
+	content := ""
+	if req.Type == "file" {
+		content = "# " + req.Name + "\n"
 	}
 
 	result, err := sqlxDB.Exec(`
-		INSERT INTO spider_project_files (project_id, filename, content) VALUES (?, ?, ?)
-	`, id, req.Filename, req.Content)
+		INSERT INTO spider_project_files (project_id, path, type, content) VALUES (?, ?, ?, ?)
+	`, id, fullPath, req.Type, content)
 
 	if err != nil {
-		c.JSON(500, gin.H{"success": false, "message": "创建失败"})
+		c.JSON(500, gin.H{"success": false, "message": "创建失败: " + err.Error()})
 		return
 	}
 
 	fileID, _ := result.LastInsertId()
-	c.JSON(200, gin.H{"success": true, "id": fileID, "message": "创建成功"})
+	c.JSON(200, gin.H{"success": true, "id": fileID, "path": fullPath, "message": "创建成功"})
 }
 
 // UpdateFile 更新文件内容
@@ -677,7 +809,7 @@ func (h *SpidersHandler) UpdateFile(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	filename := c.Param("filename")
+	path := "/" + c.Param("path")
 
 	var status string
 	err := sqlxDB.Get(&status, "SELECT status FROM spider_projects WHERE id = ?", id)
@@ -696,12 +828,12 @@ func (h *SpidersHandler) UpdateFile(c *gin.Context) {
 		return
 	}
 
-	// 使用 upsert 避免竞态条件
+	// 使用 upsert
 	_, err = sqlxDB.Exec(`
-		INSERT INTO spider_project_files (project_id, filename, content)
-		VALUES (?, ?, ?)
+		INSERT INTO spider_project_files (project_id, path, type, content)
+		VALUES (?, ?, 'file', ?)
 		ON DUPLICATE KEY UPDATE content = VALUES(content)
-	`, id, filename, req.Content)
+	`, id, path, req.Content)
 
 	if err != nil {
 		c.JSON(500, gin.H{"success": false, "message": "保存文件失败: " + err.Error()})
@@ -711,7 +843,7 @@ func (h *SpidersHandler) UpdateFile(c *gin.Context) {
 	c.JSON(200, gin.H{"success": true, "message": "保存成功"})
 }
 
-// DeleteFile 删除文件
+// DeleteFile 删除文件或目录
 func (h *SpidersHandler) DeleteFile(c *gin.Context) {
 	db, exists := c.Get("db")
 	if !exists {
@@ -721,7 +853,7 @@ func (h *SpidersHandler) DeleteFile(c *gin.Context) {
 	sqlxDB := db.(*sqlx.DB)
 
 	id, _ := strconv.Atoi(c.Param("id"))
-	filename := c.Param("filename")
+	path := "/" + c.Param("path")
 
 	var project struct {
 		Status    string `db:"status"`
@@ -736,12 +868,20 @@ func (h *SpidersHandler) DeleteFile(c *gin.Context) {
 		c.JSON(400, gin.H{"success": false, "message": "项目正在运行中，无法删除文件"})
 		return
 	}
-	if filename == project.EntryFile {
+
+	// 检查是否是入口文件
+	entryPath := "/" + project.EntryFile
+	if path == entryPath {
 		c.JSON(400, gin.H{"success": false, "message": "不能删除入口文件"})
 		return
 	}
 
-	result, err := sqlxDB.Exec("DELETE FROM spider_project_files WHERE project_id = ? AND filename = ?", id, filename)
+	// 删除文件或目录（目录会递归删除子项）
+	result, err := sqlxDB.Exec(`
+		DELETE FROM spider_project_files
+		WHERE project_id = ? AND (path = ? OR path LIKE ?)
+	`, id, path, path+"/%")
+
 	if err != nil {
 		c.JSON(500, gin.H{"success": false, "message": "删除失败"})
 		return
@@ -754,6 +894,77 @@ func (h *SpidersHandler) DeleteFile(c *gin.Context) {
 	}
 
 	c.JSON(200, gin.H{"success": true, "message": "删除成功"})
+}
+
+// MoveItem 移动或重命名文件/目录
+func (h *SpidersHandler) MoveItem(c *gin.Context) {
+	db, exists := c.Get("db")
+	if !exists {
+		c.JSON(500, gin.H{"success": false, "message": "数据库未连接"})
+		return
+	}
+	sqlxDB := db.(*sqlx.DB)
+
+	id, _ := strconv.Atoi(c.Param("id"))
+	oldPath := "/" + c.Param("path")
+
+	var status string
+	err := sqlxDB.Get(&status, "SELECT status FROM spider_projects WHERE id = ?", id)
+	if err != nil {
+		c.JSON(404, gin.H{"success": false, "message": "项目不存在"})
+		return
+	}
+	if status == "running" {
+		c.JSON(400, gin.H{"success": false, "message": "项目正在运行中"})
+		return
+	}
+
+	var req SpiderMoveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(400, gin.H{"success": false, "message": "参数错误"})
+		return
+	}
+
+	newPath := req.NewPath
+	if !strings.HasPrefix(newPath, "/") {
+		newPath = "/" + newPath
+	}
+
+	// 检查目标是否已存在
+	var existsCount int
+	sqlxDB.Get(&existsCount, "SELECT COUNT(*) FROM spider_project_files WHERE project_id = ? AND path = ?", id, newPath)
+	if existsCount > 0 {
+		c.JSON(400, gin.H{"success": false, "message": "目标路径已存在"})
+		return
+	}
+
+	// 更新路径（包括子目录）
+	tx, _ := sqlxDB.Beginx()
+
+	// 更新当前项
+	_, err = tx.Exec(`
+		UPDATE spider_project_files SET path = ? WHERE project_id = ? AND path = ?
+	`, newPath, id, oldPath)
+	if err != nil {
+		tx.Rollback()
+		c.JSON(500, gin.H{"success": false, "message": "移动失败"})
+		return
+	}
+
+	// 更新子项（如果是目录）
+	_, err = tx.Exec(`
+		UPDATE spider_project_files
+		SET path = CONCAT(?, SUBSTRING(path, ?))
+		WHERE project_id = ? AND path LIKE ?
+	`, newPath, len(oldPath)+1, id, oldPath+"/%")
+	if err != nil {
+		tx.Rollback()
+		c.JSON(500, gin.H{"success": false, "message": "移动子项失败"})
+		return
+	}
+
+	tx.Commit()
+	c.JSON(200, gin.H{"success": true, "message": "移动成功", "new_path": newPath})
 }
 
 // ============================================

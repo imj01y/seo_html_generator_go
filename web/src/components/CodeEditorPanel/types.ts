@@ -109,6 +109,18 @@ export interface CodeEditorPanelProps {
 }
 
 // ============================================
+// 日志面板扩展标签页类型
+// ============================================
+
+export interface ExtraTab {
+  key: string
+  label: string
+  badge?: number
+  component: any // Vue Component
+  props?: Record<string, any>
+}
+
+// ============================================
 // 菜单项类型
 // ============================================
 

@@ -118,7 +118,8 @@
           >
             查看日志
           </el-button>
-          <el-button size="small" @click="handleEdit(row)">编辑</el-button>
+          <el-button size="small" @click="handleConfig(row)">配置</el-button>
+          <el-button size="small" type="primary" @click="handleEditCode(row)">代码</el-button>
           <el-button
             v-if="row.status !== 'running'"
             type="warning"
@@ -154,6 +155,75 @@
     >
       <LogViewer :logs="executionLogs" :show-filters="true" @clear="executionLogs = []" />
     </el-drawer>
+
+    <!-- 配置弹窗 -->
+    <el-dialog
+      v-model="configDialogVisible"
+      :title="configProject ? `配置 - ${configProject.name}` : '项目配置'"
+      width="600px"
+    >
+      <el-form
+        v-if="configProject"
+        ref="configFormRef"
+        :model="configForm"
+        label-position="top"
+      >
+        <el-form-item label="项目名称" prop="name" required>
+          <el-input v-model="configForm.name" placeholder="请输入项目名称" />
+        </el-form-item>
+        <el-form-item label="描述" prop="description">
+          <el-input
+            v-model="configForm.description"
+            type="textarea"
+            :rows="2"
+            placeholder="项目描述（可选）"
+          />
+        </el-form-item>
+        <el-form-item label="入口文件" prop="entry_file">
+          <el-select v-model="configForm.entry_file" style="width: 100%">
+            <el-option
+              v-for="file in configFiles"
+              :key="file.path"
+              :label="file.path"
+              :value="file.path.replace(/^\//, '')"
+            />
+          </el-select>
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="并发数" prop="concurrency">
+              <el-input-number
+                v-model="configForm.concurrency"
+                :min="1"
+                :max="10"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="输出分组" prop="output_group_id">
+              <el-select v-model="configForm.output_group_id" style="width: 100%">
+                <el-option
+                  v-for="group in articleGroups"
+                  :key="group.id"
+                  :label="group.name"
+                  :value="group.id"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="调度规则" prop="schedule">
+          <ScheduleBuilder v-model="configForm.schedule" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="configDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="configSaving" @click="handleSaveConfig">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -169,10 +239,15 @@ import {
   stopProject,
   deleteProject,
   resetProject,
+  updateProject,
+  getProjectFiles,
   subscribeProjectLogs,
-  type SpiderProject
+  type SpiderProject,
+  type ProjectFile
 } from '@/api/spiderProjects'
+import { getArticleGroups } from '@/api/articles'
 import LogViewer from '@/components/LogViewer.vue'
+import ScheduleBuilder from '@/components/ScheduleBuilder.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -209,6 +284,34 @@ const logDrawerVisible = ref(false)
 const currentProject = ref<SpiderProject | null>(null)
 const executionLogs = ref<{ time: string; level: string; message: string }[]>([])
 let unsubscribeLogs: (() => void) | null = null
+
+// 配置弹窗
+const configDialogVisible = ref(false)
+const configProject = ref<SpiderProject | null>(null)
+const configFiles = ref<ProjectFile[]>([])
+const configSaving = ref(false)
+const configFormRef = ref()
+const configForm = ref({
+  name: '',
+  description: '',
+  entry_file: '',
+  concurrency: 3,
+  output_group_id: 1,
+  schedule: ''
+})
+
+// 文章分组
+const articleGroups = ref<{ id: number; name: string }[]>([])
+
+// 加载文章分组
+async function loadArticleGroups() {
+  try {
+    const res = await getArticleGroups()
+    articleGroups.value = res.items || []
+  } catch {
+    articleGroups.value = [{ id: 1, name: '默认文章分组' }]
+  }
+}
 
 // 计算统计数据
 const totalCount = computed(() => total.value)
@@ -253,9 +356,66 @@ function handleCreate() {
   router.push('/spiders/projects/create')
 }
 
-// 编辑项目
+// 编辑项目（跳转到代码页）
 function handleEdit(row: SpiderProject) {
-  router.push(`/spiders/projects/${row.id}`)
+  router.push(`/spiders/projects/${row.id}/code`)
+}
+
+// 编辑代码
+function handleEditCode(row: SpiderProject) {
+  router.push(`/spiders/projects/${row.id}/code`)
+}
+
+// 打开配置弹窗
+async function handleConfig(row: SpiderProject) {
+  configProject.value = row
+  configForm.value = {
+    name: row.name,
+    description: row.description || '',
+    entry_file: row.entry_file,
+    concurrency: row.concurrency,
+    output_group_id: row.output_group_id,
+    schedule: row.schedule || ''
+  }
+
+  // 加载文件列表
+  try {
+    configFiles.value = await getProjectFiles(row.id)
+  } catch {
+    configFiles.value = []
+  }
+
+  configDialogVisible.value = true
+}
+
+// 保存配置
+async function handleSaveConfig() {
+  if (!configProject.value) return
+
+  if (!configForm.value.name.trim()) {
+    ElMessage.warning('请输入项目名称')
+    return
+  }
+
+  configSaving.value = true
+  try {
+    await updateProject(configProject.value.id, {
+      name: configForm.value.name,
+      description: configForm.value.description || undefined,
+      entry_file: configForm.value.entry_file,
+      concurrency: configForm.value.concurrency,
+      output_group_id: configForm.value.output_group_id,
+      schedule: configForm.value.schedule || undefined
+    })
+
+    ElMessage.success('保存成功')
+    configDialogVisible.value = false
+    fetchProjects()
+  } catch (e: any) {
+    ElMessage.error(e.message || '保存失败')
+  } finally {
+    configSaving.value = false
+  }
 }
 
 // 切换启用状态
@@ -454,6 +614,7 @@ function formatNumber(num: number) {
 // 生命周期
 onMounted(() => {
   fetchProjects()
+  loadArticleGroups()
 })
 
 onUnmounted(() => {
