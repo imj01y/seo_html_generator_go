@@ -1,13 +1,19 @@
 package api
 
 import (
+	"bufio"
+	"context"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gorilla/websocket"
 	core "seo-generator/api/internal/service"
 )
 
@@ -584,4 +590,124 @@ func (h *WorkerFilesHandler) Download(c *gin.Context) {
 	}
 
 	c.FileAttachment(fullPath, filepath.Base(path))
+}
+
+// RunFile 运行 Python 文件（WebSocket）
+// WS /ws/worker/run
+func (h *WorkerFilesHandler) RunFile(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	// 读取运行请求
+	var req struct {
+		Action string `json:"action"`
+		File   string `json:"file"`
+	}
+	if err := conn.ReadJSON(&req); err != nil {
+		h.sendWSError(conn, "读取请求失败: "+err.Error())
+		return
+	}
+
+	if req.Action != "run" || req.File == "" {
+		h.sendWSError(conn, "无效的请求")
+		return
+	}
+
+	// 验证路径
+	fullPath, ok := h.validatePath(req.File)
+	if !ok {
+		h.sendWSError(conn, "无效的文件路径")
+		return
+	}
+
+	// 检查文件存在
+	if _, err := os.Stat(fullPath); err != nil {
+		h.sendWSError(conn, "文件不存在")
+		return
+	}
+
+	// 创建上下文用于取消（5分钟超时）
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	// 执行 Python 文件
+	cmd := exec.CommandContext(ctx, "python", fullPath)
+	cmd.Dir = h.workerDir
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		h.sendWSError(conn, "创建 stdout 管道失败")
+		return
+	}
+
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		h.sendWSError(conn, "创建 stderr 管道失败")
+		return
+	}
+
+	start := time.Now()
+	if err := cmd.Start(); err != nil {
+		h.sendWSError(conn, "启动进程失败: "+err.Error())
+		return
+	}
+
+	// 并发读取输出
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		h.pipeToWS(stdout, conn, "stdout")
+	}()
+
+	go func() {
+		defer wg.Done()
+		h.pipeToWS(stderr, conn, "stderr")
+	}()
+
+	wg.Wait()
+	cmd.Wait()
+
+	// 发送完成消息
+	duration := time.Since(start).Milliseconds()
+	exitCode := 0
+	if cmd.ProcessState != nil {
+		exitCode = cmd.ProcessState.ExitCode()
+	}
+
+	conn.WriteJSON(map[string]interface{}{
+		"type":        "done",
+		"exit_code":   exitCode,
+		"duration_ms": duration,
+	})
+}
+
+// pipeToWS 将输出流发送到 WebSocket
+func (h *WorkerFilesHandler) pipeToWS(r io.Reader, conn *websocket.Conn, typ string) {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		msg := map[string]string{
+			"type": typ,
+			"data": scanner.Text(),
+		}
+		if err := conn.WriteJSON(msg); err != nil {
+			return
+		}
+	}
+}
+
+// sendWSError 发送 WebSocket 错误
+func (h *WorkerFilesHandler) sendWSError(conn *websocket.Conn, msg string) {
+	conn.WriteJSON(map[string]string{
+		"type": "stderr",
+		"data": msg,
+	})
+	conn.WriteJSON(map[string]interface{}{
+		"type":      "done",
+		"exit_code": 1,
+	})
 }
