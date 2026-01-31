@@ -94,7 +94,7 @@ class CommandListener:
         logger.info("命令监听器已启动，等待命令...")
 
         pubsub = self.rdb.pubsub()
-        await pubsub.subscribe("spider:commands")
+        await pubsub.subscribe("spider:commands", "worker:command")  # 添加 worker:command
 
         async for message in pubsub.listen():
             if message["type"] == "message":
@@ -102,10 +102,38 @@ class CommandListener:
                     data = message["data"]
                     if isinstance(data, bytes):
                         data = data.decode('utf-8')
-                    cmd = json.loads(data)
-                    await self.handle_command(cmd)
+
+                    # 检查是否是简单字符串命令（如 restart）
+                    if data == "restart":
+                        await self.handle_restart()
+                    else:
+                        cmd = json.loads(data)
+                        await self.handle_command(cmd)
+                except json.JSONDecodeError:
+                    # 可能是简单字符串命令
+                    if data == "restart":
+                        await self.handle_restart()
                 except Exception as e:
                     logger.error(f"处理命令失败: {e}")
+
+    async def handle_restart(self):
+        """处理重启命令"""
+        logger.info("收到重启指令，正在准备退出...")
+
+        # 等待当前任务完成
+        for project_id, task in list(self.running_tasks.items()):
+            if not task.done():
+                logger.info(f"等待项目 {project_id} 任务完成...")
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+
+        logger.info("所有任务已完成，退出进程...")
+        # 退出进程，Docker 会自动重启
+        import sys
+        sys.exit(0)
 
     async def handle_command(self, cmd: dict):
         """处理命令"""
