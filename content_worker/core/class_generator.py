@@ -20,7 +20,7 @@ import random
 import string
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Generator
+from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from loguru import logger
 
@@ -225,7 +225,7 @@ class ClassStringPool:
             self._cursor2 += 1
             return result
 
-    def get_pair_sync(self) -> tuple:
+    def get_pair_sync(self) -> Tuple[str, str]:
         """
         一次性获取 part1 和 part2（减少锁竞争）
 
@@ -318,7 +318,7 @@ class ClassStringPool:
         self._total_refilled += self._refill_batch_size
         return self._refill_batch_size
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         with self._consume_lock:
             return {

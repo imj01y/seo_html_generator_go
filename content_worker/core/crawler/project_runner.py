@@ -9,7 +9,7 @@
 import types
 import asyncio
 import time
-from typing import Dict, Any, Optional, AsyncGenerator, List, TYPE_CHECKING
+from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, TYPE_CHECKING
 from loguru import logger
 
 if TYPE_CHECKING:
@@ -253,7 +253,7 @@ class ProjectCodeValidator:
         """
         self.code = code
 
-    def validate(self) -> tuple:
+    def validate(self) -> Tuple[bool, str]:
         """
         验证代码
 

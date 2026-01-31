@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -250,22 +251,7 @@ func getNestedValue(m map[string]interface{}, path string) interface{} {
 }
 
 func splitPath(path string) []string {
-	var result []string
-	current := ""
-	for _, c := range path {
-		if c == '.' {
-			if current != "" {
-				result = append(result, current)
-				current = ""
-			}
-		} else {
-			current += string(c)
-		}
-	}
-	if current != "" {
-		result = append(result, current)
-	}
-	return result
+	return strings.Split(path, ".")
 }
 
 func getString(m map[string]interface{}, path, defaultVal string) string {

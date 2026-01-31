@@ -6,90 +6,110 @@ import (
 	"time"
 )
 
-// Site represents a site configuration from the database
+// Site represents a site configuration from the database.
+// Fields are grouped by: identifiers, configuration, optional relations, metadata, timestamps.
 type Site struct {
-	ID             int            `db:"id" json:"id"`
-	SiteGroupID    int            `db:"site_group_id" json:"site_group_id"`
-	Domain         string         `db:"domain" json:"domain"`
-	Name           string         `db:"name" json:"name"`
-	Template       string         `db:"template" json:"template"`
-	KeywordGroupID sql.NullInt64  `db:"keyword_group_id" json:"keyword_group_id"`
-	ImageGroupID   sql.NullInt64  `db:"image_group_id" json:"image_group_id"`
-	ArticleGroupID sql.NullInt64  `db:"article_group_id" json:"article_group_id"`
-	Status         int            `db:"status" json:"status"`
-	ICPNumber      sql.NullString `db:"icp_number" json:"icp_number"`
-	BaiduToken     sql.NullString `db:"baidu_token" json:"baidu_token"`
-	Analytics      sql.NullString `db:"analytics" json:"analytics"`
-	CreatedAt      time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time      `db:"updated_at" json:"updated_at"`
+	// Identifiers
+	ID          int    `db:"id"           json:"id"`
+	SiteGroupID int    `db:"site_group_id" json:"site_group_id"`
+	Domain      string `db:"domain"       json:"domain"`
+	Name        string `db:"name"         json:"name"`
+
+	// Configuration
+	Template string `db:"template" json:"template"`
+	Status   int    `db:"status"   json:"status"`
+
+	// Optional relations (nullable)
+	KeywordGroupID sql.NullInt64 `db:"keyword_group_id" json:"keyword_group_id"`
+	ImageGroupID   sql.NullInt64 `db:"image_group_id"   json:"image_group_id"`
+	ArticleGroupID sql.NullInt64 `db:"article_group_id" json:"article_group_id"`
+
+	// Optional metadata (nullable)
+	ICPNumber  sql.NullString `db:"icp_number"   json:"icp_number"`
+	BaiduToken sql.NullString `db:"baidu_token"  json:"baidu_token"`
+	Analytics  sql.NullString `db:"analytics"    json:"analytics"`
+
+	// Timestamps
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// Template represents a template from the database
+// Template represents a page template from the database.
+// Fields are grouped by: identifiers, display info, content, metadata, timestamps.
 type Template struct {
-	ID          int            `db:"id" json:"id"`
-	SiteGroupID int            `db:"site_group_id" json:"site_group_id"`
-	Name        string         `db:"name" json:"name"`
+	// Identifiers
+	ID          int    `db:"id"           json:"id"`
+	SiteGroupID int    `db:"site_group_id" json:"site_group_id"`
+	Name        string `db:"name"         json:"name"`
+
+	// Display info
 	DisplayName string         `db:"display_name" json:"display_name"`
-	Description sql.NullString `db:"description" json:"description"`
-	Content     string         `db:"content" json:"content"`
-	Status      int            `db:"status" json:"status"`
-	Version     int            `db:"version" json:"version"`
-	CreatedAt   time.Time      `db:"created_at" json:"created_at"`
-	UpdatedAt   time.Time      `db:"updated_at" json:"updated_at"`
+	Description sql.NullString `db:"description"  json:"description"`
+
+	// Content
+	Content string `db:"content" json:"content"`
+
+	// Metadata
+	Status  int `db:"status"  json:"status"`
+	Version int `db:"version" json:"version"`
+
+	// Timestamps
+	CreatedAt time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// Keyword represents a keyword from the database
+// Keyword represents a keyword entry from the database.
 type Keyword struct {
-	ID        uint      `db:"id" json:"id"`
-	GroupID   int       `db:"group_id" json:"group_id"`
-	Keyword   string    `db:"keyword" json:"keyword"`
-	Status    int       `db:"status" json:"status"`
+	ID        uint      `db:"id"         json:"id"`
+	GroupID   int       `db:"group_id"   json:"group_id"`
+	Keyword   string    `db:"keyword"    json:"keyword"`
+	Status    int       `db:"status"     json:"status"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
-// Image represents an image URL from the database
+// Image represents an image URL entry from the database.
 type Image struct {
-	ID        uint      `db:"id" json:"id"`
-	GroupID   int       `db:"group_id" json:"group_id"`
-	URL       string    `db:"url" json:"url"`
-	Status    int       `db:"status" json:"status"`
+	ID        uint      `db:"id"         json:"id"`
+	GroupID   int       `db:"group_id"   json:"group_id"`
+	URL       string    `db:"url"        json:"url"`
+	Status    int       `db:"status"     json:"status"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
-// Title represents a title from the database
+// Title represents an article title from the database.
 type Title struct {
-	ID        uint64    `db:"id" json:"id"`
-	GroupID   int       `db:"group_id" json:"group_id"`
-	Title     string    `db:"title" json:"title"`
-	BatchID   int       `db:"batch_id" json:"batch_id"`
+	ID        uint64    `db:"id"         json:"id"`
+	GroupID   int       `db:"group_id"   json:"group_id"`
+	Title     string    `db:"title"      json:"title"`
+	BatchID   int       `db:"batch_id"   json:"batch_id"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
-// Content represents a content from the database
+// Content represents article content from the database.
 type Content struct {
-	ID        uint64    `db:"id" json:"id"`
-	GroupID   int       `db:"group_id" json:"group_id"`
-	Content   string    `db:"content" json:"content"`
-	BatchID   int       `db:"batch_id" json:"batch_id"`
+	ID        uint64    `db:"id"         json:"id"`
+	GroupID   int       `db:"group_id"   json:"group_id"`
+	Content   string    `db:"content"    json:"content"`
+	BatchID   int       `db:"batch_id"   json:"batch_id"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
-// SpiderLog represents a spider visit log
+// SpiderLog represents a spider/crawler visit log entry.
 type SpiderLog struct {
-	ID         int64     `db:"id" json:"id"`
+	ID         int64     `db:"id"          json:"id"`
 	SpiderType string    `db:"spider_type" json:"spider_type"`
-	IP         string    `db:"ip" json:"ip"`
-	UA         string    `db:"ua" json:"ua"`
-	Domain     string    `db:"domain" json:"domain"`
-	Path       string    `db:"path" json:"path"`
-	DNSOk      int       `db:"dns_ok" json:"dns_ok"`
-	RespTime   int       `db:"resp_time" json:"resp_time"`
-	CacheHit   int       `db:"cache_hit" json:"cache_hit"`
-	Status     int       `db:"status" json:"status"`
-	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+	Domain     string    `db:"domain"      json:"domain"`
+	Path       string    `db:"path"        json:"path"`
+	IP         string    `db:"ip"          json:"ip"`
+	UA         string    `db:"ua"          json:"ua"`
+	DNSOk      int       `db:"dns_ok"      json:"dns_ok"`
+	RespTime   int       `db:"resp_time"   json:"resp_time"`
+	CacheHit   int       `db:"cache_hit"   json:"cache_hit"`
+	Status     int       `db:"status"      json:"status"`
+	CreatedAt  time.Time `db:"created_at"  json:"created_at"`
 }
 
-// DetectionResult represents the result of spider detection
+// DetectionResult represents the result of spider detection.
 type DetectionResult struct {
 	IsSpider    bool   `json:"is_spider"`
 	SpiderType  string `json:"spider_type"`
@@ -99,24 +119,24 @@ type DetectionResult struct {
 	UserAgent   string `json:"user_agent"`
 }
 
-// RenderContext holds all data needed for template rendering
+// RenderContext holds all data needed for template rendering.
 type RenderContext struct {
-	Title           string
 	SiteID          int
+	Title           string
+	ArticleContent  string
 	AnalyticsCode   string
 	BaiduPushJS     string
-	ArticleContent  string
 	Now             string
 	Funcs           *TemplateFuncs
 }
 
-// TemplateFuncs holds function references for template rendering
+// TemplateFuncs holds function references for template rendering.
 type TemplateFuncs struct {
 	RandomKeyword func() string
-	Cls           func(name string) string
 	RandomURL     func() string
 	RandomImage   func() string
 	Content       func() string
+	Cls           func(name string) string
 	Encode        func(text string) string
 	RandomNumber  func(min, max int) int
 }

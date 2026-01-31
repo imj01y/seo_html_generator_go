@@ -74,7 +74,6 @@ let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 let nowTimer: ReturnType<typeof setInterval> | null = null
 
-// 初始化 PyCharm Darcula 主题
 initPyCharmDarcula()
 
 const runnableExts = computed(() => props.runnableExtensions || ['.py'])
@@ -90,7 +89,6 @@ const isModified = computed(() =>
   props.store.activeTab.value ? props.store.isTabModified(props.store.activeTab.value.id) : false
 )
 
-// 计算上次保存时间显示
 const lastSavedText = computed(() => {
   const tab = props.store.activeTab.value
   if (!tab?.lastSavedAt) return ''
@@ -115,17 +113,14 @@ const lastSavedText = computed(() => {
   }) + ' 保存'
 })
 
-// 监听活动标签变化
 watch(() => props.store.activeTab.value, (tab) => {
   if (tab && editor) {
     const model = monaco.editor.createModel(tab.content, tab.language)
     editor.setModel(model)
   }
-  // 切换标签时清除自动保存定时器
   clearAutoSaveTimer()
 }, { immediate: true })
 
-// 监听标签内容变化（外部加载）
 watch(() => props.store.activeTab.value?.content, (content) => {
   if (content !== undefined && editor) {
     const currentValue = editor.getValue()
@@ -135,7 +130,6 @@ watch(() => props.store.activeTab.value?.content, (content) => {
   }
 })
 
-// 监听内容修改，触发自动保存
 watch(isModified, (modified) => {
   if (modified && props.autoSave) {
     scheduleAutoSave()
@@ -145,10 +139,9 @@ watch(isModified, (modified) => {
 })
 
 onMounted(() => {
-  // 定时更新"上次保存时间"显示
   nowTimer = setInterval(() => {
     now.value = new Date()
-  }, 10000) // 每 10 秒更新
+  }, 10000)
 
   nextTick(() => {
     if (editorContainer.value) {
@@ -165,14 +158,12 @@ onMounted(() => {
         wordWrap: 'on'
       })
 
-      // 内容变化时更新 store
       editor.onDidChangeModelContent(() => {
         if (props.store.activeTab.value && editor) {
           props.store.updateTabContent(props.store.activeTab.value.id, editor.getValue())
         }
       })
 
-      // Ctrl+S 保存 - Monaco 内部快捷键（当编辑器有焦点时）
       editor.addAction({
         id: 'save-file',
         label: '保存文件',
@@ -208,36 +199,37 @@ function scheduleAutoSave() {
 }
 
 async function handleAutoSave() {
-  if (!props.store.activeTab.value || !isModified.value) return
+  const tab = props.store.activeTab.value
+  if (!tab || !isModified.value) return
 
   autoSaving.value = true
   try {
-    await props.store.saveTab(props.store.activeTab.value.id)
-  } catch (e: any) {
-    console.error('自动保存失败:', e)
+    await props.store.saveTab(tab.id)
+  } catch (e) {
+    console.error('Auto save failed:', e)
   } finally {
     autoSaving.value = false
   }
 }
 
 async function handleSave() {
-  if (!props.store.activeTab.value) return
+  const tab = props.store.activeTab.value
+  if (!tab) return
 
-  // 没有修改时提示
   if (!isModified.value) {
     ElMessage.info('文件未修改')
     return
   }
 
-  // 清除自动保存定时器，避免重复保存
   clearAutoSaveTimer()
 
   saving.value = true
   try {
-    await props.store.saveTab(props.store.activeTab.value.id)
+    await props.store.saveTab(tab.id)
     ElMessage.success('保存成功')
-  } catch (e: any) {
-    ElMessage.error(e.message || '保存失败')
+  } catch (e: unknown) {
+    const message = e instanceof Error ? e.message : '保存失败'
+    ElMessage.error(message)
   } finally {
     saving.value = false
   }

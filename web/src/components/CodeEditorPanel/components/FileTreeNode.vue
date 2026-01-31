@@ -116,7 +116,6 @@ function handleContextMenu(event: MouseEvent) {
   emit('context-menu', { event, node: props.node })
 }
 
-// 拖放处理
 function handleDragStart(event: DragEvent) {
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'move'
@@ -125,7 +124,6 @@ function handleDragStart(event: DragEvent) {
 }
 
 function handleDragOver(event: DragEvent) {
-  // 只有目录可以作为放置目标
   if (props.node.type === 'dir') {
     isDragOver.value = true
     if (event.dataTransfer) {
@@ -145,10 +143,9 @@ function handleDrop(event: DragEvent) {
   const sourcePath = event.dataTransfer?.getData('text/plain')
   if (!sourcePath) return
 
-  // 不能移动到自身或自身的子目录
-  if (sourcePath === props.node.path || props.node.path.startsWith(sourcePath + '/')) {
-    return
-  }
+  const isMovingToSelf = sourcePath === props.node.path
+  const isMovingToChild = props.node.path.startsWith(sourcePath + '/')
+  if (isMovingToSelf || isMovingToChild) return
 
   emit('move', { sourcePath, targetPath: props.node.path })
 }

@@ -134,20 +134,15 @@ class TextCleaner:
         Returns:
             清洗后的段落列表（已过滤无效段落）
         """
-        result = []
-        for text in texts:
-            cleaned = self.clean_paragraph(text)
-            if cleaned:
-                result.append(cleaned)
-        return result
+        return [
+            cleaned for text in texts
+            if (cleaned := self.clean_paragraph(text))
+        ]
 
     def _contains_ad(self, text: str) -> bool:
         """检查是否包含广告关键词"""
         text_lower = text.lower()
-        for keyword in self.ad_keywords:
-            if keyword.lower() in text_lower:
-                return True
-        return False
+        return any(keyword.lower() in text_lower for keyword in self.ad_keywords)
 
     def split_to_paragraphs(
         self,

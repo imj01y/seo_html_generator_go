@@ -76,7 +76,6 @@ const inputRef = ref<HTMLInputElement>()
 const inputValue = ref('')
 const errorMsg = ref('')
 
-// 监听 visible 变化，初始化输入框
 watch(() => props.visible, (val) => {
   if (val) {
     inputValue.value = props.defaultValue

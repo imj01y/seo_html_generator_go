@@ -406,8 +406,5 @@ export interface SpiderStatsByProject {
   avg_speed?: number
 }
 
-// 数据源相关类型
-export * from './crawl'
-
 // 生成器相关类型
 export * from './generator'

@@ -66,6 +66,13 @@ func (c *HTMLCache) getPathHash(path string) string {
 	return hex.EncodeToString(hash[:])
 }
 
+// getCacheDir returns the current cache directory (thread-safe)
+func (c *HTMLCache) getCacheDirSafe() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.cacheDir
+}
+
 // normalizePath normalizes a URL path for file storage
 func (c *HTMLCache) normalizePath(path string) string {
 	// Remove leading slashes
@@ -90,27 +97,15 @@ func (c *HTMLCache) normalizePath(path string) string {
 func (c *HTMLCache) getCachePath(domain, path string) string {
 	normalized := c.normalizePath(path)
 	pathHash := c.getPathHash(path)
-
-	// 需要读锁保护 cacheDir
-	c.mu.RLock()
-	cacheDir := c.cacheDir
-	c.mu.RUnlock()
-
 	// Structure: {cache_dir}/{domain}/{hash[0:2]}/{hash[2:4]}/{normalized_path}
-	return filepath.Join(cacheDir, domain, pathHash[:2], pathHash[2:4], normalized)
+	return filepath.Join(c.getCacheDirSafe(), domain, pathHash[:2], pathHash[2:4], normalized)
 }
 
 // getMetaPath returns the metadata file path
 func (c *HTMLCache) getMetaPath(domain, path string) string {
 	cacheKey := c.generateCacheKey(domain, path)
 	pathHash := c.getPathHash(path)
-
-	// 需要读锁保护 cacheDir
-	c.mu.RLock()
-	cacheDir := c.cacheDir
-	c.mu.RUnlock()
-
-	return filepath.Join(cacheDir, "_meta", domain, pathHash[:2], pathHash[2:4], cacheKey+".json")
+	return filepath.Join(c.getCacheDirSafe(), "_meta", domain, pathHash[:2], pathHash[2:4], cacheKey+".json")
 }
 
 // Set stores HTML content in the cache
@@ -169,11 +164,7 @@ func (c *HTMLCache) Exists(domain, path string) bool {
 // Clear clears all cache for a domain (or all if domain is empty)
 func (c *HTMLCache) Clear(domain string) (int, error) {
 	var count int
-
-	// 需要读锁保护 cacheDir
-	c.mu.RLock()
-	cacheDir := c.cacheDir
-	c.mu.RUnlock()
+	cacheDir := c.getCacheDirSafe()
 
 	if domain != "" {
 		// Clear specific domain
@@ -233,10 +224,7 @@ func (c *HTMLCache) getDirSize(dir string) int64 {
 
 // GetStats returns cache statistics
 func (c *HTMLCache) GetStats() map[string]interface{} {
-	c.mu.RLock()
-	cacheDir := c.cacheDir
-	c.mu.RUnlock()
-
+	cacheDir := c.getCacheDirSafe()
 	totalSize := c.getDirSize(cacheDir)
 	totalEntries := c.countFiles(cacheDir)
 
@@ -275,7 +263,5 @@ func (c *HTMLCache) ReloadCacheDir(newDir string) error {
 
 // GetCacheDir 获取当前缓存目录
 func (c *HTMLCache) GetCacheDir() string {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.cacheDir
+	return c.getCacheDirSafe()
 }

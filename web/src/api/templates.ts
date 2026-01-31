@@ -8,13 +8,15 @@ import type {
   PaginatedResponse,
   Site
 } from '@/types'
+import type { SuccessResponse } from './shared'
 
-// 后端返回格式
+// ============================================
+// 响应类型
+// ============================================
+
 interface TemplateListResponse {
   items: TemplateListItem[]
   total: number
-  page: number
-  page_size: number
 }
 
 interface TemplateOptionsResponse {
@@ -26,15 +28,28 @@ interface TemplateSitesResponse {
   template_name: string
 }
 
-/**
- * 获取模板列表（不含content）
- */
-export const getTemplates = async (params?: {
+interface CreateTemplateResponse extends SuccessResponse {
+  id?: number
+}
+
+interface ClearCacheResponse extends SuccessResponse {
+  html_cleared?: number
+}
+
+interface ReloadCacheResponse extends SuccessResponse {
+  stats?: { item_count: number }
+}
+
+// ============================================
+// 模板 API
+// ============================================
+
+export async function getTemplates(params?: {
   page?: number
   page_size?: number
   status?: number
   site_group_id?: number
-}): Promise<PaginatedResponse<TemplateListItem>> => {
+}): Promise<PaginatedResponse<TemplateListItem>> {
   const res: TemplateListResponse = await request.get('/templates', { params })
   return {
     items: res.items || [],
@@ -42,85 +57,56 @@ export const getTemplates = async (params?: {
   }
 }
 
-/**
- * 获取模板下拉选项
- * @param siteGroupId 可选的站群ID过滤
- */
-export const getTemplateOptions = async (siteGroupId?: number): Promise<TemplateOption[]> => {
+export async function getTemplateOptions(siteGroupId?: number): Promise<TemplateOption[]> {
   const params = siteGroupId ? { site_group_id: siteGroupId } : {}
   const res: TemplateOptionsResponse = await request.get('/templates/options', { params })
   return res.options || []
 }
 
-/**
- * 获取模板详情（含content）
- */
-export const getTemplate = async (id: number): Promise<Template> => {
-  return await request.get(`/templates/${id}`)
+export async function getTemplate(id: number): Promise<Template> {
+  return request.get(`/templates/${id}`)
 }
 
-/**
- * 获取使用此模板的站点
- */
-export const getTemplateSites = async (id: number): Promise<TemplateSitesResponse> => {
-  return await request.get(`/templates/${id}/sites`)
+export async function getTemplateSites(id: number): Promise<TemplateSitesResponse> {
+  return request.get(`/templates/${id}/sites`)
 }
 
-/**
- * 创建模板
- */
-export const createTemplate = async (data: TemplateCreate): Promise<{ success: boolean; id?: number; message?: string }> => {
-  return await request.post('/templates', data)
+export async function createTemplate(data: TemplateCreate): Promise<CreateTemplateResponse> {
+  return request.post('/templates', data)
 }
 
-/**
- * 更新模板
- */
-export const updateTemplate = async (id: number, data: TemplateUpdate): Promise<{ success: boolean; message?: string }> => {
-  return await request.put(`/templates/${id}`, data)
+export async function updateTemplate(id: number, data: TemplateUpdate): Promise<SuccessResponse> {
+  return request.put(`/templates/${id}`, data)
 }
 
-/**
- * 删除模板
- */
-export const deleteTemplate = async (id: number): Promise<{ success: boolean; message?: string }> => {
-  return await request.delete(`/templates/${id}`)
+export async function deleteTemplate(id: number): Promise<SuccessResponse> {
+  return request.delete(`/templates/${id}`)
 }
 
-/**
- * 清除Go服务的模板缓存
- * 模板内容更新后调用此接口使新模板生效
- */
-export const clearGoTemplateCache = async (): Promise<{ success: boolean; html_cleared?: number; message?: string }> => {
+// ============================================
+// Go 服务缓存 API
+// ============================================
+
+export async function clearGoTemplateCache(): Promise<ClearCacheResponse> {
   try {
-    // 通过 nginx 代理访问 Go 服务 (/go/ -> go-server:8080/)
     const response = await fetch('/go/api/cache/template/clear', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })
-    return await response.json()
+    return response.json()
   } catch (error) {
     console.warn('Failed to clear Go template cache:', error)
     return { success: false, message: '无法连接Go服务' }
   }
 }
 
-/**
- * 重新加载Go服务的模板缓存
- * 从数据库重新加载所有模板到内存缓存
- */
-export const reloadGoTemplateCache = async (): Promise<{
-  success: boolean
-  stats?: { item_count: number }
-  message?: string
-}> => {
+export async function reloadGoTemplateCache(): Promise<ReloadCacheResponse> {
   try {
-    // 通过 nginx 代理访问 Go 服务 (/go/ -> go-server:8080/)
     const response = await fetch('/go/api/cache/template/reload', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' }
     })
-    return await response.json()
+    return response.json()
   } catch (error) {
     console.warn('Failed to reload Go template cache:', error)
     return { success: false, message: '无法连接Go服务' }

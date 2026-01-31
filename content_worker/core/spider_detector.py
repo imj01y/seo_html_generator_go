@@ -20,7 +20,7 @@
 import re
 import socket
 import asyncio
-from typing import Dict, Optional, List, Tuple, NamedTuple
+from typing import Any, Dict, List, NamedTuple, Optional, Tuple
 from dataclasses import dataclass
 from datetime import datetime
 from functools import lru_cache
@@ -348,7 +348,7 @@ class SpiderDetector:
         self._dns_cache.clear()
         self._match_user_agent.cache_clear()
 
-    def get_stats(self) -> Dict[str, int]:
+    def get_stats(self) -> Dict[str, Any]:
         """获取缓存统计"""
         return {
             'dns_cache_size': len(self._dns_cache),

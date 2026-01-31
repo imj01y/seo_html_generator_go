@@ -18,30 +18,16 @@ func Recovery() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				// Get request ID
-				requestID := ""
-				if id, exists := c.Get("request_id"); exists {
-					if idStr, ok := id.(string); ok {
-						requestID = idStr
-					}
-				}
-
-				// Get stack trace
+				requestID := getRequestIDFromContext(c)
 				stack := getStackTrace(3) // Skip recover, panic, and this function
-
-				// Get request info
-				path := c.Request.URL.Path
-				method := c.Request.Method
-				clientIP := c.ClientIP()
-				userAgent := c.Request.UserAgent()
 
 				// Log the panic with full details
 				log.Error().
 					Str("request_id", requestID).
-					Str("method", method).
-					Str("path", path).
-					Str("client_ip", clientIP).
-					Str("user_agent", userAgent).
+					Str("method", c.Request.Method).
+					Str("path", c.Request.URL.Path).
+					Str("client_ip", c.ClientIP()).
+					Str("user_agent", c.Request.UserAgent()).
 					Interface("error", err).
 					Str("stack", stack).
 					Msg("Panic recovered")
@@ -65,15 +51,7 @@ func RecoveryWithWriter(customRecovery func(c *gin.Context, err interface{})) gi
 	return func(c *gin.Context) {
 		defer func() {
 			if err := recover(); err != nil {
-				// Get request ID
-				requestID := ""
-				if id, exists := c.Get("request_id"); exists {
-					if idStr, ok := id.(string); ok {
-						requestID = idStr
-					}
-				}
-
-				// Get stack trace
+				requestID := getRequestIDFromContext(c)
 				stack := getStackTrace(3)
 
 				// Log the panic
@@ -88,15 +66,16 @@ func RecoveryWithWriter(customRecovery func(c *gin.Context, err interface{})) gi
 				// Call custom recovery handler if provided
 				if customRecovery != nil {
 					customRecovery(c, err)
-				} else {
-					// Default response
-					c.AbortWithStatusJSON(http.StatusInternalServerError, Response{
-						Code:      int(ErrInternalServer),
-						Message:   GetErrorMessage(ErrInternalServer),
-						Timestamp: time.Now().Unix(),
-						RequestID: requestID,
-					})
+					return
 				}
+
+				// Default response
+				c.AbortWithStatusJSON(http.StatusInternalServerError, Response{
+					Code:      int(ErrInternalServer),
+					Message:   GetErrorMessage(ErrInternalServer),
+					Timestamp: time.Now().Unix(),
+					RequestID: requestID,
+				})
 			}
 		}()
 
@@ -133,6 +112,16 @@ func getStackTrace(skip int) string {
 	}
 
 	return builder.String()
+}
+
+// getRequestIDFromContext extracts request ID from gin context
+func getRequestIDFromContext(c *gin.Context) string {
+	if id, exists := c.Get("request_id"); exists {
+		if idStr, ok := id.(string); ok {
+			return idStr
+		}
+	}
+	return ""
 }
 
 // PanicError represents a panic error with stack trace

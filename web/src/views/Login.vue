@@ -35,10 +35,6 @@
         </el-form-item>
 
         <el-form-item>
-          <el-checkbox v-model="rememberMe">记住登录状态</el-checkbox>
-        </el-form-item>
-
-        <el-form-item>
           <el-button
             type="primary"
             size="large"
@@ -70,7 +66,6 @@ const userStore = useUserStore()
 
 const formRef = ref<FormInstance>()
 const loading = ref(false)
-const rememberMe = ref(true)
 
 const form = reactive({
   username: '',

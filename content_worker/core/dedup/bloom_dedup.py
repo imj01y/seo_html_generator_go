@@ -11,7 +11,7 @@ Bloom Filter 去重器
 import hashlib
 import asyncio
 import pickle
-from typing import Optional, List
+from typing import Any, Dict, List, Optional
 from loguru import logger
 
 try:
@@ -342,7 +342,7 @@ class ContentDeduplicator:
         """获取段落队列长度"""
         return await self.redis.llen(self.queue_key)
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         return {
             'url_count': self.url_dedup.get_count(),

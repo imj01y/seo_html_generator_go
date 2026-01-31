@@ -19,7 +19,7 @@ import random
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
-from typing import Optional, List, Generator
+from typing import Any, Dict, Generator, List, Optional
 
 from loguru import logger
 
@@ -225,7 +225,7 @@ class URLPool:
         self._total_refilled += self._refill_batch_size
         return self._refill_batch_size
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         with self._consume_lock:
             return {

@@ -6,7 +6,7 @@
 """
 import asyncio
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from loguru import logger
 
@@ -35,7 +35,7 @@ def get_generator_worker():
     return _generator_worker
 
 
-def _parse_setting_value(value: str, setting_type: str):
+def _parse_setting_value(value: str, setting_type: str) -> Any:
     """解析配置值为对应类型"""
     if setting_type == 'boolean':
         return value.lower() in ('true', '1', 'yes')

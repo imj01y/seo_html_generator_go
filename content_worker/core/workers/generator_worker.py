@@ -18,7 +18,7 @@
 import asyncio
 import time
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 from loguru import logger
 
 from core.dedup import ContentDeduplicator
@@ -539,7 +539,7 @@ class GeneratorWorker:
 
         return processed
 
-    async def run_forever(self, wait_interval: float = 5.0, stop_event: Optional[asyncio.Event] = None):
+    async def run_forever(self, wait_interval: float = 5.0, stop_event: Optional[asyncio.Event] = None, group_id: int = 1) -> None:
         """
         持续运行（高性能版）
 
@@ -577,7 +577,7 @@ class GeneratorWorker:
         finally:
             await self.stop()
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         avg_ms = 0.0
         if self._processed_count > 0:

@@ -96,7 +96,25 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
+import {
+  DataAnalysis,
+  Fold,
+  Expand,
+  User,
+  ArrowDown,
+  Monitor,
+  Files,
+  Key,
+  Document,
+  Picture,
+  Cpu,
+  TrendCharts,
+  Operation,
+  Connection,
+  Coin,
+  Setting
+} from '@element-plus/icons-vue'
 import { useUserStore } from '@/stores/user'
 import { changePassword } from '@/api/auth'
 
@@ -137,18 +155,18 @@ const passwordRules: FormRules = {
 }
 
 const menuItems = [
-  { path: '/dashboard', title: '仪表盘', icon: 'DataAnalysis' },
-  { path: '/sites', title: '站点管理', icon: 'Monitor' },
-  { path: '/templates', title: '模板管理', icon: 'Files' },
-  { path: '/keywords', title: '关键词管理', icon: 'Key' },
-  { path: '/articles', title: '文章管理', icon: 'Document' },
-  { path: '/images', title: '图片管理', icon: 'Picture' },
-  { path: '/spiders/projects', title: '数据抓取', icon: 'Cpu' },
-  { path: '/spiders/stats', title: '抓取统计', icon: 'TrendCharts' },
-  { path: '/processor', title: '数据处理', icon: 'Operation' },
-  { path: '/spiders', title: '蜘蛛日志', icon: 'Connection' },
-  { path: '/cache', title: '缓存管理', icon: 'Coin' },
-  { path: '/settings', title: '系统设置', icon: 'Setting' }
+  { path: '/dashboard', title: '仪表盘', icon: DataAnalysis },
+  { path: '/sites', title: '站点管理', icon: Monitor },
+  { path: '/templates', title: '模板管理', icon: Files },
+  { path: '/keywords', title: '关键词管理', icon: Key },
+  { path: '/articles', title: '文章管理', icon: Document },
+  { path: '/images', title: '图片管理', icon: Picture },
+  { path: '/spiders/projects', title: '数据抓取', icon: Cpu },
+  { path: '/spiders/stats', title: '抓取统计', icon: TrendCharts },
+  { path: '/processor', title: '数据处理', icon: Operation },
+  { path: '/spiders', title: '蜘蛛日志', icon: Connection },
+  { path: '/cache', title: '缓存管理', icon: Coin },
+  { path: '/settings', title: '系统设置', icon: Setting }
 ]
 
 const activeMenu = computed(() => {

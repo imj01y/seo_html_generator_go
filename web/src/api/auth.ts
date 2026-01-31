@@ -1,28 +1,33 @@
 import request from '@/utils/request'
 import type { LoginRequest } from '@/types'
+import { assertSuccess, type SuccessResponse } from './shared'
 
-// 登录响应数据（现在直接从 data 字段获取）
-interface LoginData {
-  success: boolean
+// ============================================
+// 响应类型
+// ============================================
+
+interface LoginResponse extends SuccessResponse {
   token?: string
-  message?: string
 }
 
-// 后端返回的用户信息格式
-interface BackendUserInfo {
+interface UserInfoResponse {
   id?: number
   username: string
   role: string
   last_login: string | null
 }
 
-export const login = async (data: LoginRequest) => {
-  const res: LoginData = await request.post('/auth/login', data)
-  // 检查登录是否成功
-  if (!res.success) {
-    throw new Error(res.message || '登录失败')
-  }
-  // 转换为前端期望的格式
+// ============================================
+// 认证 API
+// ============================================
+
+export async function login(data: LoginRequest): Promise<{
+  access_token: string
+  token_type: string
+  expires_in: number
+}> {
+  const res: LoginResponse = await request.post('/auth/login', data)
+  assertSuccess(res, '登录失败')
   return {
     access_token: res.token || '',
     token_type: 'bearer',
@@ -30,27 +35,19 @@ export const login = async (data: LoginRequest) => {
   }
 }
 
-export const logout = async (): Promise<{ success: boolean }> => {
-  return await request.post('/auth/logout')
+export async function logout(): Promise<{ success: boolean }> {
+  return request.post('/auth/logout')
 }
 
-export const getMe = async () => {
-  const res: BackendUserInfo = await request.get('/auth/profile')
+export async function getMe(): Promise<{ id: number; username: string }> {
+  const res: UserInfoResponse = await request.get('/auth/profile')
   return {
     id: res.id || 1,
     username: res.username
   }
 }
 
-// 修改密码响应格式
-interface ChangePasswordData {
-  success: boolean
-  message?: string
-}
-
-export const changePassword = async (data: { old_password: string; new_password: string }): Promise<void> => {
-  const res: ChangePasswordData = await request.post('/auth/change-password', data)
-  if (!res.success) {
-    throw new Error(res.message || '修改密码失败')
-  }
+export async function changePassword(data: { old_password: string; new_password: string }): Promise<void> {
+  const res: SuccessResponse = await request.post('/auth/change-password', data)
+  assertSuccess(res, '修改密码失败')
 }

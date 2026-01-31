@@ -51,23 +51,14 @@ const props = defineProps<{
   pool: PoolStats
 }>()
 
-const statusIcon = computed(() => {
-  switch (props.pool.status) {
-    case 'running': return '●'
-    case 'paused': return '⏸'
-    case 'stopped': return '⏹'
-    default: return '●'
-  }
-})
+const STATUS_CONFIG: Record<string, { icon: string; text: string }> = {
+  running: { icon: '●', text: '运行中' },
+  paused: { icon: '⏸', text: '已暂停' },
+  stopped: { icon: '⏹', text: '已停止' }
+}
 
-const statusText = computed(() => {
-  switch (props.pool.status) {
-    case 'running': return '运行中'
-    case 'paused': return '已暂停'
-    case 'stopped': return '已停止'
-    default: return '未知'
-  }
-})
+const statusIcon = computed(() => STATUS_CONFIG[props.pool.status]?.icon ?? '●')
+const statusText = computed(() => STATUS_CONFIG[props.pool.status]?.text ?? '未知')
 
 const utilizationPercent = computed(() => {
   return props.pool.utilization || 0

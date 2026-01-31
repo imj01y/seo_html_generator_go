@@ -51,10 +51,6 @@ export function useEditorStore(
   api: CodeEditorApi,
   languageMap?: Record<string, string>
 ): EditorStore {
-  // ============================================
-  // 状态定义
-  // ============================================
-
   const fileTree = ref<TreeNode | null>(null)
   const expandedDirs = ref<Set<string>>(new Set(['/']))
   const treeLoading = ref(false)
@@ -69,12 +65,7 @@ export function useEditorStore(
   const sidebarWidth = ref(220)
   const logPanelHeight = ref(200)
 
-  // ID 计数器
   let tabIdCounter = 0
-
-  // ============================================
-  // 计算属性
-  // ============================================
 
   const activeTab = computed(() =>
     tabs.value.find(t => t.id === activeTabId.value) || null
@@ -85,10 +76,6 @@ export function useEditorStore(
   )
 
   const hasModifiedFiles = computed(() => modifiedTabs.value.length > 0)
-
-  // ============================================
-  // 目录树操作
-  // ============================================
 
   async function loadFileTree() {
     treeLoading.value = true
@@ -113,10 +100,6 @@ export function useEditorStore(
   function isDirExpanded(path: string): boolean {
     return expandedDirs.value.has(path)
   }
-
-  // ============================================
-  // 标签页操作
-  // ============================================
 
   async function openFile(path: string, name: string) {
     // 检查是否已打开
@@ -203,10 +186,6 @@ export function useEditorStore(
     return tab ? tab.content !== tab.originalContent : false
   }
 
-  // ============================================
-  // 日志操作
-  // ============================================
-
   function addLog(entry: Omit<LogEntry, 'timestamp'>) {
     logs.value.push({ ...entry, timestamp: new Date() })
   }
@@ -222,12 +201,7 @@ export function useEditorStore(
     }
   }
 
-  // ============================================
-  // 返回状态和方法
-  // ============================================
-
   return {
-    // 状态
     fileTree,
     expandedDirs,
     treeLoading,
@@ -242,12 +216,10 @@ export function useEditorStore(
     sidebarWidth,
     logPanelHeight,
 
-    // 目录树操作
     loadFileTree,
     toggleDir,
     isDirExpanded,
 
-    // 标签页操作
     openFile,
     closeTab,
     closeOtherTabs,
@@ -258,7 +230,6 @@ export function useEditorStore(
     saveTab,
     isTabModified,
 
-    // 日志操作
     addLog,
     clearLogs,
     setLogRunning

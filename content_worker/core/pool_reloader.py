@@ -10,7 +10,7 @@
 
 import asyncio
 import json
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from loguru import logger
 
@@ -75,12 +75,12 @@ class PoolReloader:
                 except Exception:
                     pass
 
-    async def _handle_message(self, data):
+    async def _handle_message(self, data: Any) -> None:
         """处理消息（关键词和图片池已迁移到 Go API）"""
         try:
             if isinstance(data, bytes):
                 data = data.decode('utf-8')
-            msg = json.loads(data)
+            msg: Dict[str, Any] = json.loads(data)
 
             if msg.get("action") != "reload":
                 logger.debug(f"Ignoring non-reload message: {msg.get('action')}")

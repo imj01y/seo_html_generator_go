@@ -1,10 +1,11 @@
 import request from '@/utils/request'
+import type { SpiderStatsOverview, SpiderChartDataPoint, SpiderStatsByProject } from '@/types'
+import { buildWsUrl, closeWebSocket, type SuccessResponse } from './shared'
 
 // ============================================
 // 类型定义
 // ============================================
 
-// 树形文件结构
 export interface SpiderTreeNode {
   name: string
   path: string
@@ -19,7 +20,7 @@ export interface SpiderProject {
   entry_file: string
   entry_function: string
   start_url?: string
-  config?: Record<string, any>
+  config?: Record<string, unknown>
   concurrency: number
   output_group_id: number
   schedule?: string
@@ -49,7 +50,7 @@ export interface ProjectCreate {
   entry_file?: string
   entry_function?: string
   start_url?: string
-  config?: Record<string, any>
+  config?: Record<string, unknown>
   concurrency?: number
   output_group_id?: number
   schedule?: string
@@ -63,7 +64,7 @@ export interface ProjectUpdate {
   entry_file?: string
   entry_function?: string
   start_url?: string
-  config?: Record<string, any>
+  config?: Record<string, unknown>
   concurrency?: number
   output_group_id?: number
   schedule?: string
@@ -86,291 +87,146 @@ export interface CodeTemplate {
   extra_files?: { filename: string; content: string }[]
 }
 
-export interface TestResult {
-  success: boolean
-  items: Record<string, any>[]
-  logs: { time: string; level: string; message: string }[]
-  duration: number
-  error?: string
-}
-
 // ============================================
 // 响应类型
 // ============================================
 
-interface ProjectListResponse {
-  success: boolean
-  data: SpiderProject[]
-  total: number
-  page: number
-  page_size: number
-}
-
-interface ProjectResponse {
-  success: boolean
-  data: SpiderProject
-}
-
-interface FilesResponse {
-  success: boolean
-  data: ProjectFile[]
-}
-
-interface FileResponse {
-  success: boolean
-  data: ProjectFile
-}
-
-interface MutationResponse {
-  success: boolean
+interface MutationResponse extends SuccessResponse {
   id?: number
-  message?: string
 }
 
-interface ToggleResponse {
-  success: boolean
+interface ToggleResponse extends SuccessResponse {
   enabled: number
-  message?: string
 }
 
-interface TemplatesResponse {
-  success: boolean
-  data: CodeTemplate[]
-}
-
-interface TestResponse {
-  success: boolean
-  data?: TestResult
-  error?: string
+interface TestStartResponse extends SuccessResponse {
+  session_id?: string
 }
 
 // ============================================
 // 项目管理 API
 // ============================================
 
-/**
- * 获取项目列表
- */
-export const getProjects = async (params?: ProjectQuery) => {
-  const res: ProjectListResponse = await request.get('/spider-projects', { params })
-  return {
-    items: res.data || [],
-    total: res.total
-  }
+export async function getProjects(params?: ProjectQuery): Promise<{ items: SpiderProject[]; total: number }> {
+  const res: { data: SpiderProject[]; total: number } = await request.get('/spider-projects', { params })
+  return { items: res.data || [], total: res.total }
 }
 
-/**
- * 获取项目详情
- */
-export const getProject = async (id: number): Promise<SpiderProject> => {
-  const res: ProjectResponse = await request.get(`/spider-projects/${id}`)
+export async function getProject(id: number): Promise<SpiderProject> {
+  const res: { data: SpiderProject } = await request.get(`/spider-projects/${id}`)
   return res.data
 }
 
-/**
- * 创建项目
- */
-export const createProject = async (data: ProjectCreate): Promise<MutationResponse> => {
-  return await request.post('/spider-projects', data)
+export function createProject(data: ProjectCreate): Promise<MutationResponse> {
+  return request.post('/spider-projects', data)
 }
 
-/**
- * 更新项目
- */
-export const updateProject = async (id: number, data: ProjectUpdate): Promise<MutationResponse> => {
-  return await request.put(`/spider-projects/${id}`, data)
+export function updateProject(id: number, data: ProjectUpdate): Promise<MutationResponse> {
+  return request.put(`/spider-projects/${id}`, data)
 }
 
-/**
- * 删除项目
- */
-export const deleteProject = async (id: number): Promise<MutationResponse> => {
-  return await request.delete(`/spider-projects/${id}`)
+export function deleteProject(id: number): Promise<MutationResponse> {
+  return request.delete(`/spider-projects/${id}`)
 }
 
-/**
- * 切换启用状态
- */
-export const toggleProject = async (id: number): Promise<ToggleResponse> => {
-  return await request.post(`/spider-projects/${id}/toggle`)
+export function toggleProject(id: number): Promise<ToggleResponse> {
+  return request.post(`/spider-projects/${id}/toggle`)
 }
 
-/**
- * 运行项目
- */
-export const runProject = async (id: number): Promise<MutationResponse> => {
-  return await request.post(`/spider-projects/${id}/run`)
+export function runProject(id: number): Promise<MutationResponse> {
+  return request.post(`/spider-projects/${id}/run`)
 }
 
-/**
- * 停止项目
- */
-export const stopProject = async (id: number): Promise<MutationResponse> => {
-  return await request.post(`/spider-projects/${id}/stop`)
+export function stopProject(id: number): Promise<MutationResponse> {
+  return request.post(`/spider-projects/${id}/stop`)
 }
 
-/**
- * 重置项目 - 清空所有队列数据和失败请求记录
- */
-export const resetProject = async (id: number): Promise<MutationResponse> => {
-  return await request.post(`/spider-projects/${id}/reset`)
+export function resetProject(id: number): Promise<MutationResponse> {
+  return request.post(`/spider-projects/${id}/reset`)
 }
 
-/**
- * 启动测试运行项目（返回 session_id，通过 WebSocket 订阅日志）
- * @param id 项目ID
- * @param maxItems 最大测试条数，0 表示不限制
- */
-export const testProject = async (
-  id: number,
-  maxItems: number = 0
-): Promise<{ success: boolean; session_id?: string; message?: string }> => {
-  return await request.post(`/spider-projects/${id}/test`, null, {
-    params: { max_items: maxItems }
-  })
+export function testProject(id: number, maxItems: number = 0): Promise<TestStartResponse> {
+  return request.post(`/spider-projects/${id}/test`, null, { params: { max_items: maxItems } })
 }
 
-/**
- * 停止测试运行
- */
-export const stopTestProject = async (id: number): Promise<MutationResponse> => {
-  return await request.post(`/spider-projects/${id}/test/stop`)
+export function stopTestProject(id: number): Promise<MutationResponse> {
+  return request.post(`/spider-projects/${id}/test/stop`)
 }
 
 // ============================================
 // 项目文件 API
 // ============================================
 
-/**
- * 获取项目文件列表
- */
-export const getProjectFiles = async (projectId: number): Promise<ProjectFile[]> => {
-  const res: FilesResponse = await request.get(`/spider-projects/${projectId}/files`)
+export async function getProjectFiles(projectId: number): Promise<ProjectFile[]> {
+  const res: { data: ProjectFile[] } = await request.get(`/spider-projects/${projectId}/files`)
   return res.data || []
 }
 
-/**
- * 获取单个文件
- */
-export const getProjectFile = async (projectId: number, filename: string): Promise<ProjectFile> => {
-  const res: FileResponse = await request.get(`/spider-projects/${projectId}/files/${filename}`)
+export async function getProjectFile(projectId: number, filename: string): Promise<ProjectFile> {
+  const res: { data: ProjectFile } = await request.get(`/spider-projects/${projectId}/files/${filename}`)
   return res.data
 }
 
-/**
- * 创建文件
- */
-export const createProjectFile = async (
+export function createProjectFile(
   projectId: number,
   data: { filename: string; content: string }
-): Promise<MutationResponse> => {
-  return await request.post(`/spider-projects/${projectId}/files`, data)
+): Promise<MutationResponse> {
+  return request.post(`/spider-projects/${projectId}/files`, data)
 }
 
-/**
- * 更新文件
- */
-export const updateProjectFile = async (
-  projectId: number,
-  filename: string,
-  content: string
-): Promise<MutationResponse> => {
-  return await request.put(`/spider-projects/${projectId}/files/${filename}`, { content })
+export function updateProjectFile(projectId: number, filename: string, content: string): Promise<MutationResponse> {
+  return request.put(`/spider-projects/${projectId}/files/${filename}`, { content })
 }
 
-/**
- * 删除文件
- */
-export const deleteProjectFile = async (
-  projectId: number,
-  filename: string
-): Promise<MutationResponse> => {
-  return await request.delete(`/spider-projects/${projectId}/files/${filename}`)
+export function deleteProjectFile(projectId: number, filename: string): Promise<MutationResponse> {
+  return request.delete(`/spider-projects/${projectId}/files/${filename}`)
 }
 
 // ============================================
-// 树形文件操作 API（CodeEditorPanel 适配）
+// 树形文件操作 API
 // ============================================
 
-/**
- * 获取项目文件树
- */
-export const getProjectFileTree = async (projectId: number): Promise<SpiderTreeNode> => {
-  const res = await request.get(`/spider-projects/${projectId}/files`, {
-    params: { tree: 'true' }
-  })
+function cleanPath(path: string): string {
+  return path.startsWith('/') ? path.slice(1) : path
+}
+
+export async function getProjectFileTree(projectId: number): Promise<SpiderTreeNode> {
+  const res = await request.get(`/spider-projects/${projectId}/files`, { params: { tree: 'true' } })
   return res.data
 }
 
-/**
- * 获取文件内容（路径版本）
- */
-export const getProjectFileByPath = async (
-  projectId: number,
-  path: string
-): Promise<{ content: string }> => {
-  // 移除前导 /
-  const cleanPath = path.startsWith('/') ? path.slice(1) : path
-  const res = await request.get(`/spider-projects/${projectId}/files/${cleanPath}`)
+export async function getProjectFileByPath(projectId: number, path: string): Promise<{ content: string }> {
+  const res = await request.get(`/spider-projects/${projectId}/files/${cleanPath(path)}`)
   return res.data
 }
 
-/**
- * 保存文件（路径版本）
- */
-export const saveProjectFileByPath = async (
-  projectId: number,
-  path: string,
-  content: string
-): Promise<void> => {
-  const cleanPath = path.startsWith('/') ? path.slice(1) : path
-  await request.put(`/spider-projects/${projectId}/files/${cleanPath}`, { content })
+export async function saveProjectFileByPath(projectId: number, path: string, content: string): Promise<void> {
+  await request.put(`/spider-projects/${projectId}/files/${cleanPath(path)}`, { content })
 }
 
-/**
- * 创建文件或目录
- */
-export const createProjectItem = async (
+export async function createProjectItem(
   projectId: number,
   parentPath: string,
   name: string,
   type: 'file' | 'dir'
-): Promise<void> => {
-  const cleanPath = parentPath.startsWith('/') ? parentPath.slice(1) : parentPath
-  const url = cleanPath
-    ? `/spider-projects/${projectId}/files/${cleanPath}`
-    : `/spider-projects/${projectId}/files`
+): Promise<void> {
+  const clean = cleanPath(parentPath)
+  const url = clean ? `/spider-projects/${projectId}/files/${clean}` : `/spider-projects/${projectId}/files`
   await request.post(url, { name, type })
 }
 
-/**
- * 删除文件或目录
- */
-export const deleteProjectItem = async (
-  projectId: number,
-  path: string
-): Promise<void> => {
-  const cleanPath = path.startsWith('/') ? path.slice(1) : path
-  await request.delete(`/spider-projects/${projectId}/files/${cleanPath}`)
+export async function deleteProjectItem(projectId: number, path: string): Promise<void> {
+  await request.delete(`/spider-projects/${projectId}/files/${cleanPath(path)}`)
 }
 
-/**
- * 移动/重命名文件或目录
- */
-export const moveProjectItem = async (
-  projectId: number,
-  oldPath: string,
-  newPath: string
-): Promise<void> => {
-  const cleanPath = oldPath.startsWith('/') ? oldPath.slice(1) : oldPath
-  await request.patch(`/spider-projects/${projectId}/files/${cleanPath}`, {
-    new_path: newPath
-  })
+export async function moveProjectItem(projectId: number, oldPath: string, newPath: string): Promise<void> {
+  await request.patch(`/spider-projects/${projectId}/files/${cleanPath(oldPath)}`, { new_path: newPath })
 }
 
-/**
- * 创建 CodeEditorPanel API 适配器
- */
+// ============================================
+// 编辑器 API 适配器
+// ============================================
+
 export function createSpiderEditorApi(projectId: number) {
   return {
     getFileTree: () => getProjectFileTree(projectId),
@@ -379,20 +235,16 @@ export function createSpiderEditorApi(projectId: number) {
     createItem: (parentPath: string, name: string, type: 'file' | 'dir') =>
       createProjectItem(projectId, parentPath, name, type),
     deleteItem: (path: string) => deleteProjectItem(projectId, path),
-    moveItem: (oldPath: string, newPath: string) => moveProjectItem(projectId, oldPath, newPath),
-    // 不提供 runFile，因为爬虫使用项目级测试运行
+    moveItem: (oldPath: string, newPath: string) => moveProjectItem(projectId, oldPath, newPath)
   }
 }
 
 // ============================================
-// 工具 API
+// 代码模板 API
 // ============================================
 
-/**
- * 获取代码模板
- */
-export const getCodeTemplates = async (): Promise<CodeTemplate[]> => {
-  const res: TemplatesResponse = await request.get('/spider-projects/templates')
+export async function getCodeTemplates(): Promise<CodeTemplate[]> {
+  const res: { data: CodeTemplate[] } = await request.get('/spider-projects/templates')
   return res.data || []
 }
 
@@ -400,30 +252,13 @@ export const getCodeTemplates = async (): Promise<CodeTemplate[]> => {
 // WebSocket API
 // ============================================
 
-/** 构建 WebSocket URL */
-function buildWsUrl(path: string): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}${path}`
-}
-
-/** 安全关闭 WebSocket */
-function closeWebSocket(ws: WebSocket | null): void {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    ws.close()
-  }
-}
-
-/** WebSocket 消息处理器配置 */
 interface LogSubscriptionHandlers {
   onLog: (level: string, message: string) => void
   onEnd: () => void
   onError?: (error: string) => void
-  onItem?: (item: Record<string, any>) => void
+  onItem?: (item: Record<string, unknown>) => void
 }
 
-/**
- * 创建 WebSocket 日志订阅（通用实现）
- */
 function createLogSubscription(wsUrl: string, handlers: LogSubscriptionHandlers): () => void {
   const { onLog, onEnd, onError, onItem } = handlers
   let ws: WebSocket | null = null
@@ -439,30 +274,24 @@ function createLogSubscription(wsUrl: string, handlers: LogSubscriptionHandlers)
   ws.onmessage = (event) => {
     try {
       const msg = JSON.parse(event.data)
-      switch (msg.type) {
-        case 'log':
-          // 处理 ITEM 类型的日志（包含数据项）
-          if (msg.level === 'ITEM' && onItem) {
-            try {
-              const item = JSON.parse(msg.message)
-              onItem(item)
-            } catch {
-              onLog(msg.level, msg.message)
-            }
-          } else {
+      if (msg.type === 'log') {
+        if (msg.level === 'ITEM' && onItem) {
+          try {
+            onItem(JSON.parse(msg.message))
+          } catch {
             onLog(msg.level, msg.message)
           }
-          break
-        case 'end':
-          finished = true
-          onEnd()
-          closeWebSocket(ws)
-          break
-        case 'error':
-          finished = true
-          onError?.(msg.message)
-          closeWebSocket(ws)
-          break
+        } else {
+          onLog(msg.level, msg.message)
+        }
+      } else if (msg.type === 'end') {
+        finished = true
+        onEnd()
+        closeWebSocket(ws)
+      } else if (msg.type === 'error') {
+        finished = true
+        onError?.(msg.message)
+        closeWebSocket(ws)
       }
     } catch {
       // 忽略解析错误
@@ -476,7 +305,6 @@ function createLogSubscription(wsUrl: string, handlers: LogSubscriptionHandlers)
   }
 
   ws.onclose = () => {
-    // 无论是否正常关闭，如果还没有收到 end 消息，都应该结束
     if (!finished) {
       finished = true
       onEnd()
@@ -489,9 +317,6 @@ function createLogSubscription(wsUrl: string, handlers: LogSubscriptionHandlers)
   }
 }
 
-/**
- * 订阅项目执行日志
- */
 export function subscribeProjectLogs(
   projectId: number,
   onLog: (level: string, message: string) => void,
@@ -502,13 +327,10 @@ export function subscribeProjectLogs(
   return createLogSubscription(wsUrl, { onLog, onEnd, onError })
 }
 
-/**
- * 订阅测试执行日志
- */
 export function subscribeTestLogs(
   projectId: number,
   onLog: (level: string, message: string) => void,
-  onItem: (item: Record<string, any>) => void,
+  onItem: (item: Record<string, unknown>) => void,
   onEnd: () => void,
   onError?: (error: string) => void
 ): () => void {
@@ -516,63 +338,36 @@ export function subscribeTestLogs(
   return createLogSubscription(wsUrl, { onLog, onEnd, onError, onItem })
 }
 
-
 // ============================================
 // 爬虫统计 API
 // ============================================
 
-import type { SpiderStatsOverview, SpiderChartDataPoint, SpiderStatsByProject } from '@/types'
-
-interface StatsOverviewResponse {
-  success: boolean
-  data: SpiderStatsOverview
-}
-
-interface ChartDataResponse {
-  success: boolean
-  data: SpiderChartDataPoint[]
-}
-
-interface StatsByProjectResponse {
-  success: boolean
-  data: SpiderStatsByProject[]
-}
-
-/**
- * 获取统计概览
- */
-export const getStatsOverview = async (params?: {
+export async function getStatsOverview(params?: {
   project_id?: number
   period?: string
   start?: string
   end?: string
-}): Promise<SpiderStatsOverview> => {
-  const res: StatsOverviewResponse = await request.get('/spider-stats/overview', { params })
+}): Promise<SpiderStatsOverview> {
+  const res: { data: SpiderStatsOverview } = await request.get('/spider-stats/overview', { params })
   return res.data
 }
 
-/**
- * 获取图表数据
- */
-export const getChartStats = async (params?: {
+export async function getChartStats(params?: {
   project_id?: number
   period?: string
   start?: string
   end?: string
   limit?: number
-}): Promise<SpiderChartDataPoint[]> => {
-  const res: ChartDataResponse = await request.get('/spider-stats/chart', { params })
+}): Promise<SpiderChartDataPoint[]> {
+  const res: { data: SpiderChartDataPoint[] } = await request.get('/spider-stats/chart', { params })
   return res.data || []
 }
 
-/**
- * 获取按项目统计
- */
-export const getStatsByProject = async (params?: {
+export async function getStatsByProject(params?: {
   period?: string
   start?: string
   end?: string
-}): Promise<SpiderStatsByProject[]> => {
-  const res: StatsByProjectResponse = await request.get('/spider-stats/by-project', { params })
+}): Promise<SpiderStatsByProject[]> {
+  const res: { data: SpiderStatsByProject[] } = await request.get('/spider-stats/by-project', { params })
   return res.data || []
 }

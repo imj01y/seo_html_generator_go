@@ -1,6 +1,10 @@
 import request from '@/utils/request'
+import { assertSuccess, type SuccessResponse } from './shared'
 
-// 数据加工配置
+// ============================================
+// 类型定义
+// ============================================
+
 export interface ProcessorConfig {
   enabled: boolean
   concurrency: number
@@ -9,7 +13,6 @@ export interface ProcessorConfig {
   batch_size: number
 }
 
-// 数据加工状态
 export interface ProcessorStatus {
   running: boolean
   workers: number
@@ -22,7 +25,6 @@ export interface ProcessorStatus {
   last_error: string | null
 }
 
-// 数据加工统计
 export interface ProcessorStats {
   total_processed: number
   total_failed: number
@@ -33,72 +35,64 @@ export interface ProcessorStats {
   contents_generated: number
 }
 
-// 获取配置
-export const getProcessorConfig = async (): Promise<ProcessorConfig> => {
-  const res: { success: boolean; data: ProcessorConfig; message?: string } = await request.get('/processor/config')
-  if (!res.success) {
-    throw new Error(res.message || '获取配置失败')
-  }
+// ============================================
+// 响应类型
+// ============================================
+
+interface DataResponse<T> extends SuccessResponse {
+  data: T
+}
+
+interface CountResponse extends SuccessResponse {
+  count: number
+}
+
+// ============================================
+// 数据加工 API
+// ============================================
+
+export async function getProcessorConfig(): Promise<ProcessorConfig> {
+  const res: DataResponse<ProcessorConfig> = await request.get('/processor/config')
+  assertSuccess(res, '获取配置失败')
   return res.data
 }
 
-// 更新配置
-export const updateProcessorConfig = async (config: ProcessorConfig): Promise<ProcessorConfig> => {
-  const res: { success: boolean; data: ProcessorConfig; message?: string } = await request.put('/processor/config', config)
-  if (!res.success) {
-    throw new Error(res.message || '更新配置失败')
-  }
+export async function updateProcessorConfig(config: ProcessorConfig): Promise<ProcessorConfig> {
+  const res: DataResponse<ProcessorConfig> = await request.put('/processor/config', config)
+  assertSuccess(res, '更新配置失败')
   return res.data
 }
 
-// 获取运行状态
-export const getProcessorStatus = async (): Promise<ProcessorStatus> => {
-  const res: { success: boolean; data: ProcessorStatus; message?: string } = await request.get('/processor/status')
-  if (!res.success) {
-    throw new Error(res.message || '获取状态失败')
-  }
+export async function getProcessorStatus(): Promise<ProcessorStatus> {
+  const res: DataResponse<ProcessorStatus> = await request.get('/processor/status')
+  assertSuccess(res, '获取状态失败')
   return res.data
 }
 
-// 启动数据加工
-export const startProcessor = async (): Promise<void> => {
-  const res: { success: boolean; message?: string } = await request.post('/processor/start')
-  if (!res.success) {
-    throw new Error(res.message || '启动失败')
-  }
+export async function startProcessor(): Promise<void> {
+  const res: SuccessResponse = await request.post('/processor/start')
+  assertSuccess(res, '启动失败')
 }
 
-// 停止数据加工
-export const stopProcessor = async (): Promise<void> => {
-  const res: { success: boolean; message?: string } = await request.post('/processor/stop')
-  if (!res.success) {
-    throw new Error(res.message || '停止失败')
-  }
+export async function stopProcessor(): Promise<void> {
+  const res: SuccessResponse = await request.post('/processor/stop')
+  assertSuccess(res, '停止失败')
 }
 
-// 重试所有失败任务
-export const retryAllFailed = async (): Promise<{ count: number }> => {
-  const res: { success: boolean; count: number; message?: string } = await request.post('/processor/retry-all')
-  if (!res.success) {
-    throw new Error(res.message || '重试失败')
-  }
+export async function retryAllFailed(): Promise<{ count: number }> {
+  const res: CountResponse = await request.post('/processor/retry-all')
+  assertSuccess(res, '重试失败')
   return { count: res.count }
 }
 
-// 清空死信队列
-export const clearDeadQueue = async (): Promise<{ count: number }> => {
-  const res: { success: boolean; count: number; message?: string } = await request.delete('/processor/dead-queue')
-  if (!res.success) {
-    throw new Error(res.message || '清空失败')
-  }
+export async function clearDeadQueue(): Promise<{ count: number }> {
+  const res: CountResponse = await request.delete('/processor/dead-queue')
+  assertSuccess(res, '清空失败')
   return { count: res.count }
 }
 
-// 获取统计数据
-export const getProcessorStats = async (): Promise<ProcessorStats> => {
-  const res: { success: boolean; data: ProcessorStats; message?: string } = await request.get('/processor/stats')
-  if (!res.success) {
-    throw new Error(res.message || '获取统计失败')
-  }
+export async function getProcessorStats(): Promise<ProcessorStats> {
+  const res: DataResponse<ProcessorStats> = await request.get('/processor/stats')
+  assertSuccess(res, '获取统计失败')
   return res.data
 }

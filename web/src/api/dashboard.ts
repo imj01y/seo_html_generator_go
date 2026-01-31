@@ -1,7 +1,10 @@
 import request from '@/utils/request'
 import type { DashboardStats, DailyStats } from '@/types'
 
-// 后端返回格式（响应拦截器已自动提取 data 字段）
+// ============================================
+// 响应类型
+// ============================================
+
 interface BackendDashboardStats {
   site_count: number
   keyword_count: number
@@ -20,35 +23,35 @@ interface GroupStatsResponse {
   groups?: Array<{ group_id: number; group_name: string; count: number }>
 }
 
-export const getDashboardStats = async (): Promise<DashboardStats> => {
+// ============================================
+// Dashboard API
+// ============================================
+
+export async function getDashboardStats(): Promise<DashboardStats> {
   const res: BackendDashboardStats = await request.get('/dashboard/stats')
 
-  // 并行获取详细统计（包含真实的 memory_mb）
-  let keywordStats = { total: res.keyword_count, cursor: 0, remaining: res.keyword_count, loaded: res.keyword_count > 0, memory_mb: 0 }
-  let imageStats = { total: res.image_count, cursor: 0, remaining: res.image_count, loaded: res.image_count > 0, memory_mb: 0 }
+  const defaultStats = {
+    total: 0,
+    cursor: 0,
+    remaining: 0,
+    loaded: false,
+    memory_mb: 0
+  }
+
+  let keywordStats = { ...defaultStats, total: res.keyword_count, remaining: res.keyword_count, loaded: res.keyword_count > 0 }
+  let imageStats = { ...defaultStats, total: res.image_count, remaining: res.image_count, loaded: res.image_count > 0 }
 
   try {
     const [kStats, iStats] = await Promise.all([
       request.get('/keywords/stats').catch(() => null) as Promise<GroupStatsResponse | null>,
       request.get('/images/urls/stats').catch(() => null) as Promise<GroupStatsResponse | null>
     ])
+
     if (kStats) {
-      keywordStats = {
-        total: kStats.total,
-        cursor: 0,
-        remaining: kStats.total,
-        loaded: kStats.total > 0,
-        memory_mb: 0
-      }
+      keywordStats = { ...defaultStats, total: kStats.total, remaining: kStats.total, loaded: kStats.total > 0 }
     }
     if (iStats) {
-      imageStats = {
-        total: iStats.total,
-        cursor: 0,
-        remaining: iStats.total,
-        loaded: iStats.total > 0,
-        memory_mb: 0
-      }
+      imageStats = { ...defaultStats, total: iStats.total, remaining: iStats.total, loaded: iStats.total > 0 }
     }
   } catch {
     // 静默处理，使用默认值
@@ -64,32 +67,41 @@ export const getDashboardStats = async (): Promise<DashboardStats> => {
   }
 }
 
-export const getSpiderStats = async () => {
+export async function getSpiderStats(): Promise<{
+  total_visits: number
+  by_spider: Record<string, number>
+  by_site: Record<string, number>
+  by_status: Record<string, number>
+}> {
   const res: BackendSpiderVisits = await request.get('/dashboard/spider-visits')
   return {
     total_visits: res.total_visits || 0,
-    by_spider: {} as Record<string, number>,
-    by_site: {} as Record<string, number>,
-    by_status: {} as Record<string, number>
+    by_spider: {},
+    by_site: {},
+    by_status: {}
   }
 }
 
-export const getDailySpiderStats = async (_days?: number): Promise<DailyStats[]> => {
-  // 后端暂不支持趋势数据
+export async function getDailySpiderStats(_days?: number): Promise<DailyStats[]> {
   return []
 }
 
-export const getHourlySpiderStats = async (_date?: string): Promise<{ hour: number; total: number }[]> => {
-  // 后端暂无此接口，返回空数据
+export async function getHourlySpiderStats(_date?: string): Promise<{ hour: number; total: number }[]> {
   return []
 }
 
-// 获取更详细的分组统计
-export const getKeywordGroupStats = (): Promise<GroupStatsResponse> =>
-  request.get('/keywords/stats')
+// ============================================
+// 分组统计 API
+// ============================================
 
-export const getImageGroupStats = (): Promise<GroupStatsResponse> =>
-  request.get('/images/urls/stats')
+export function getKeywordGroupStats(): Promise<GroupStatsResponse> {
+  return request.get('/keywords/stats')
+}
 
-export const getCacheStats = () =>
-  request.get('/cache/stats')
+export function getImageGroupStats(): Promise<GroupStatsResponse> {
+  return request.get('/images/urls/stats')
+}
+
+export function getCacheStats(): Promise<unknown> {
+  return request.get('/cache/stats')
+}

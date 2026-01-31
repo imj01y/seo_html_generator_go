@@ -598,9 +598,9 @@ func (h *SpidersHandler) ListFiles(c *gin.Context) {
 		return
 	}
 
-	var exists2 int
-	sqlxDB.Get(&exists2, "SELECT COUNT(*) FROM spider_projects WHERE id = ?", id)
-	if exists2 == 0 {
+	var projectCount int
+	sqlxDB.Get(&projectCount, "SELECT COUNT(*) FROM spider_projects WHERE id = ?", id)
+	if projectCount == 0 {
 		c.JSON(404, gin.H{"success": false, "message": "项目不存在"})
 		return
 	}
@@ -630,9 +630,9 @@ func (h *SpidersHandler) GetFileTree(c *gin.Context) {
 	}
 
 	// 检查项目是否存在
-	var exists2 int
-	sqlxDB.Get(&exists2, "SELECT COUNT(*) FROM spider_projects WHERE id = ?", id)
-	if exists2 == 0 {
+	var projectCount int
+	sqlxDB.Get(&projectCount, "SELECT COUNT(*) FROM spider_projects WHERE id = ?", id)
+	if projectCount == 0 {
 		c.JSON(404, gin.H{"success": false, "message": "项目不存在"})
 		return
 	}

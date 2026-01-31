@@ -71,8 +71,6 @@ func (h *LogAlertHandler) Handle(alert Alert) {
 		logEvent.Error().Msg(alert.Message)
 	case AlertLevelWarning:
 		logEvent.Warn().Msg(alert.Message)
-	case AlertLevelInfo:
-		logEvent.Info().Msg(alert.Message)
 	default:
 		logEvent.Info().Msg(alert.Message)
 	}

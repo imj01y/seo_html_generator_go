@@ -426,7 +426,7 @@ const filteredGroups = computed(() => {
   )
 })
 
-const formatDate = (dateStr: string) => {
+const formatDate = (dateStr: string): string => {
   return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
 }
 

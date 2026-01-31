@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"math"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -393,44 +394,15 @@ func boolToStr(b bool) string {
 }
 
 func intToStr(i int) string {
-	return string(rune('0'+i%10)) + intToStrRec(i/10)
-}
-
-func intToStrRec(i int) string {
-	if i == 0 {
-		return ""
-	}
-	return intToStrRec(i/10) + string(rune('0'+i%10))
+	return strconv.Itoa(i)
 }
 
 func strToInt(s string) int {
-	result := 0
-	for _, c := range s {
-		if c >= '0' && c <= '9' {
-			result = result*10 + int(c-'0')
-		}
-	}
-	return result
+	v, _ := strconv.Atoi(s)
+	return v
 }
 
 func strToFloat(s string) float64 {
-	result := 0.0
-	decimal := false
-	decimalPlace := 0.1
-
-	for _, c := range s {
-		if c == '.' {
-			decimal = true
-			continue
-		}
-		if c >= '0' && c <= '9' {
-			if decimal {
-				result += float64(c-'0') * decimalPlace
-				decimalPlace *= 0.1
-			} else {
-				result = result*10 + float64(c-'0')
-			}
-		}
-	}
-	return result
+	v, _ := strconv.ParseFloat(s, 64)
+	return v
 }

@@ -133,12 +133,6 @@ const loadTrendChart = async () => {
     const dates = dailyStats.map(d => d.date)
     const totals = dailyStats.map(d => d.total)
 
-    // 获取所有蜘蛛类型
-    const spiderTypes = new Set<string>()
-    dailyStats.forEach(d => {
-      Object.keys(d.by_spider).forEach(type => spiderTypes.add(type))
-    })
-
     const series: echarts.SeriesOption[] = [
       {
         name: '总访问',

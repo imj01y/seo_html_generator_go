@@ -123,18 +123,13 @@ const handleSubmit = async () => {
   submitLoading.value = true
   try {
     if (isEdit.value) {
-      try {
-        await updateArticle(Number(route.params.id), {
-          group_id: form.group_id,
-          title: form.title,
-          content: form.content,
-          status: form.status
-        })
-        ElMessage.success('保存成功')
-        router.back()
-      } catch (e) {
-        ElMessage.warning((e as Error).message || '功能暂未实现')
-      }
+      await updateArticle(Number(route.params.id), {
+        group_id: form.group_id,
+        title: form.title,
+        content: form.content,
+        status: form.status
+      })
+      ElMessage.success('保存成功')
     } else {
       await createArticle({
         group_id: form.group_id,
@@ -142,8 +137,10 @@ const handleSubmit = async () => {
         content: form.content
       })
       ElMessage.success('创建成功')
-      router.back()
     }
+    router.back()
+  } catch (e) {
+    ElMessage.warning((e as Error).message || '操作失败')
   } finally {
     submitLoading.value = false
   }

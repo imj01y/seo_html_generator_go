@@ -75,7 +75,6 @@ const searchText = ref('')
 const autoScroll = ref(true)
 const logContainer = ref<HTMLElement | null>(null)
 
-// 计算过滤后的日志
 const filteredLogs = computed(() => {
   let result = props.logs
 
@@ -96,7 +95,6 @@ const filteredLogs = computed(() => {
   return result
 })
 
-// 监听日志变化，自动滚动
 watch(
   () => props.logs.length,
   async () => {
@@ -117,7 +115,6 @@ function clearLogs() {
   emit('clear')
 }
 
-// 暴露方法
 defineExpose({
   scrollToBottom
 })

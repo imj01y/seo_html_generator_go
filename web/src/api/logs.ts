@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import { buildWsUrl, closeWebSocket } from './shared'
 
 // ============================================
 // 类型定义
@@ -10,7 +11,7 @@ export interface LogEntry {
   module?: string
   spider_project_id?: number
   message: string
-  extra?: Record<string, any>
+  extra?: Record<string, unknown>
   created_at: string
 }
 
@@ -35,76 +36,6 @@ export interface LogStats {
   websocket_clients: number
 }
 
-// ============================================
-// 响应类型
-// ============================================
-
-interface LogListResponse {
-  success: boolean
-  logs: LogEntry[]
-  total: number
-  page: number
-  page_size: number
-}
-
-interface LogStatsResponse {
-  success: boolean
-  data: LogStats
-}
-
-interface ClearResponse {
-  success: boolean
-  deleted: number
-  message: string
-}
-
-// ============================================
-// HTTP API
-// ============================================
-
-/**
- * 获取历史日志
- */
-export const getLogHistory = async (params?: LogQuery) => {
-  const res: LogListResponse = await request.get('/logs/history', { params })
-  return {
-    logs: res.logs || [],
-    total: res.total
-  }
-}
-
-/**
- * 获取日志统计
- */
-export const getLogStats = async (): Promise<LogStats> => {
-  const res: LogStatsResponse = await request.get('/logs/stats')
-  return res.data
-}
-
-/**
- * 清理旧日志
- */
-export const clearOldLogs = async (days: number = 30): Promise<ClearResponse> => {
-  return await request.delete('/logs/clear', { params: { days } })
-}
-
-// ============================================
-// WebSocket API
-// ============================================
-
-/** 构建 WebSocket URL */
-function buildWsUrl(path: string): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${protocol}//${window.location.host}${path}`
-}
-
-/** 安全关闭 WebSocket */
-function closeWebSocket(ws: WebSocket | null): void {
-  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
-    ws.close()
-  }
-}
-
 export interface RealtimeLog {
   type: 'log' | 'heartbeat'
   level?: string
@@ -114,9 +45,49 @@ export interface RealtimeLog {
   spider_project_id?: number
 }
 
-/**
- * 订阅实时日志
- */
+// ============================================
+// 响应类型
+// ============================================
+
+interface LogListResponse {
+  logs: LogEntry[]
+  total: number
+}
+
+interface LogStatsResponse {
+  data: LogStats
+}
+
+interface ClearResponse {
+  deleted: number
+  message: string
+}
+
+// ============================================
+// HTTP API
+// ============================================
+
+export async function getLogHistory(params?: LogQuery): Promise<{ logs: LogEntry[]; total: number }> {
+  const res: LogListResponse = await request.get('/logs/history', { params })
+  return {
+    logs: res.logs || [],
+    total: res.total
+  }
+}
+
+export async function getLogStats(): Promise<LogStats> {
+  const res: LogStatsResponse = await request.get('/logs/stats')
+  return res.data
+}
+
+export async function clearOldLogs(days: number = 30): Promise<ClearResponse> {
+  return request.delete('/logs/clear', { params: { days } })
+}
+
+// ============================================
+// WebSocket API
+// ============================================
+
 export function subscribeRealtimeLogs(
   onLog: (log: RealtimeLog) => void,
   onError?: (error: string) => void
@@ -138,7 +109,6 @@ export function subscribeRealtimeLogs(
       if (msg.type === 'log') {
         onLog(msg)
       }
-      // 忽略 heartbeat
     } catch {
       // 忽略解析错误
     }

@@ -113,26 +113,17 @@ func (rm *ReloadManager) reloadWindows() error {
 
 	// On Windows, we create a batch script that will restart the server
 	// after the current process exits
-
-	batchScript := `@echo off
-timeout /t 2 /nobreak >nul
-start "" "%s"
-`
-	scriptContent := []byte(batchScript)
 	scriptPath := filepath.Join(rm.workDir, "_restart.bat")
 
 	// Write restart script
-	if err := os.WriteFile(scriptPath, []byte(
-		"@echo off\n"+
-			"timeout /t 2 /nobreak >nul\n"+
-			"start \"\" \""+rm.execPath+"\"\n"+
-			"del \"%~f0\"\n",
-	), 0755); err != nil {
+	scriptContent := "@echo off\n" +
+		"timeout /t 2 /nobreak >nul\n" +
+		"start \"\" \"" + rm.execPath + "\"\n" +
+		"del \"%~f0\"\n"
+	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0755); err != nil {
 		log.Error().Err(err).Msg("Failed to create restart script")
 		return err
 	}
-
-	_ = scriptContent // Silence unused variable
 
 	// Start the restart script
 	cmd := exec.Command("cmd", "/c", "start", "/b", scriptPath)

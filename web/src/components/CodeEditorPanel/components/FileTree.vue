@@ -166,13 +166,9 @@ function handleContextMenu(payload: { event: MouseEvent; node: TreeNode }) {
 }
 
 function handleTreeContextMenu(event: MouseEvent) {
-  // 检查是否点击在节点上（由 FileTreeNode 处理）
   const target = event.target as HTMLElement
-  if (target.closest('.node-row')) {
-    return // 让 FileTreeNode 的事件处理
-  }
+  if (target.closest('.node-row')) return
 
-  // 空白区域右键
   contextNode.value = null
   contextMenuRef.value?.show(event)
 }
@@ -180,20 +176,12 @@ function handleTreeContextMenu(event: MouseEvent) {
 function handleMenuSelect(key: string) {
   const node = contextNode.value
 
-  // 空白区域右键的菜单选项
   if (!node) {
-    switch (key) {
-      case 'new-file':
-        emit('create-file', '') // 根目录
-        break
-      case 'new-dir':
-        emit('create-dir', '') // 根目录
-        break
-    }
+    if (key === 'new-file') emit('create-file', '')
+    else if (key === 'new-dir') emit('create-dir', '')
     return
   }
 
-  // 节点上右键的菜单选项
   switch (key) {
     case 'new-file':
       emit('create-file', node.type === 'dir' ? node.path : getParentPath(node.path))
@@ -244,9 +232,7 @@ async function handleMove(payload: { sourcePath: string; targetPath: string }) {
   }
 }
 
-// 根目录拖放处理
 function handleRootDragOver(event: DragEvent) {
-  // 检查是否拖到了节点上（由 FileTreeNode 处理）
   const target = event.target as HTMLElement
   if (target.closest('.node-row')) {
     isDragOverRoot.value = false
@@ -259,7 +245,6 @@ function handleRootDragOver(event: DragEvent) {
 }
 
 function handleRootDragLeave(event: DragEvent) {
-  // 检查是否离开了 tree-content 区域
   const relatedTarget = event.relatedTarget as HTMLElement
   if (!relatedTarget?.closest('.tree-content')) {
     isDragOverRoot.value = false
@@ -269,21 +254,12 @@ function handleRootDragLeave(event: DragEvent) {
 function handleRootDrop(event: DragEvent) {
   isDragOverRoot.value = false
 
-  // 检查是否放到了节点上（由 FileTreeNode 处理）
   const target = event.target as HTMLElement
-  if (target.closest('.node-row')) {
-    return
-  }
+  if (target.closest('.node-row')) return
 
   const sourcePath = event.dataTransfer?.getData('text/plain')
-  if (!sourcePath) return
+  if (!sourcePath || !sourcePath.includes('/')) return
 
-  // 如果文件已经在根目录，不需要移动
-  if (!sourcePath.includes('/')) {
-    return
-  }
-
-  // 移动到根目录
   handleMove({ sourcePath, targetPath: '' })
 }
 

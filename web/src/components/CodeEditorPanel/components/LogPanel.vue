@@ -152,7 +152,6 @@ function handleCopy() {
   ElMessage.success('已复制到剪贴板')
 }
 
-// 自动滚动到底部
 watch(() => props.store.logs.value.length, () => {
   nextTick(() => {
     if (logContent.value) {

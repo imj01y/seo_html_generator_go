@@ -229,13 +229,13 @@ func seoFormatFloat(f float64) string {
 }
 
 func seoFormatInt(n int) string {
-	s := ""
+	if n == 0 {
+		return "0"
+	}
+	var s string
 	for n > 0 {
 		s = string('0'+byte(n%10)) + s
 		n /= 10
-	}
-	if s == "" {
-		return "0"
 	}
 	return s
 }

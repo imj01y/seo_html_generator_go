@@ -130,6 +130,7 @@ export interface MenuItem {
   shortcut?: string
   divider?: boolean
   danger?: boolean
+  disabled?: boolean
 }
 
 // ============================================

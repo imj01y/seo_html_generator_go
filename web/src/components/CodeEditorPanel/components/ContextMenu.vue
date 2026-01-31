@@ -63,7 +63,7 @@ function hide() {
   emit('close')
 }
 
-function handleClick(item: MenuItem & { disabled?: boolean }) {
+function handleClick(item: MenuItem) {
   if (item.disabled) return
   emit('select', item.key)
   hide()

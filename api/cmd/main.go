@@ -171,26 +171,10 @@ func main() {
 	// Load initial data for all groups
 	log.Info().Msg("Loading initial data for all groups...")
 
-	// 查询所有关键词分组 ID
-	var keywordGroupIDs []int
-	if err := db.SelectContext(ctx, &keywordGroupIDs, "SELECT DISTINCT id FROM keyword_groups"); err != nil {
-		log.Warn().Err(err).Msg("Failed to query keyword groups, loading default group only")
-		keywordGroupIDs = []int{1}
-	}
-
-	// 查询所有图片分组 ID
-	var imageGroupIDs []int
-	if err := db.SelectContext(ctx, &imageGroupIDs, "SELECT DISTINCT id FROM image_groups"); err != nil {
-		log.Warn().Err(err).Msg("Failed to query image groups, loading default group only")
-		imageGroupIDs = []int{1}
-	}
-
-	// 查询所有文章分组 ID
-	var articleGroupIDs []int
-	if err := db.SelectContext(ctx, &articleGroupIDs, "SELECT DISTINCT id FROM article_groups"); err != nil {
-		log.Warn().Err(err).Msg("Failed to query article groups, loading default group only")
-		articleGroupIDs = []int{1}
-	}
+	// 查询所有分组 ID
+	keywordGroupIDs := queryGroupIDs(ctx, db, "keyword_groups", 1)
+	imageGroupIDs := queryGroupIDs(ctx, db, "image_groups", 1)
+	articleGroupIDs := queryGroupIDs(ctx, db, "article_groups", 1)
 
 	// 加载所有关键词分组
 	for _, gid := range keywordGroupIDs {
@@ -497,35 +481,27 @@ func main() {
 }
 
 // findProjectRoot 查找项目根目录（包含 config.yaml 的目录）
-// 搜索顺序：可执行文件的父目录 -> 当前目录的父目录 -> 当前目录 -> 当前目录的上级
+// 搜索顺序：可执行文件的父目录 -> 当前目录的父目录 -> 当前目录
 func findProjectRoot() string {
-	configFile := "config.yaml"
-
-	// 尝试从可执行文件路径推断
-	if execPath, err := os.Executable(); err == nil {
-		candidate := filepath.Dir(filepath.Dir(execPath))
-		if fileExists(filepath.Join(candidate, configFile)) {
-			return candidate
-		}
-	}
-
-	// 尝试当前工作目录及其父目录
+	const configFile = "config.yaml"
 	cwd, _ := os.Getwd()
+
+	// 构建候选路径列表
 	candidates := []string{
 		filepath.Dir(cwd), // 父目录
 		cwd,               // 当前目录
 	}
 
+	// 尝试从可执行文件路径推断
+	if execPath, err := os.Executable(); err == nil {
+		candidates = append([]string{filepath.Dir(filepath.Dir(execPath))}, candidates...)
+	}
+
+	// 遍历候选路径
 	for _, candidate := range candidates {
 		if fileExists(filepath.Join(candidate, configFile)) {
 			return candidate
 		}
-	}
-
-	// 最后尝试当前目录的上级
-	parent := filepath.Dir(cwd)
-	if fileExists(filepath.Join(parent, configFile)) {
-		return parent
 	}
 
 	// 默认返回当前目录
@@ -536,4 +512,17 @@ func findProjectRoot() string {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// queryGroupIDs 查询指定表的分组 ID 列表
+func queryGroupIDs(ctx context.Context, db interface {
+	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
+}, table string, defaultID int) []int {
+	var ids []int
+	query := fmt.Sprintf("SELECT DISTINCT id FROM %s", table)
+	if err := db.SelectContext(ctx, &ids, query); err != nil {
+		log.Warn().Err(err).Str("table", table).Msg("Failed to query group IDs, using default")
+		return []int{defaultID}
+	}
+	return ids
 }

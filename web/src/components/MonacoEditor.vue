@@ -27,7 +27,6 @@ let editor: monaco.editor.IStandaloneCodeEditor | null = null
 onMounted(() => {
   if (!editorContainer.value) return
 
-  // 配置 Monaco Editor 的 worker
   self.MonacoEnvironment = {
     getWorker: function (_moduleId: string, label: string) {
       const getWorkerModule = (moduleUrl: string, label: string) => {
@@ -75,14 +74,12 @@ onMounted(() => {
     ...props.options
   })
 
-  // 监听内容变化
   editor.onDidChangeModelContent(() => {
     const value = editor?.getValue() || ''
     emit('update:modelValue', value)
     emit('change', value)
   })
 
-  // 添加 Ctrl+S 快捷键保存
   editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
     emit('save')
   })
@@ -95,14 +92,12 @@ onBeforeUnmount(() => {
   }
 })
 
-// 监听外部值变化
 watch(() => props.modelValue, (newValue) => {
   if (editor && newValue !== editor.getValue()) {
     editor.setValue(newValue)
   }
 })
 
-// 监听语言变化
 watch(() => props.language, (newLang) => {
   if (editor && newLang) {
     const model = editor.getModel()
@@ -112,14 +107,12 @@ watch(() => props.language, (newLang) => {
   }
 })
 
-// 监听主题变化
 watch(() => props.theme, (newTheme) => {
   if (newTheme) {
     monaco.editor.setTheme(newTheme)
   }
 })
 
-// 暴露方法
 defineExpose({
   getEditor: () => editor,
   getValue: () => editor?.getValue() || '',

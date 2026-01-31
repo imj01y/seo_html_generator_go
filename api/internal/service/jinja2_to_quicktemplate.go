@@ -402,7 +402,6 @@ func (c *Jinja2ToQuickTemplate) ConvertWithValidation(jinja2Template string) *Co
 
 // ParseRangeValue parses a range value that could be a number or expression
 func ParseRangeValue(s string) (int, error) {
-	// Try to parse as integer
 	n, err := strconv.Atoi(strings.TrimSpace(s))
 	if err != nil {
 		return 0, fmt.Errorf("无法解析范围值: %s", s)

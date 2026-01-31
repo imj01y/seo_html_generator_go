@@ -9,57 +9,65 @@ import type {
   BatchResult,
   GroupStats
 } from '@/types'
+import { assertSuccess, type SuccessResponse, type CreateResponse, type CountResponse } from './shared'
 
-// 后端返回格式
-interface BackendGroupsResponse {
+// ============================================
+// 响应类型
+// ============================================
+
+interface GroupsResponse {
   groups: ImageGroup[]
-  error?: string
 }
 
-// 图片分组
-export const getImageGroups = async (siteGroupId?: number): Promise<ImageGroup[]> => {
+interface ImageUrlListResponse {
+  items: ImageUrl[]
+  total: number
+}
+
+// ============================================
+// 分组 API
+// ============================================
+
+export async function getImageGroups(siteGroupId?: number): Promise<ImageGroup[]> {
   const params = siteGroupId ? { site_group_id: siteGroupId } : {}
-  const res: BackendGroupsResponse = await request.get('/images/groups', { params })
+  const res: GroupsResponse = await request.get('/images/groups', { params })
   return res.groups || []
 }
 
-export const createImageGroup = async (data: ImageGroupCreate): Promise<ImageGroup> => {
-  const res: { success: boolean; id?: number; message?: string } = await request.post('/images/groups', data)
-  if (res.success && res.id) {
-    return {
-      id: res.id,
-      site_group_id: data.site_group_id || 1,
-      name: data.name,
-      description: data.description || null,
-      is_default: data.is_default ? 1 : 0,
-      created_at: new Date().toISOString()
-    }
-  }
-  throw new Error(res.message || '创建失败')
-}
-
-export const updateImageGroup = async (id: number, data: ImageGroupUpdate): Promise<void> => {
-  const res: { success: boolean; message?: string } = await request.put(`/images/groups/${id}`, data)
-  if (!res.success) {
-    throw new Error(res.message || '更新失败')
+export async function createImageGroup(data: ImageGroupCreate): Promise<ImageGroup> {
+  const res: CreateResponse = await request.post('/images/groups', data)
+  assertSuccess(res, '创建失败')
+  return {
+    id: res.id!,
+    site_group_id: data.site_group_id || 1,
+    name: data.name,
+    description: data.description || null,
+    is_default: data.is_default ? 1 : 0,
+    created_at: new Date().toISOString()
   }
 }
 
-export const deleteImageGroup = async (id: number): Promise<void> => {
-  const res: { success: boolean; message?: string } = await request.delete(`/images/groups/${id}`)
-  if (!res.success) {
-    throw new Error(res.message || '删除失败')
-  }
+export async function updateImageGroup(id: number, data: ImageGroupUpdate): Promise<void> {
+  const res: SuccessResponse = await request.put(`/images/groups/${id}`, data)
+  assertSuccess(res, '更新失败')
 }
 
-// 图片URL分页列表
-export const getImageUrls = async (params: {
+export async function deleteImageGroup(id: number): Promise<void> {
+  const res: SuccessResponse = await request.delete(`/images/groups/${id}`)
+  assertSuccess(res, '删除失败')
+}
+
+// ============================================
+// 图片 URL API
+// ============================================
+
+export async function getImageUrls(params: {
   group_id?: number
   page?: number
   page_size?: number
   search?: string
-}): Promise<PaginatedResponse<ImageUrl>> => {
-  const res: { items: ImageUrl[]; total: number; page: number; page_size: number } = await request.get('/images/urls/list', {
+}): Promise<PaginatedResponse<ImageUrl>> {
+  const res: ImageUrlListResponse = await request.get('/images/urls/list', {
     params: {
       group_id: params.group_id || 1,
       page: params.page || 1,
@@ -70,122 +78,110 @@ export const getImageUrls = async (params: {
   return { items: res.items || [], total: res.total || 0 }
 }
 
-export const addImageUrl = async (data: { group_id: number; url: string }): Promise<ImageUrl> => {
-  const res: { success: boolean; id?: number; message?: string } = await request.post('/images/urls/add', data)
-  if (res.success && res.id) {
-    return {
-      id: res.id,
-      group_id: data.group_id,
-      url: data.url,
-      status: 1,
-      created_at: new Date().toISOString()
-    }
+export async function addImageUrl(data: { group_id: number; url: string }): Promise<ImageUrl> {
+  const res: CreateResponse = await request.post('/images/urls/add', data)
+  assertSuccess(res, '添加失败')
+  return {
+    id: res.id!,
+    group_id: data.group_id,
+    url: data.url,
+    status: 1,
+    created_at: new Date().toISOString()
   }
-  throw new Error(res.message || '添加失败')
 }
 
-export const addImageUrlsBatch = async (data: ImageUrlBatchAdd): Promise<BatchResult> => {
+export async function addImageUrlsBatch(data: ImageUrlBatchAdd): Promise<BatchResult> {
   const res: { success: boolean; added: number; skipped: number } = await request.post('/images/urls/batch', data)
   return { added: res.added, skipped: res.skipped }
 }
 
-// 上传 TXT 文件批量添加图片URL
-export const uploadImagesFile = async (file: File, groupId: number): Promise<{
+export async function updateImageUrl(
+  id: number,
+  data: { url?: string; group_id?: number; status?: number }
+): Promise<void> {
+  const res: SuccessResponse = await request.put(`/images/urls/${id}`, data)
+  assertSuccess(res, '更新失败')
+}
+
+export async function deleteImageUrl(id: number): Promise<void> {
+  const res: SuccessResponse = await request.delete(`/images/urls/${id}`)
+  assertSuccess(res, '删除失败')
+}
+
+// ============================================
+// 缓存操作 API
+// ============================================
+
+export async function reloadImageGroup(_group_id?: number): Promise<{ total: number }> {
+  const res: { success: boolean; total: number } = await request.post('/images/urls/reload')
+  return { total: res.total }
+}
+
+export async function clearImageCache(): Promise<{ cleared: number; message: string }> {
+  const res: { success: boolean; cleared: number; message: string } = await request.post('/images/cache/clear')
+  assertSuccess(res, '清理失败')
+  return { cleared: res.cleared, message: res.message }
+}
+
+export async function getRandomImageUrls(count?: number): Promise<string[]> {
+  const res: { urls: string[] } = await request.get('/images/urls/random', { params: { count } })
+  return res.urls
+}
+
+export function getImageStats(): Promise<GroupStats> {
+  return request.get('/images/urls/stats')
+}
+
+// ============================================
+// 批量操作 API
+// ============================================
+
+export async function batchDeleteImages(ids: number[]): Promise<{ deleted: number }> {
+  const res: CountResponse = await request.delete('/images/batch', { data: { ids } })
+  assertSuccess(res, '批量删除失败')
+  return { deleted: res.deleted! }
+}
+
+export async function batchUpdateImageStatus(ids: number[], status: number): Promise<{ updated: number }> {
+  const res: CountResponse = await request.put('/images/batch/status', { ids, status })
+  assertSuccess(res, '批量更新状态失败')
+  return { updated: res.updated! }
+}
+
+export async function batchMoveImages(ids: number[], groupId: number): Promise<{ moved: number }> {
+  const res: CountResponse = await request.put('/images/batch/move', { ids, group_id: groupId })
+  assertSuccess(res, '批量移动失败')
+  return { moved: res.moved! }
+}
+
+export async function deleteAllImages(groupId?: number): Promise<{ deleted: number }> {
+  const res: CountResponse = await request.delete('/images/delete-all', {
+    data: { group_id: groupId, confirm: true }
+  })
+  assertSuccess(res, '删除失败')
+  return { deleted: res.deleted! }
+}
+
+// ============================================
+// 文件上传 API
+// ============================================
+
+export async function uploadImagesFile(
+  file: File,
+  groupId: number
+): Promise<{
   success: boolean
   message: string
   total: number
   added: number
   skipped: number
-}> => {
+}> {
   const formData = new FormData()
   formData.append('file', file)
   formData.append('group_id', String(groupId))
 
-  return await request.post('/images/upload', formData, {
-    timeout: 300000,  // 5 分钟超时
-    headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+  return request.post('/images/upload', formData, {
+    timeout: 300000,
+    headers: { 'Content-Type': 'multipart/form-data' }
   })
-}
-
-export const updateImageUrl = async (id: number, data: { url?: string; group_id?: number; status?: number }): Promise<void> => {
-  const res: { success: boolean; message?: string } = await request.put(`/images/urls/${id}`, data)
-  if (!res.success) {
-    throw new Error(res.message || '更新失败')
-  }
-}
-
-export const deleteImageUrl = async (id: number): Promise<void> => {
-  const res: { success: boolean; message?: string } = await request.delete(`/images/urls/${id}`)
-  if (!res.success) {
-    throw new Error(res.message || '删除失败')
-  }
-}
-
-export const reloadImageGroup = async (_group_id?: number): Promise<{ total: number }> => {
-  const res: { success: boolean; total: number } = await request.post('/images/urls/reload')
-  return { total: res.total }
-}
-
-export const clearImageCache = async (): Promise<{ cleared: number; message: string }> => {
-  const res: { success: boolean; cleared: number; message: string } = await request.post('/images/cache/clear')
-  if (!res.success) {
-    throw new Error(res.message || '清理失败')
-  }
-  return { cleared: res.cleared, message: res.message }
-}
-
-export const getRandomImageUrls = async (count?: number): Promise<string[]> => {
-  const res: { urls: string[]; count: number } = await request.get('/images/urls/random', {
-    params: { count }
-  })
-  return res.urls
-}
-
-export const getImageStats = (): Promise<GroupStats> =>
-  request.get('/images/urls/stats')
-
-// 批量操作
-export const batchDeleteImages = async (ids: number[]): Promise<{ deleted: number }> => {
-  const res: { success: boolean; deleted: number; message?: string } = await request.delete('/images/batch', {
-    data: { ids }
-  })
-  if (!res.success) {
-    throw new Error(res.message || '批量删除失败')
-  }
-  return { deleted: res.deleted }
-}
-
-export const batchUpdateImageStatus = async (ids: number[], status: number): Promise<{ updated: number }> => {
-  const res: { success: boolean; updated: number; message?: string } = await request.put('/images/batch/status', {
-    ids,
-    status
-  })
-  if (!res.success) {
-    throw new Error(res.message || '批量更新状态失败')
-  }
-  return { updated: res.updated }
-}
-
-export const batchMoveImages = async (ids: number[], groupId: number): Promise<{ moved: number }> => {
-  const res: { success: boolean; moved: number; message?: string } = await request.put('/images/batch/move', {
-    ids,
-    group_id: groupId
-  })
-  if (!res.success) {
-    throw new Error(res.message || '批量移动失败')
-  }
-  return { moved: res.moved }
-}
-
-// 删除全部图片
-export const deleteAllImages = async (groupId?: number): Promise<{ deleted: number }> => {
-  const res: { success: boolean; deleted: number; message?: string } = await request.delete('/images/delete-all', {
-    data: { group_id: groupId, confirm: true }
-  })
-  if (!res.success) {
-    throw new Error(res.message || '删除失败')
-  }
-  return { deleted: res.deleted }
 }

@@ -119,7 +119,7 @@ const rules: FormRules = {
   name: [{ required: true, message: '请输入站群名称', trigger: 'blur' }]
 }
 
-const formatDate = (dateStr: string) => {
+const formatDate = (dateStr: string): string => {
   return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
 }
 

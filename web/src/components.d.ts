@@ -7,6 +7,10 @@ export {}
 
 declare module 'vue' {
   export interface GlobalComponents {
+    ApiTokenGuide: typeof import('./components/ApiTokenGuide.vue')['default']
+    CodeEditorPanel: typeof import('./components/CodeEditorPanel/index.vue')['default']
+    ContextMenu: typeof import('./components/CodeEditorPanel/components/ContextMenu.vue')['default']
+    EditorTabs: typeof import('./components/CodeEditorPanel/components/EditorTabs.vue')['default']
     ElAlert: typeof import('element-plus/es')['ElAlert']
     ElAside: typeof import('element-plus/es')['ElAside']
     ElBreadcrumb: typeof import('element-plus/es')['ElBreadcrumb']
@@ -27,6 +31,7 @@ declare module 'vue' {
     ElDropdown: typeof import('element-plus/es')['ElDropdown']
     ElDropdownItem: typeof import('element-plus/es')['ElDropdownItem']
     ElDropdownMenu: typeof import('element-plus/es')['ElDropdownMenu']
+    ElEmpty: typeof import('element-plus/es')['ElEmpty']
     ElForm: typeof import('element-plus/es')['ElForm']
     ElFormItem: typeof import('element-plus/es')['ElFormItem']
     ElHeader: typeof import('element-plus/es')['ElHeader']
@@ -56,13 +61,19 @@ declare module 'vue' {
     ElTimePicker: typeof import('element-plus/es')['ElTimePicker']
     ElTooltip: typeof import('element-plus/es')['ElTooltip']
     ElUpload: typeof import('element-plus/es')['ElUpload']
+    FileTree: typeof import('./components/CodeEditorPanel/components/FileTree.vue')['default']
+    FileTreeNode: typeof import('./components/CodeEditorPanel/components/FileTreeNode.vue')['default']
+    LogPanel: typeof import('./components/CodeEditorPanel/components/LogPanel.vue')['default']
     LogViewer: typeof import('./components/LogViewer.vue')['default']
     MainLayout: typeof import('./components/Layout/MainLayout.vue')['default']
     MonacoEditor: typeof import('./components/MonacoEditor.vue')['default']
+    PoolStatusCard: typeof import('./components/PoolStatusCard.vue')['default']
+    PromptDialog: typeof import('./components/CodeEditorPanel/components/PromptDialog.vue')['default']
     RouterLink: typeof import('vue-router')['RouterLink']
     RouterView: typeof import('vue-router')['RouterView']
     ScheduleBuilder: typeof import('./components/ScheduleBuilder.vue')['default']
     SpiderGuide: typeof import('./components/SpiderGuide.vue')['default']
+    TemplateGuide: typeof import('./components/TemplateGuide.vue')['default']
   }
   export interface ComponentCustomProperties {
     vLoading: typeof import('element-plus/es')['ElLoadingDirective']

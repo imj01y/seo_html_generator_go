@@ -5,10 +5,9 @@
 """
 
 import random
-import logging
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 
 class TitleManager:

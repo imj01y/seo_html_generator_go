@@ -88,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { Clock } from '@element-plus/icons-vue'
 
 // 定义调度配置类型
@@ -244,18 +244,14 @@ watch(
   { deep: true }
 )
 
-// 监听 modelValue 变化，更新内部状态
+// 监听 modelValue 变化，更新内部状态（包含初始化）
 watch(
   () => props.modelValue,
   (newValue) => {
     parseModelValue(newValue)
-  }
+  },
+  { immediate: true }
 )
-
-// 初始化时解析 modelValue
-onMounted(() => {
-  parseModelValue(props.modelValue)
-})
 </script>
 
 <style scoped>

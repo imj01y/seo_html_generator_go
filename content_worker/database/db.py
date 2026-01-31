@@ -9,9 +9,10 @@
 - execute_query(): 执行SQL查询
 - fetch_one/fetch_all(): 获取查询结果
 """
-import asyncio
-from typing import Optional, Any, Dict, List, Tuple
 from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+import warnings
 
 import aiomysql
 from loguru import logger
@@ -44,15 +45,10 @@ async def init_database(
         charset: 字符集
         schema_file: schema.sql 文件路径
     """
-    import os
-    from pathlib import Path
-
     schema_path = Path(schema_file)
     if not schema_path.exists():
         logger.warning(f"Schema file not found: {schema_file}, skipping database init")
         return
-
-    import warnings
 
     conn = None
     try:
@@ -147,7 +143,7 @@ async def init_database(
             conn.close()
 
 
-async def _load_default_templates(cur, base_path) -> None:
+async def _load_default_templates(cur: aiomysql.Cursor, base_path: Path) -> None:
     """
     从 templates 目录加载默认模板内容
 
@@ -155,8 +151,6 @@ async def _load_default_templates(cur, base_path) -> None:
         cur: 数据库游标
         base_path: database 目录路径
     """
-    from pathlib import Path
-
     templates_dir = Path(base_path) / "templates"
     if not templates_dir.exists():
         logger.debug(f"Templates directory not found: {templates_dir}")

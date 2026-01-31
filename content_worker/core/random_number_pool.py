@@ -20,7 +20,7 @@ import asyncio
 import random
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from loguru import logger
 
@@ -268,7 +268,7 @@ class RandomNumberPool:
         self._total_refilled += len(new_numbers)
         return len(new_numbers)
 
-    def get_stats(self) -> dict:
+    def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""
         with self._consume_lock:
             range_stats = {}

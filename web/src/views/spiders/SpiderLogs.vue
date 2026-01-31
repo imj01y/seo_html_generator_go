@@ -193,11 +193,11 @@ const filter = reactive({
   end_date: ''
 })
 
-const formatDate = (dateStr: string) => {
+const formatDate = (dateStr: string): string => {
   return dayjs(dateStr).format('YYYY-MM-DD HH:mm:ss')
 }
 
-const getStatusType = (code: number) => {
+const getStatusType = (code: number): 'success' | 'warning' | 'danger' => {
   if (code >= 200 && code < 300) return 'success'
   if (code >= 300 && code < 400) return 'warning'
   return 'danger'

@@ -97,7 +97,7 @@
 import { ref, provide, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, FullScreen, Close, Document } from '@element-plus/icons-vue'
-import type { TreeNode, CodeEditorApi, CodeEditorPanelProps, ExtraTab } from './types'
+import type { TreeNode, CodeEditorPanelProps, ExtraTab } from './types'
 import { useEditorStore } from './composables/useEditorStore'
 
 import FileTree from './components/FileTree.vue'
@@ -119,23 +119,19 @@ const props = withDefaults(defineProps<CodeEditorPanelProps & {
   runnableExtensions: () => ['.py']
 })
 
-const emit = defineEmits<{
+defineEmits<{
   (e: 'restart'): void
   (e: 'toggle-logs'): void
 }>()
 
-// 创建 store 实例
 const store = useEditorStore(props.api, props.languageMap)
 
-// 提供给子组件
 provide('editorStore', store)
 provide('editorApi', props.api)
 
-// 控制状态
 const restarting = ref(false)
 const isMaximized = ref(false)
 
-// 最大化/还原
 function toggleMaximize() {
   isMaximized.value = !isMaximized.value
 }
@@ -180,7 +176,6 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeyDown)
 })
 
-// 统一弹窗状态
 const dialogVisible = ref(false)
 const dialogConfig = ref({
   title: '',
@@ -193,13 +188,10 @@ const dialogConfig = ref({
 const dialogAction = ref<string>('') // 'create-file', 'create-dir', 'rename', 'delete'
 const dialogContext = ref<{ parentPath?: string; node?: TreeNode }>({})
 
-// 运行控制
 let stopRun: (() => void) | null = null
 
-// 计算属性
 const fileTreeTitle = props.title?.replace(/管理|编辑器/g, '').trim() || 'FILES'
 
-// 显示新建弹窗
 function showCreateDialog(type: 'file' | 'dir', parentPath?: string) {
   dialogAction.value = type === 'file' ? 'create-file' : 'create-dir'
   dialogContext.value = { parentPath: parentPath || '' }
@@ -214,7 +206,6 @@ function showCreateDialog(type: 'file' | 'dir', parentPath?: string) {
   dialogVisible.value = true
 }
 
-// 显示重命名弹窗
 function showRenameDialog(node: TreeNode) {
   dialogAction.value = 'rename'
   dialogContext.value = { node }
@@ -229,7 +220,6 @@ function showRenameDialog(node: TreeNode) {
   dialogVisible.value = true
 }
 
-// 显示删除确认弹窗
 function handleDelete(node: TreeNode) {
   dialogAction.value = 'delete'
   dialogContext.value = { node }
@@ -244,7 +234,6 @@ function handleDelete(node: TreeNode) {
   dialogVisible.value = true
 }
 
-// 统一处理弹窗确认
 async function handleDialogConfirm(value?: string) {
   dialogVisible.value = false
 
@@ -295,7 +284,6 @@ async function handleDialogConfirm(value?: string) {
   }
 }
 
-// 运行
 function handleRunFromTree(node: TreeNode) {
   store.openFile(node.path, node.name)
   // 稍后触发运行
@@ -341,7 +329,6 @@ function handleStop() {
   }
 }
 
-// 暴露方法给父组件
 defineExpose({
   store,
   refresh: () => store.loadFileTree()

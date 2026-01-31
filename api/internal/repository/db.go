@@ -3,6 +3,7 @@ package database
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -87,21 +88,21 @@ func Execute(query string, args ...interface{}) error {
 
 // Insert inserts a record and returns the last insert ID
 func Insert(table string, data map[string]interface{}) (int64, error) {
-	columns := ""
-	placeholders := ""
+	columns := make([]string, 0, len(data))
+	placeholders := make([]string, 0, len(data))
 	values := make([]interface{}, 0, len(data))
 
 	for col, val := range data {
-		if columns != "" {
-			columns += ", "
-			placeholders += ", "
-		}
-		columns += col
-		placeholders += "?"
+		columns = append(columns, col)
+		placeholders = append(placeholders, "?")
 		values = append(values, val)
 	}
 
-	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, columns, placeholders)
+	query := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)",
+		table,
+		strings.Join(columns, ", "),
+		strings.Join(placeholders, ", "),
+	)
 	result, err := db.Exec(query, values...)
 	if err != nil {
 		return 0, err

@@ -5,7 +5,7 @@ Spider 基类
 feapder 风格的爬虫基类，用户继承此类实现爬虫逻辑。
 """
 
-from typing import Dict, Any, Generator, Optional
+from typing import Any, Dict, Generator, Optional
 
 from .request import Request
 from .response import Response
