@@ -205,7 +205,7 @@ func (h *WorkerFilesHandler) GetTree(c *gin.Context) {
 	core.Success(c, tree)
 }
 
-// buildTree 递归构建目录树（只包含目录）
+// buildTree 递归构建目录树（包含文件和目录）
 func (h *WorkerFilesHandler) buildTree(dirPath, relativePath string) *TreeNode {
 	info, err := os.Stat(dirPath)
 	if err != nil {
@@ -233,24 +233,33 @@ func (h *WorkerFilesHandler) buildTree(dirPath, relativePath string) *TreeNode {
 	}
 
 	for _, entry := range entries {
-		// 只包含目录
-		if !entry.IsDir() {
-			continue
-		}
-		// 跳过隐藏目录和 __pycache__
+		// 跳过隐藏文件/目录和 __pycache__
 		if strings.HasPrefix(entry.Name(), ".") || entry.Name() == "__pycache__" {
 			continue
 		}
 
 		childPath := filepath.Join(relativePath, entry.Name())
-		child := h.buildTree(filepath.Join(dirPath, entry.Name()), childPath)
-		if child != nil {
-			node.Children = append(node.Children, child)
+		if entry.IsDir() {
+			// 递归处理目录
+			child := h.buildTree(filepath.Join(dirPath, entry.Name()), childPath)
+			if child != nil {
+				node.Children = append(node.Children, child)
+			}
+		} else {
+			// 直接添加文件节点
+			node.Children = append(node.Children, &TreeNode{
+				Name: entry.Name(),
+				Path: childPath,
+				Type: "file",
+			})
 		}
 	}
 
-	// 按名称排序
+	// 排序：目录在前，然后按名称排序
 	sort.Slice(node.Children, func(i, j int) bool {
+		if node.Children[i].Type != node.Children[j].Type {
+			return node.Children[i].Type == "dir"
+		}
 		return node.Children[i].Name < node.Children[j].Name
 	})
 
