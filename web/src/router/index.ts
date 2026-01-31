@@ -97,18 +97,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '数据处理', icon: 'Operation' }
       },
       {
-        path: 'generators',
-        name: 'Generators',
-        component: () => import('@/views/generators/GeneratorList.vue'),
-        meta: { title: '生成器管理', icon: 'Cpu' }
-      },
-      {
-        path: 'generators/edit/:id?',
-        name: 'GeneratorEdit',
-        component: () => import('@/views/generators/GeneratorEdit.vue'),
-        meta: { title: '编辑生成器', icon: 'Cpu', hidden: true }
-      },
-      {
         path: 'spiders',
         name: 'Spiders',
         component: () => import('@/views/spiders/SpiderLogs.vue'),
