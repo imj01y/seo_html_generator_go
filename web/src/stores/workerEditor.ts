@@ -2,6 +2,9 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { getFileTree, getFile, saveFile, type TreeNode } from '@/api/worker'
 
+// 重新导出 TreeNode 类型供其他组件使用
+export type { TreeNode }
+
 export interface Tab {
   id: string
   path: string
