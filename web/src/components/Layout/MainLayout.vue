@@ -144,6 +144,7 @@ const menuItems = [
   { path: '/articles', title: '文章管理', icon: 'Document' },
   { path: '/images', title: '图片管理', icon: 'Picture' },
   { path: '/processor', title: '数据加工', icon: 'Operation' },
+  { path: '/worker', title: 'Worker代码', icon: 'EditPen' },
   { path: '/spiders/projects', title: '爬虫项目', icon: 'Cpu' },
   { path: '/spiders/stats', title: '爬虫统计', icon: 'TrendCharts' },
   { path: '/generators', title: '生成器管理', icon: 'Promotion' },
