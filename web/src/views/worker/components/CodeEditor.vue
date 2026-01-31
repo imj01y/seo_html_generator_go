@@ -52,8 +52,11 @@ const saving = ref(false)
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let stopRun: (() => void) | null = null
 
+// 注册自定义语言 'python-pycharm'，避免与 Monaco 内置 Python 冲突
+monaco.languages.register({ id: 'python-pycharm', extensions: ['.py'], aliases: ['Python (PyCharm)'] })
+
 // 注册自定义 Python 语法高亮（精确匹配 PyCharm Darcula 配色）
-monaco.languages.setMonarchTokensProvider('python', {
+monaco.languages.setMonarchTokensProvider('python-pycharm', {
   defaultToken: 'identifier',
   tokenPostfix: '',
 

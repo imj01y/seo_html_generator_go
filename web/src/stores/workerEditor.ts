@@ -179,7 +179,7 @@ export const useWorkerEditorStore = defineStore('workerEditor', () => {
   function getLanguageByExtension(filename: string): string {
     const ext = filename.split('.').pop()?.toLowerCase()
     const langMap: Record<string, string> = {
-      py: 'python',
+      py: 'python-pycharm',
       js: 'javascript',
       ts: 'typescript',
       json: 'json',
