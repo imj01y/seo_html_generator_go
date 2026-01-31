@@ -204,10 +204,10 @@ monaco.editor.defineTheme('pycharm-darcula', {
   base: 'vs-dark',
   inherit: false,
   rules: [
-    // 变量名 - RGB(86, 168, 245) = #56a8f5
-    { token: '', foreground: '56a8f5' },
-    { token: 'identifier', foreground: '56a8f5' },
-    { token: 'white', foreground: '56a8f5' },
+    // 变量名 - RGB(187, 189, 192) = #bbbdc0
+    { token: '', foreground: 'bbbdc0' },
+    { token: 'identifier', foreground: 'bbbdc0' },
+    { token: 'white', foreground: 'bbbdc0' },
 
     // self, cls - RGB(148, 85, 141) = #94558d
     { token: 'variable.self', foreground: '94558d', fontStyle: 'italic' },
@@ -239,11 +239,11 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // 函数名 - RGB(85, 167, 242) = #55a7f2 (蓝色)
     { token: 'function.declaration', foreground: '55a7f2' },
 
-    // 魔术变量 (__name__ 等) - 普通变量色 #b7bdc3
-    { token: 'function.magic', foreground: 'b7bdc3' },
+    // 魔术变量 (__name__ 等) - 普通变量色 #bbbdc0
+    { token: 'function.magic', foreground: 'bbbdc0' },
 
-    // 类声明名 - 普通色
-    { token: 'class.declaration', foreground: 'b7bdc3' },
+    // 类声明名 - 普通变量色 #bbbdc0
+    { token: 'class.declaration', foreground: 'bbbdc0' },
 
     // 类型注解 - 关键字色 #ce8d61
     { token: 'type', foreground: 'ce8d61' },
@@ -257,14 +257,14 @@ monaco.editor.defineTheme('pycharm-darcula', {
     // 装饰器 - 黄色
     { token: 'decorator', foreground: 'bbb529' },
 
-    // 运算符 - 变量色
-    { token: 'operator', foreground: 'b7bdc3' },
+    // 运算符 - 普通变量色 #bbbdc0
+    { token: 'operator', foreground: 'bbbdc0' },
 
-    // 分隔符 - 变量色
-    { token: 'delimiter', foreground: 'b7bdc3' },
-    { token: 'delimiter.parenthesis', foreground: '56a8f5' },
-    { token: 'delimiter.bracket', foreground: 'b7bdc3' },
-    { token: 'delimiter.curly', foreground: 'b7bdc3' },
+    // 分隔符 - 普通变量色 #bbbdc0
+    { token: 'delimiter', foreground: 'bbbdc0' },
+    { token: 'delimiter.parenthesis', foreground: 'bbbdc0' },
+    { token: 'delimiter.bracket', foreground: 'bbbdc0' },
+    { token: 'delimiter.curly', foreground: 'bbbdc0' },
 
     // JSON
     { token: 'string.key.json', foreground: '94558d' },
@@ -277,7 +277,7 @@ monaco.editor.defineTheme('pycharm-darcula', {
   colors: {
     // 编辑器背景 - RGB(30, 31, 34) = #1e1f22
     'editor.background': '#1e1f22',
-    'editor.foreground': '#b7bdc3',
+    'editor.foreground': '#bbbdc0',
 
     // 行号
     'editorLineNumber.foreground': '#606366',
@@ -318,7 +318,7 @@ monaco.editor.defineTheme('pycharm-darcula', {
     'editorGutter.background': '#1e1f22',
 
     // 代码折叠
-    'editorGutter.foldingControlForeground': '#b7bdc3',
+    'editorGutter.foldingControlForeground': '#bbbdc0',
 
     // 编辑器边框
     'editorWidget.background': '#2b2d30',
@@ -456,7 +456,7 @@ function handleRun() {
 
 .file-path {
   font-size: 12px;
-  color: #b7bdc3;
+  color: #bbbdc0;
 }
 
 .actions {
