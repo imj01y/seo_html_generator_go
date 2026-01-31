@@ -262,7 +262,7 @@ monaco.editor.defineTheme('pycharm-darcula', {
 
     // 分隔符 - 变量色
     { token: 'delimiter', foreground: 'b7bdc3' },
-    { token: 'delimiter.parenthesis', foreground: 'b7bdc3' },
+    { token: 'delimiter.parenthesis', foreground: '56a8f5' },
     { token: 'delimiter.bracket', foreground: 'b7bdc3' },
     { token: 'delimiter.curly', foreground: 'b7bdc3' },
 
