@@ -52,35 +52,10 @@ const saving = ref(false)
 let editor: monaco.editor.IStandaloneCodeEditor | null = null
 let stopRun: (() => void) | null = null
 
-// 注册自定义 Python 语法高亮（支持 self 紫色、常量紫色等 PyCharm 特性）
+// 注册自定义 Python 语法高亮（精确匹配 PyCharm Darcula 配色）
 monaco.languages.setMonarchTokensProvider('python', {
   defaultToken: '',
   tokenPostfix: '.python',
-
-  keywords: [
-    'and', 'as', 'assert', 'async', 'await', 'break', 'class', 'continue',
-    'def', 'del', 'elif', 'else', 'except', 'finally', 'for', 'from',
-    'global', 'if', 'import', 'in', 'is', 'lambda', 'nonlocal', 'not',
-    'or', 'pass', 'raise', 'return', 'try', 'while', 'with', 'yield',
-    'True', 'False', 'None'
-  ],
-
-  builtins: [
-    'abs', 'all', 'any', 'bin', 'bool', 'bytearray', 'callable', 'chr',
-    'classmethod', 'compile', 'complex', 'delattr', 'dict', 'dir', 'divmod',
-    'enumerate', 'eval', 'filter', 'float', 'format', 'frozenset', 'getattr',
-    'globals', 'hasattr', 'hash', 'help', 'hex', 'id', 'input', 'int',
-    'isinstance', 'issubclass', 'iter', 'len', 'list', 'locals', 'map',
-    'max', 'memoryview', 'min', 'next', 'object', 'oct', 'open', 'ord',
-    'pow', 'print', 'property', 'range', 'repr', 'reversed', 'round',
-    'set', 'setattr', 'slice', 'sorted', 'staticmethod', 'str', 'sum',
-    'super', 'tuple', 'type', 'vars', 'zip', '__import__'
-  ],
-
-  typeKeywords: [
-    'int', 'float', 'str', 'bool', 'list', 'dict', 'set', 'tuple',
-    'Optional', 'List', 'Dict', 'Set', 'Tuple', 'Any', 'Union', 'Callable'
-  ],
 
   brackets: [
     { open: '{', close: '}', token: 'delimiter.curly' },
@@ -90,74 +65,100 @@ monaco.languages.setMonarchTokensProvider('python', {
 
   tokenizer: {
     root: [
-      // 文档字符串
-      [/"""/, 'string', '@docstring_double'],
-      [/'''/, 'string', '@docstring_single'],
+      // 空白
+      [/\s+/, 'white'],
 
-      // 装饰器 - 黄色
-      [/@[\w]+/, 'tag'],
+      // 文档字符串（三引号）
+      [/"""/, 'string.docstring', '@docstring_double'],
+      [/'''/, 'string.docstring', '@docstring_single'],
 
-      // self, cls - 紫色
-      [/\b(self|cls)\b/, 'variable.language'],
+      // 装饰器 - 黄绿色
+      [/@[a-zA-Z_]\w*/, 'decorator'],
 
-      // 函数定义后的函数名 - 黄色
-      [/\b(def)\s+([a-zA-Z_]\w*)/, ['keyword', 'function']],
+      // self.属性 或 cls.属性 - 整体处理：self 紫色斜体，属性紫色
+      [/\b(self|cls)(\.)([a-zA-Z_]\w*)/, ['variable.self', 'delimiter', 'variable.instance']],
 
-      // 类定义后的类名
-      [/\b(class)\s+([a-zA-Z_]\w*)/, ['keyword', 'type.identifier']],
+      // 单独的 self, cls - 紫色斜体
+      [/\b(self|cls)\b/, 'variable.self'],
+
+      // 函数定义：def func_name
+      [/\b(def)(\s+)([a-zA-Z_]\w*)/, ['keyword', 'white', 'function.declaration']],
+
+      // 类定义：class ClassName
+      [/\b(class)(\s+)([a-zA-Z_]\w*)/, ['keyword', 'white', 'class.declaration']],
 
       // 全大写常量 - 紫色
       [/\b[A-Z][A-Z_0-9]+\b/, 'constant'],
 
-      // 关键字
-      [/\b(and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield|True|False|None)\b/, 'keyword'],
+      // 私有属性（以下划线开头）- 紫色
+      [/\b_[a-zA-Z_]\w*\b/, 'variable.instance'],
 
-      // 类型注解关键字
-      [/\b(int|float|str|bool|list|dict|set|tuple|Optional|List|Dict|Set|Tuple|Any|Union|Callable)\b/, 'type.identifier'],
+      // 关键字 - 橙色（不加粗）
+      [/\b(and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b/, 'keyword'],
 
-      // 内置函数
-      [/\b(abs|all|any|bin|bool|bytearray|callable|chr|classmethod|compile|complex|delattr|dict|dir|divmod|enumerate|eval|filter|float|format|frozenset|getattr|globals|hasattr|hash|help|hex|id|input|int|isinstance|issubclass|iter|len|list|locals|map|max|memoryview|min|next|object|oct|open|ord|pow|print|property|range|repr|reversed|round|set|setattr|slice|sorted|staticmethod|str|sum|super|tuple|type|vars|zip|__import__)\b/, 'predefined'],
+      // 布尔和 None - 橙色
+      [/\b(True|False|None)\b/, 'keyword.constant'],
 
-      // 魔术方法
-      [/__\w+__/, 'function'],
+      // 返回类型注解 -> type
+      [/(->)(\s*)([a-zA-Z_]\w*)/, ['operator', 'white', 'type']],
+
+      // 类型注解 : type (在参数中)
+      [/(:)(\s*)(int|float|str|bool|list|dict|set|tuple|bytes|object|Optional|List|Dict|Set|Tuple|Any|Union|Callable|Iterable|Iterator|Generator)\b/, ['delimiter', 'white', 'type']],
+
+      // 魔术方法名 __xxx__
+      [/__[a-zA-Z_]+__/, 'function.magic'],
 
       // 普通标识符
       [/[a-zA-Z_]\w*/, 'identifier'],
 
-      // 数字
-      [/\d*\.\d+([eE][\-+]?\d+)?/, 'number.float'],
+      // 浮点数
+      [/\d+\.\d*([eE][-+]?\d+)?/, 'number.float'],
+      [/\d*\.\d+([eE][-+]?\d+)?/, 'number.float'],
+
+      // 十六进制
       [/0[xX][0-9a-fA-F]+/, 'number.hex'],
+
+      // 八进制
       [/0[oO][0-7]+/, 'number.octal'],
+
+      // 二进制
       [/0[bB][01]+/, 'number.binary'],
+
+      // 整数
       [/\d+/, 'number'],
 
-      // 字符串
-      [/f"/, 'string', '@fstring_double'],
-      [/f'/, 'string', '@fstring_single'],
-      [/"([^"\\]|\\.)*$/, 'string.invalid'],
-      [/'([^'\\]|\\.)*$/, 'string.invalid'],
+      // f-string
+      [/[fF]"/, 'string.fstring', '@fstring_double'],
+      [/[fF]'/, 'string.fstring', '@fstring_single'],
+
+      // 普通字符串
       [/"/, 'string', '@string_double'],
       [/'/, 'string', '@string_single'],
 
       // 注释
       [/#.*$/, 'comment'],
 
-      // 分隔符和运算符
+      // 括号
       [/[{}()\[\]]/, '@brackets'],
-      [/[<>]=?|[!=]=?|[-+*/%&|^~]|<<|>>/, 'operator'],
-      [/[;,.:=]/, 'delimiter']
+
+      // 运算符
+      [/[+\-*/%&|^~<>=!]=?/, 'operator'],
+      [/<<|>>|\/\/|\*\*/, 'operator'],
+
+      // 分隔符
+      [/[;,.:@]/, 'delimiter']
     ],
 
     docstring_double: [
-      [/[^"]+/, 'string'],
-      [/"""/, 'string', '@pop'],
-      [/"/, 'string']
+      [/[^"]+/, 'string.docstring'],
+      [/"""/, 'string.docstring', '@pop'],
+      [/"/, 'string.docstring']
     ],
 
     docstring_single: [
-      [/[^']+/, 'string'],
-      [/'''/, 'string', '@pop'],
-      [/'/, 'string']
+      [/[^']+/, 'string.docstring'],
+      [/'''/, 'string.docstring', '@pop'],
+      [/'/, 'string.docstring']
     ],
 
     string_double: [
@@ -173,43 +174,55 @@ monaco.languages.setMonarchTokensProvider('python', {
     ],
 
     fstring_double: [
-      [/\{[^}]*\}/, 'identifier'],
-      [/[^\\"{]+/, 'string'],
+      [/\{/, 'string.fstring.bracket', '@fstring_expr'],
+      [/[^\\"{]+/, 'string.fstring'],
       [/\\./, 'string.escape'],
-      [/"/, 'string', '@pop']
+      [/"/, 'string.fstring', '@pop']
     ],
 
     fstring_single: [
-      [/\{[^}]*\}/, 'identifier'],
-      [/[^\\'{]+/, 'string'],
+      [/\{/, 'string.fstring.bracket', '@fstring_expr'],
+      [/[^\\'{]+/, 'string.fstring'],
       [/\\./, 'string.escape'],
-      [/'/, 'string', '@pop']
+      [/'/, 'string.fstring', '@pop']
+    ],
+
+    fstring_expr: [
+      [/\}/, 'string.fstring.bracket', '@pop'],
+      [/[^}]+/, 'identifier']
     ]
   }
 })
 
-// 更新主题规则以支持新的 token 类型
+// PyCharm Darcula 主题配色
 monaco.editor.defineTheme('pycharm-darcula', {
   base: 'vs-dark',
   inherit: false,
   rules: [
-    // 默认文本
+    // 默认文本 - 浅灰蓝
     { token: '', foreground: 'a9b7c6' },
     { token: 'identifier', foreground: 'a9b7c6' },
+    { token: 'white', foreground: 'a9b7c6' },
 
-    // self, cls - 紫色（PyCharm 特色）
-    { token: 'variable.language', foreground: '94558d', fontStyle: 'italic' },
+    // self, cls - 紫色斜体
+    { token: 'variable.self', foreground: '94558d', fontStyle: 'italic' },
+
+    // 实例属性（self.xxx, _xxx）- 紫色
+    { token: 'variable.instance', foreground: '9876aa' },
 
     // 注释 - 灰色斜体
     { token: 'comment', foreground: '808080', fontStyle: 'italic' },
 
-    // 关键字 - 橙色加粗
-    { token: 'keyword', foreground: 'cc7832', fontStyle: 'bold' },
+    // 关键字 - 橙色（不加粗，PyCharm 风格）
+    { token: 'keyword', foreground: 'cc7832' },
+    { token: 'keyword.constant', foreground: 'cc7832' },
 
     // 字符串 - 绿色
     { token: 'string', foreground: '6a8759' },
+    { token: 'string.docstring', foreground: '629755', fontStyle: 'italic' },
+    { token: 'string.fstring', foreground: '6a8759' },
+    { token: 'string.fstring.bracket', foreground: 'cc7832' },
     { token: 'string.escape', foreground: 'cc7832' },
-    { token: 'string.invalid', foreground: 'ff0000' },
 
     // 数字 - 蓝色
     { token: 'number', foreground: '6897bb' },
@@ -218,23 +231,26 @@ monaco.editor.defineTheme('pycharm-darcula', {
     { token: 'number.octal', foreground: '6897bb' },
     { token: 'number.binary', foreground: '6897bb' },
 
-    // 函数名 - 黄色
-    { token: 'function', foreground: 'ffc66d' },
+    // 函数声明名 - 黄色
+    { token: 'function.declaration', foreground: 'ffc66d' },
+    { token: 'function.magic', foreground: 'b200b2' },
 
-    // 类型 - 橙色
-    { token: 'type.identifier', foreground: 'cc7832' },
+    // 类声明名 - 浅灰蓝（普通色）
+    { token: 'class.declaration', foreground: 'a9b7c6' },
+
+    // 类型注解 - 橙色
+    { token: 'type', foreground: 'cc7832' },
 
     // 常量（全大写）- 紫色
     { token: 'constant', foreground: '9876aa' },
 
-    // 内置函数 - 默认色
-    { token: 'predefined', foreground: 'a9b7c6' },
+    // 装饰器 - 黄绿色
+    { token: 'decorator', foreground: 'bbb529' },
 
-    // 装饰器 - 黄色
-    { token: 'tag', foreground: 'bbb529' },
-
-    // 运算符和分隔符
+    // 运算符 - 浅灰蓝
     { token: 'operator', foreground: 'a9b7c6' },
+
+    // 分隔符 - 浅灰蓝
     { token: 'delimiter', foreground: 'a9b7c6' },
     { token: 'delimiter.parenthesis', foreground: 'a9b7c6' },
     { token: 'delimiter.bracket', foreground: 'a9b7c6' },
