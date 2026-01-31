@@ -93,14 +93,8 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'processor',
         name: 'Processor',
-        component: () => import('@/views/processor/ProcessorManage.vue'),
-        meta: { title: '数据加工', icon: 'Operation' }
-      },
-      {
-        path: 'worker',
-        name: 'WorkerCode',
-        component: () => import('@/views/worker/WorkerCodeEditor.vue'),
-        meta: { title: '数据加工代码', icon: 'EditPen' }
+        component: () => import('@/views/processor/ProcessorPage.vue'),
+        meta: { title: '数据处理', icon: 'Operation' }
       },
       {
         path: 'generators',
