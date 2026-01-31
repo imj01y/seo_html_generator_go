@@ -37,6 +37,11 @@ func (h *WorkerFilesHandler) validatePath(relativePath string) (string, bool) {
 	// 清理路径
 	cleanPath := filepath.Clean(relativePath)
 
+	// 空路径或当前目录指向 workerDir 根目录，这是允许的（用于列出根目录）
+	if cleanPath == "." || cleanPath == "" {
+		return h.workerDir, true
+	}
+
 	// 检查是否包含 ".."
 	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, ".."+string(filepath.Separator)) {
 		return "", false
