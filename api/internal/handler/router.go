@@ -785,7 +785,7 @@ func templatePoolConfigHandler(deps *Dependencies) gin.HandlerFunc {
 
 // ============ Data Pool Handlers ============
 
-// dataStatsHandler GET /stats - 获取数据池详细统计
+// dataStatsHandler GET /stats - 获取数据池运行状态统计
 func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if deps.DataManager == nil {
@@ -793,8 +793,11 @@ func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 			return
 		}
 
-		stats := deps.DataManager.GetDetailedStats()
-		core.Success(c, stats)
+		// 返回与对象池格式一致的统计
+		pools := deps.DataManager.GetDataPoolsStats()
+		core.Success(c, gin.H{
+			"pools": pools,
+		})
 	}
 }
 
