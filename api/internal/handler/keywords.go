@@ -13,7 +13,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
 
 // KeywordsHandler 关键词管理 handler
@@ -257,7 +257,9 @@ func (h *KeywordsHandler) DeleteGroup(c *gin.Context) {
 
 	// 检查是否有站点在使用
 	var sitesCount int
-	h.db.Get(&sitesCount, "SELECT COUNT(*) FROM sites WHERE keyword_group_id = ?", id)
+	if err := h.db.Get(&sitesCount, "SELECT COUNT(*) FROM sites WHERE keyword_group_id = ?", id); err != nil && err != sql.ErrNoRows {
+		log.Warn().Err(err).Int("group_id", id).Msg("Failed to count sites using keyword group")
+	}
 	if sitesCount > 0 {
 		core.Success(c, gin.H{"success": false, "message": fmt.Sprintf("无法删除：有 %d 个站点正在使用此分组", sitesCount)})
 		return
@@ -265,15 +267,40 @@ func (h *KeywordsHandler) DeleteGroup(c *gin.Context) {
 
 	// 检查是否是默认分组
 	var isDefault int
-	h.db.Get(&isDefault, "SELECT is_default FROM keyword_groups WHERE id = ?", id)
+	if err := h.db.Get(&isDefault, "SELECT is_default FROM keyword_groups WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			core.FailWithMessage(c, core.ErrNotFound, "分组不存在")
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, "查询分组失败")
+		return
+	}
 	if isDefault == 1 {
 		core.Success(c, gin.H{"success": false, "message": "不能删除默认分组"})
 		return
 	}
 
-	// 软删除
-	if _, err := h.db.Exec("UPDATE keyword_groups SET status = 0 WHERE id = ?", id); err != nil {
+	// 物理删除分组及其下所有关键词
+	tx, err := h.db.Begin()
+	if err != nil {
+		core.Success(c, gin.H{"success": false, "message": "开启事务失败"})
+		return
+	}
+	defer tx.Rollback()
+
+	// 先删除分组下的所有关键词
+	if _, err := tx.Exec("DELETE FROM keywords WHERE group_id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	// 再删除分组
+	if _, err := tx.Exec("DELETE FROM keyword_groups WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "提交事务失败"})
 		return
 	}
 
@@ -404,8 +431,8 @@ func (h *KeywordsHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// 软删除
-	if _, err := h.db.Exec("UPDATE keywords SET status = 0 WHERE id = ?", id); err != nil {
+	// 物理删除
+	if _, err := h.db.Exec("DELETE FROM keywords WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
 	}
@@ -440,7 +467,8 @@ func (h *KeywordsHandler) BatchDelete(c *gin.Context) {
 		args[i] = id
 	}
 
-	query := fmt.Sprintf("UPDATE keywords SET status = 0 WHERE id IN (%s)", placeholders)
+	// 物理删除
+	query := fmt.Sprintf("DELETE FROM keywords WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
 		return
@@ -471,10 +499,11 @@ func (h *KeywordsHandler) DeleteAll(c *gin.Context) {
 	var result sql.Result
 	var err error
 
+	// 物理删除，避免唯一索引冲突导致后续上传失败
 	if req.GroupID != nil {
-		result, err = h.db.Exec("UPDATE keywords SET status = 0 WHERE group_id = ? AND status = 1", *req.GroupID)
+		result, err = h.db.Exec("DELETE FROM keywords WHERE group_id = ?", *req.GroupID)
 	} else {
-		result, err = h.db.Exec("UPDATE keywords SET status = 0 WHERE status = 1")
+		result, err = h.db.Exec("DELETE FROM keywords")
 	}
 
 	if err != nil {
@@ -722,25 +751,50 @@ func (h *KeywordsHandler) Upload(c *gin.Context) {
 		return
 	}
 
-	// 批量插入
+	// 批量插入（5000条/批 + 事务）
+	const batchSize = 5000
 	added := 0
 	skipped := 0
 
-	for _, kw := range keywords {
-		result, err := h.db.Exec(
-			"INSERT IGNORE INTO keywords (group_id, keyword) VALUES (?, ?)",
-			groupID, kw)
+	tx, err := h.db.Begin()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "开启事务失败")
+		return
+	}
+	defer tx.Rollback()
+
+	for i := 0; i < len(keywords); i += batchSize {
+		end := i + batchSize
+		if end > len(keywords) {
+			end = len(keywords)
+		}
+		batch := keywords[i:end]
+
+		// 构建批量 INSERT 语句
+		valueStrings := make([]string, len(batch))
+		valueArgs := make([]interface{}, 0, len(batch)*2)
+
+		for j, kw := range batch {
+			valueStrings[j] = "(?, ?)"
+			valueArgs = append(valueArgs, groupID, kw)
+		}
+
+		query := "INSERT IGNORE INTO keywords (group_id, keyword) VALUES " + strings.Join(valueStrings, ",")
+		result, err := tx.Exec(query, valueArgs...)
 		if err != nil {
-			skipped++
+			log.Warn().Err(err).Int("batch", i/batchSize).Msg("Batch insert failed")
+			skipped += len(batch)
 			continue
 		}
 
 		affected, _ := result.RowsAffected()
-		if affected > 0 {
-			added++
-		} else {
-			skipped++
-		}
+		added += int(affected)
+		skipped += len(batch) - int(affected)
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "提交事务失败")
+		return
 	}
 
 	core.Success(c, gin.H{

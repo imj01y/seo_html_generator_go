@@ -12,7 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
 
 // SitesHandler 站点管理 handler
@@ -393,8 +393,8 @@ func (h *SitesHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// 软删除
-	if _, err := h.db.Exec("UPDATE sites SET status = 0, updated_at = NOW() WHERE id = ?", id); err != nil {
+	// 物理删除
+	if _, err := h.db.Exec("DELETE FROM sites WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
 	}
@@ -431,7 +431,8 @@ func (h *SitesHandler) BatchDelete(c *gin.Context) {
 		args[i] = id
 	}
 
-	query := fmt.Sprintf("UPDATE sites SET status = 0, updated_at = NOW() WHERE id IN (%s)", placeholders)
+	// 物理删除
+	query := fmt.Sprintf("DELETE FROM sites WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
 		return
@@ -736,8 +737,8 @@ func (h *SitesHandler) DeleteGroup(c *gin.Context) {
 		return
 	}
 
-	// 软删除
-	if _, err := h.db.Exec("UPDATE site_groups SET status = 0, updated_at = NOW() WHERE id = ?", id); err != nil {
+	// 物理删除
+	if _, err := h.db.Exec("DELETE FROM site_groups WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
 	}

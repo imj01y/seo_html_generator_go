@@ -150,8 +150,8 @@ func (h *SpiderDetectorHandler) GetSpiderLogs(c *gin.Context) {
 	sqlxDB.Get(&total, "SELECT COUNT(*) FROM spider_logs WHERE "+where, args...)
 
 	args = append(args, pageSize, offset)
-	var logs []map[string]interface{}
-	rows, err := sqlxDB.Queryx(`
+	var logs []SpiderLogItem
+	err := sqlxDB.Select(&logs, `
 		SELECT id, spider_type, ip, ua, domain, path, dns_ok, resp_time, cache_hit, status, created_at
 		FROM spider_logs
 		WHERE `+where+`
@@ -159,17 +159,8 @@ func (h *SpiderDetectorHandler) GetSpiderLogs(c *gin.Context) {
 		LIMIT ? OFFSET ?
 	`, args...)
 
-	if err == nil {
-		for rows.Next() {
-			row := make(map[string]interface{})
-			rows.MapScan(row)
-			logs = append(logs, row)
-		}
-		rows.Close()
-	}
-
-	if logs == nil {
-		logs = []map[string]interface{}{}
+	if err != nil || logs == nil {
+		logs = []SpiderLogItem{}
 	}
 
 	c.JSON(200, gin.H{

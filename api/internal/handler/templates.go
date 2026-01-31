@@ -11,7 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
 
 // TemplatesHandler 模板管理 handler

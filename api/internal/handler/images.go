@@ -3,6 +3,7 @@ package api
 import (
 	"database/sql"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -11,7 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
 
 // ImagesHandler 图片管理 handler
@@ -252,14 +253,40 @@ func (h *ImagesHandler) DeleteGroup(c *gin.Context) {
 	}
 
 	var isDefault int
-	h.db.Get(&isDefault, "SELECT is_default FROM image_groups WHERE id = ?", id)
+	if err := h.db.Get(&isDefault, "SELECT is_default FROM image_groups WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			core.FailWithMessage(c, core.ErrNotFound, "分组不存在")
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, "查询分组失败")
+		return
+	}
 	if isDefault == 1 {
 		core.Success(c, gin.H{"success": false, "message": "不能删除默认分组"})
 		return
 	}
 
-	if _, err := h.db.Exec("UPDATE image_groups SET status = 0 WHERE id = ?", id); err != nil {
+	// 物理删除分组及其下所有图片
+	tx, err := h.db.Begin()
+	if err != nil {
+		core.Success(c, gin.H{"success": false, "message": "开启事务失败"})
+		return
+	}
+	defer tx.Rollback()
+
+	// 先删除分组下的所有图片
+	if _, err := tx.Exec("DELETE FROM images WHERE group_id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	// 再删除分组
+	if _, err := tx.Exec("DELETE FROM image_groups WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "提交事务失败"})
 		return
 	}
 
@@ -378,30 +405,64 @@ func (h *ImagesHandler) BatchAddURLs(c *gin.Context) {
 		groupID = 1
 	}
 
-	added := 0
-	skipped := 0
-
+	// 预处理：过滤空URL
+	urls := make([]string, 0, len(req.URLs))
 	for _, url := range req.URLs {
 		url = strings.TrimSpace(url)
-		if url == "" {
-			skipped++
-			continue
+		if url != "" {
+			urls = append(urls, url)
+		}
+	}
+
+	if len(urls) == 0 {
+		core.Success(c, gin.H{"success": false, "message": "没有有效的URL"})
+		return
+	}
+
+	// 批量插入（5000条/批 + 事务）
+	const batchSize = 5000
+	added := 0
+	skipped := len(req.URLs) - len(urls) // 空URL已跳过
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "开启事务失败")
+		return
+	}
+	defer tx.Rollback()
+
+	for i := 0; i < len(urls); i += batchSize {
+		end := i + batchSize
+		if end > len(urls) {
+			end = len(urls)
+		}
+		batch := urls[i:end]
+
+		// 构建批量 INSERT 语句
+		valueStrings := make([]string, len(batch))
+		valueArgs := make([]interface{}, 0, len(batch)*2)
+
+		for j, url := range batch {
+			valueStrings[j] = "(?, ?)"
+			valueArgs = append(valueArgs, groupID, url)
 		}
 
-		result, err := h.db.Exec(
-			"INSERT IGNORE INTO images (group_id, url) VALUES (?, ?)",
-			groupID, url)
+		query := "INSERT IGNORE INTO images (group_id, url) VALUES " + strings.Join(valueStrings, ",")
+		result, err := tx.Exec(query, valueArgs...)
 		if err != nil {
-			skipped++
+			log.Warn().Err(err).Int("batch", i/batchSize).Msg("Batch insert images failed")
+			skipped += len(batch)
 			continue
 		}
 
 		affected, _ := result.RowsAffected()
-		if affected > 0 {
-			added++
-		} else {
-			skipped++
-		}
+		added += int(affected)
+		skipped += len(batch) - int(affected)
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "提交事务失败")
+		return
 	}
 
 	core.Success(c, gin.H{
@@ -409,6 +470,116 @@ func (h *ImagesHandler) BatchAddURLs(c *gin.Context) {
 		"added":   added,
 		"skipped": skipped,
 		"total":   len(req.URLs),
+	})
+}
+
+// Upload 上传TXT文件批量添加图片URL
+// POST /api/images/upload
+func (h *ImagesHandler) Upload(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "请上传文件")
+		return
+	}
+
+	if !strings.HasSuffix(strings.ToLower(file.Filename), ".txt") {
+		core.FailWithMessage(c, core.ErrInvalidParam, "只支持 .txt 格式文件")
+		return
+	}
+
+	groupID, _ := strconv.Atoi(c.DefaultPostForm("group_id", "1"))
+
+	if h.db == nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "数据库未初始化")
+		return
+	}
+
+	// 读取文件内容
+	f, err := file.Open()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "无法读取文件")
+		return
+	}
+	defer f.Close()
+
+	content, err := io.ReadAll(f)
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "无法读取文件内容")
+		return
+	}
+
+	// 解析URL
+	lines := strings.Split(string(content), "\n")
+	urls := []string{}
+	for _, line := range lines {
+		url := strings.TrimSpace(line)
+		if url != "" {
+			urls = append(urls, url)
+		}
+	}
+
+	if len(urls) == 0 {
+		core.FailWithMessage(c, core.ErrInvalidParam, "文件中没有有效的URL")
+		return
+	}
+
+	if len(urls) > 500000 {
+		core.FailWithMessage(c, core.ErrInvalidParam, "单次最多上传 500000 个URL")
+		return
+	}
+
+	// 批量插入（5000条/批 + 事务）
+	const batchSize = 5000
+	added := 0
+	skipped := 0
+
+	tx, err := h.db.Begin()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "开启事务失败")
+		return
+	}
+	defer tx.Rollback()
+
+	for i := 0; i < len(urls); i += batchSize {
+		end := i + batchSize
+		if end > len(urls) {
+			end = len(urls)
+		}
+		batch := urls[i:end]
+
+		// 构建批量 INSERT 语句
+		valueStrings := make([]string, len(batch))
+		valueArgs := make([]interface{}, 0, len(batch)*2)
+
+		for j, url := range batch {
+			valueStrings[j] = "(?, ?)"
+			valueArgs = append(valueArgs, groupID, url)
+		}
+
+		query := "INSERT IGNORE INTO images (group_id, url) VALUES " + strings.Join(valueStrings, ",")
+		result, err := tx.Exec(query, valueArgs...)
+		if err != nil {
+			log.Warn().Err(err).Int("batch", i/batchSize).Msg("Batch insert images failed")
+			skipped += len(batch)
+			continue
+		}
+
+		affected, _ := result.RowsAffected()
+		added += int(affected)
+		skipped += len(batch) - int(affected)
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "提交事务失败")
+		return
+	}
+
+	core.Success(c, gin.H{
+		"success": true,
+		"message": fmt.Sprintf("成功添加 %d 个图片URL，跳过 %d 个重复", added, skipped),
+		"total":   len(urls),
+		"added":   added,
+		"skipped": skipped,
 	})
 }
 
@@ -488,7 +659,8 @@ func (h *ImagesHandler) DeleteURL(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.db.Exec("UPDATE images SET status = 0 WHERE id = ?", id); err != nil {
+	// 物理删除
+	if _, err := h.db.Exec("DELETE FROM images WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
 	}
@@ -523,7 +695,8 @@ func (h *ImagesHandler) BatchDelete(c *gin.Context) {
 		args[i] = id
 	}
 
-	query := fmt.Sprintf("UPDATE images SET status = 0 WHERE id IN (%s)", placeholders)
+	// 物理删除
+	query := fmt.Sprintf("DELETE FROM images WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
 		return
@@ -554,10 +727,11 @@ func (h *ImagesHandler) DeleteAll(c *gin.Context) {
 	var result sql.Result
 	var err error
 
+	// 物理删除
 	if req.GroupID != nil {
-		result, err = h.db.Exec("UPDATE images SET status = 0 WHERE group_id = ? AND status = 1", *req.GroupID)
+		result, err = h.db.Exec("DELETE FROM images WHERE group_id = ?", *req.GroupID)
 	} else {
-		result, err = h.db.Exec("UPDATE images SET status = 0 WHERE status = 1")
+		result, err = h.db.Exec("DELETE FROM images")
 	}
 
 	if err != nil {

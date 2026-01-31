@@ -4,12 +4,12 @@
 local _M = {}
 
 local CONFIG_FILE = "/app/config.yaml"
-local DEFAULT_CACHE_DIR = "/app/html_cache"
+local DEFAULT_CACHE_DIR = "/data/cache"
 
 -- 简单解析 YAML 中的 cache.dir 值
 function _M.parse_cache_dir(content)
     -- 匹配 cache: 块下的 dir: 值
-    -- 支持格式: dir: ./html_cache 或 dir: "./html_cache" 或 dir: '/html_cache'
+    -- 支持格式: dir: /data/cache 或 dir: "/data/cache"
     local in_cache_block = false
     for line in content:gmatch("[^\r\n]+") do
         -- 检查是否进入 cache: 块
@@ -44,7 +44,7 @@ function _M.load_cache_dir()
 
     local dir = _M.parse_cache_dir(content)
     if dir then
-        -- 处理相对路径：./html_cache -> /app/html_cache
+        -- 处理相对路径（如有）
         if dir:sub(1, 2) == "./" then
             dir = "/app/" .. dir:sub(3)
         elseif dir:sub(1, 1) ~= "/" then

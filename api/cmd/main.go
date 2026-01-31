@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	api "seo-generator/api/internal/handler"
+	models "seo-generator/api/internal/model"
 	database "seo-generator/api/internal/repository"
 	core "seo-generator/api/internal/service"
 	"seo-generator/api/pkg/config"
@@ -260,6 +261,38 @@ func main() {
 		dataManager,
 		funcsManager,
 	)
+
+	// === 异步模板预热 ===
+	go func() {
+		log.Info().Msg("Starting async template warmup...")
+		warmupStart := time.Now()
+		warmupCount := 0
+
+		templateCache.Range(func(tmpl *models.Template) bool {
+			// 构造最小化渲染数据
+			dummyData := &core.RenderData{
+				Title:  "warmup",
+				SiteID: 1,
+			}
+			// 触发模板编译和快速渲染器初始化
+			_, err := pageHandler.GetTemplateRenderer().Render(
+				tmpl.Content, tmpl.Name, dummyData)
+			if err != nil {
+				log.Warn().
+					Err(err).
+					Str("template", tmpl.Name).
+					Msg("Template warmup failed")
+			} else {
+				warmupCount++
+			}
+			return true // 继续遍历
+		})
+
+		log.Info().
+			Int("count", warmupCount).
+			Dur("duration", time.Since(warmupStart)).
+			Msg("Async template warmup completed")
+	}()
 
 	// Create compile handler
 	cwd, _ := os.Getwd()

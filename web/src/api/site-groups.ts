@@ -10,10 +10,9 @@ import type {
   TemplateOption
 } from '@/types'
 
-// 后端返回格式
+// 后端返回格式（现在响应拦截器已自动提取 data 字段）
 interface SiteGroupsResponse {
-  items: SiteGroup[]
-  total: number
+  groups: SiteGroupWithStats[]
 }
 
 interface SiteGroupOptionsResponse {
@@ -26,7 +25,7 @@ interface SiteGroupOptionsResponse {
 // 获取站群列表
 export const getSiteGroups = async (): Promise<SiteGroup[]> => {
   const res: SiteGroupsResponse = await request.get('/site-groups')
-  return res.items || []
+  return res.groups || []
 }
 
 // 获取单个站群详情（含统计信息）

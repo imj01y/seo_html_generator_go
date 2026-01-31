@@ -183,6 +183,7 @@ export const uploadKeywordsFile = async (file: File, groupId: number): Promise<{
   formData.append('group_id', String(groupId))
 
   return await request.post('/keywords/upload', formData, {
+    timeout: 300000,  // 5 分钟超时
     headers: {
       'Content-Type': 'multipart/form-data'
     }

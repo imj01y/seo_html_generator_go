@@ -303,7 +303,7 @@
     </el-dialog>
 
     <!-- 上传文件弹窗 -->
-    <el-dialog v-model="uploadDialogVisible" title="上传关键词文件" width="500px" @close="resetUploadDialog">
+    <el-dialog v-model="uploadDialogVisible" title="上传关键词文件" width="500px" :close-on-click-modal="false" :close-on-press-escape="false" :before-close="handleUploadDialogClose">
       <el-form label-width="80px">
         <el-form-item label="所属词库" required>
           <el-select v-model="uploadGroupId" style="width: 100%">
@@ -347,7 +347,7 @@
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="uploadDialogVisible = false" :disabled="uploadLoading">取消</el-button>
+        <el-button @click="closeUploadDialog" :disabled="uploadLoading">取消</el-button>
         <el-button type="primary" :loading="uploadLoading" @click="handleUpload">
           {{ uploadLoading ? `上传中 (${uploadProgress.current}/${uploadProgress.total})` : '上传' }}
         </el-button>
@@ -436,6 +436,7 @@ const contextMenuY = ref(0)
 const contextMenuGroup = ref<KeywordGroup | null>(null)
 
 const groupForm = reactive({
+  site_group_id: 1,
   name: '',
   description: ''
 })
@@ -827,12 +828,33 @@ const openUploadDialog = () => {
   uploadDialogVisible.value = true
 }
 
+// 上传弹窗关闭前的处理
+const handleUploadDialogClose = (done: () => void) => {
+  if (uploadLoading.value) {
+    ElMessage.warning('上传中，请等待完成')
+    return
+  }
+  resetUploadDialog()
+  done()
+}
+
 // 重置上传对话框
 const resetUploadDialog = () => {
   uploadFiles.value = []
   uploadProgress.current = 0
   uploadProgress.total = 0
+  uploadLoading.value = false
   uploadRef.value?.clearFiles()
+}
+
+// 关闭上传对话框
+const closeUploadDialog = () => {
+  if (uploadLoading.value) {
+    ElMessage.warning('上传中，请等待完成')
+    return
+  }
+  resetUploadDialog()
+  uploadDialogVisible.value = false
 }
 
 // 文件选择变化（支持多文件）
@@ -880,14 +902,15 @@ const handleUpload = async () => {
       ElMessage.success(
         `全部上传成功！共 ${successCount} 个文件，添加 ${totalAdded} 个关键词，跳过 ${totalSkipped} 个重复`
       )
+      // 全部成功才关闭弹窗
+      uploadLoading.value = false
+      closeUploadDialog()
     } else {
       ElMessage.warning(
         `${successCount} 个文件成功，${failedFiles.length} 个失败。添加 ${totalAdded} 个关键词，跳过 ${totalSkipped} 个重复`
       )
+      uploadLoading.value = false
     }
-
-    uploadDialogVisible.value = false
-    resetUploadDialog()
 
     // 刷新列表
     if (uploadGroupId.value === activeGroupId.value) {
@@ -895,7 +918,6 @@ const handleUpload = async () => {
     }
   } catch (error: any) {
     ElMessage.error(error.message || '上传失败')
-  } finally {
     uploadLoading.value = false
   }
 }

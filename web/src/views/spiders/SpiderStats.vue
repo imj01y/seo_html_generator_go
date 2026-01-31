@@ -62,7 +62,7 @@
           <div class="stat-info">
             <div class="stat-value">
               {{ formatNumber(overview.completed) }}
-              <span class="stat-rate success">{{ overview.success_rate }}%</span>
+              <span class="stat-rate success">{{ overview.success_rate.toFixed(2) }}%</span>
             </div>
             <div class="stat-label">成功</div>
           </div>
@@ -139,7 +139,7 @@
         <el-table-column prop="success_rate" label="成功率" width="100" align="right">
           <template #default="{ row }">
             <el-tag :type="getSuccessRateType(row.success_rate)" size="small">
-              {{ row.success_rate }}%
+              {{ row.success_rate.toFixed(2) }}%
             </el-tag>
           </template>
         </el-table-column>

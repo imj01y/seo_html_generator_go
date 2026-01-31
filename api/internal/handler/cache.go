@@ -11,8 +11,8 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"seo-generator/api/pkg/config"
-	"seo-generator/api/internal/service"
-	"seo-generator/api/internal/repository"
+	core "seo-generator/api/internal/service"
+	database "seo-generator/api/internal/repository"
 )
 
 // CacheHandler 缓存管理处理器
@@ -274,6 +274,24 @@ func (h *CacheHandler) ReloadTemplate(c *gin.Context) {
 		"name":          name,
 		"site_group_id": siteGroupID,
 		"message":       "模板缓存已重新加载",
+	})
+}
+
+// GetCacheStats 获取HTML缓存统计
+// GET /api/cache/stats
+func (h *CacheHandler) GetCacheStats(c *gin.Context) {
+	stats := h.htmlCache.GetStats()
+	c.JSON(http.StatusOK, stats)
+}
+
+// GetPoolsStats 获取缓存池统计（关键词和图片池）
+// GET /api/cache/pools/stats
+func (h *CacheHandler) GetPoolsStats(c *gin.Context) {
+	// 这里需要从关键词和图片缓存服务获取统计
+	// 目前返回占位数据，实际应从对应服务获取
+	c.JSON(http.StatusOK, gin.H{
+		"keyword_pool": nil,
+		"image_pool":   nil,
 	})
 }
 

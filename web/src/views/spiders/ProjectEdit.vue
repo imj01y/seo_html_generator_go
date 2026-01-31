@@ -288,6 +288,9 @@ const newFileName = ref('')
 // 测试 WebSocket 取消订阅函数
 let unsubscribeTest: (() => void) | null = null
 
+// 标志位：是否正在程序化加载内容（用于区分用户编辑和程序设置）
+const isLoadingContent = ref(false)
+
 // 检测是否有未保存的更改（用于切换文件时的检测）
 const hasUnsavedChanges = computed(() => {
   return currentCode.value !== originalCode.value
@@ -460,6 +463,7 @@ async function loadProject() {
     }
 
     // 创建默认文件
+    isLoadingContent.value = true
     files.value = [{
       id: 0,
       filename: 'spider.py',
@@ -472,6 +476,9 @@ async function loadProject() {
     originalCode.value = currentCode.value
     hasChanges.value = false
     lastSaveTime.value = null
+    nextTick(() => {
+      isLoadingContent.value = false
+    })
     return
   }
 
@@ -536,13 +543,26 @@ function selectFile(file: ProjectFile) {
     currentFile.value.content = currentCode.value
   }
 
+  // 标记为程序化加载，避免触发自动保存
+  isLoadingContent.value = true
+
   currentFile.value = file
   currentCode.value = file.content
   originalCode.value = file.content
+
+  // 下一个 tick 后重置标志位
+  nextTick(() => {
+    isLoadingContent.value = false
+  })
 }
 
 // 代码变更
 function handleCodeChange() {
+  // 如果是程序化加载内容，跳过自动保存
+  if (isLoadingContent.value) {
+    return
+  }
+
   if (currentFile.value) {
     currentFile.value.content = currentCode.value
   }

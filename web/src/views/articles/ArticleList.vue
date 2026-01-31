@@ -255,6 +255,7 @@ const contextMenuY = ref(0)
 const contextMenuGroup = ref<ArticleGroup | null>(null)
 
 const groupForm = reactive({
+  site_group_id: 1,
   name: '',
   description: ''
 })

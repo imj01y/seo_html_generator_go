@@ -14,7 +14,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"seo-generator/api/pkg/config"
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 	"seo-generator/api/internal/model"
 )
 
@@ -122,6 +122,12 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 		}
 	}
 
+	// Get keyword group ID
+	keywordGroupID := 1
+	if site.KeywordGroupID.Valid {
+		keywordGroupID = int(site.KeywordGroupID.Int64)
+	}
+
 	// Get article group ID
 	articleGroupID := 1
 	if site.ArticleGroupID.Valid {
@@ -131,8 +137,8 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	// Get random titles and content
 	titles := h.dataManager.GetRandomTitles(articleGroupID, 4)
 	content := h.dataManager.GetRandomContent(articleGroupID)
-	// 获取关键词用于标题生成
-	titleKeywords := h.dataManager.GetRandomKeywords(articleGroupID, 3)
+	// 获取关键词用于标题生成（使用关键词分组）
+	titleKeywords := h.dataManager.GetRandomKeywords(keywordGroupID, 3)
 	fetchTime := time.Since(t4)
 
 	// Build article content
@@ -153,7 +159,7 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	var cachedTitle string
 	titleGenerator := func() string {
 		if cachedTitle == "" {
-			kws := h.dataManager.GetRandomKeywords(articleGroupID, 3)
+			kws := h.dataManager.GetRandomKeywords(keywordGroupID, 3)
 			cachedTitle = h.generateTitle(kws)
 		}
 		return cachedTitle

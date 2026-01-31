@@ -394,7 +394,7 @@ export function subscribeProjectLogs(
   onEnd: () => void,
   onError?: (error: string) => void
 ): () => void {
-  const wsUrl = buildWsUrl(`/api/spider-projects/${projectId}/logs/ws`)
+  const wsUrl = buildWsUrl(`/ws/spider-logs/${projectId}?type=project`)
   return createLogSubscription(wsUrl, { onLog, onEnd, onError })
 }
 
@@ -408,7 +408,7 @@ export function subscribeTestLogs(
   onEnd: () => void,
   onError?: (error: string) => void
 ): () => void {
-  const wsUrl = buildWsUrl(`/api/spider-projects/${projectId}/test/logs/ws`)
+  const wsUrl = buildWsUrl(`/ws/spider-logs/${projectId}?type=test`)
   return createLogSubscription(wsUrl, { onLog, onEnd, onError, onItem })
 }
 

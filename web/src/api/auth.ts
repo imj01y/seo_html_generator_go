@@ -1,8 +1,8 @@
 import request from '@/utils/request'
 import type { LoginRequest } from '@/types'
 
-// 后端返回格式
-interface BackendLoginResponse {
+// 登录响应数据（现在直接从 data 字段获取）
+interface LoginData {
   success: boolean
   token?: string
   message?: string
@@ -10,13 +10,15 @@ interface BackendLoginResponse {
 
 // 后端返回的用户信息格式
 interface BackendUserInfo {
+  id?: number
   username: string
   role: string
-  last_login: string
+  last_login: string | null
 }
 
 export const login = async (data: LoginRequest) => {
-  const res: BackendLoginResponse = await request.post('/auth/login', data)
+  const res: LoginData = await request.post('/auth/login', data)
+  // 检查登录是否成功
   if (!res.success) {
     throw new Error(res.message || '登录失败')
   }
@@ -28,25 +30,26 @@ export const login = async (data: LoginRequest) => {
   }
 }
 
-export const logout = (): Promise<{ success: boolean }> =>
-  request.post('/auth/logout')
+export const logout = async (): Promise<{ success: boolean }> => {
+  return await request.post('/auth/logout')
+}
 
 export const getMe = async () => {
   const res: BackendUserInfo = await request.get('/auth/profile')
   return {
-    id: 1,
+    id: res.id || 1,
     username: res.username
   }
 }
 
 // 修改密码响应格式
-interface ChangePasswordResponse {
+interface ChangePasswordData {
   success: boolean
   message?: string
 }
 
 export const changePassword = async (data: { old_password: string; new_password: string }): Promise<void> => {
-  const res: ChangePasswordResponse = await request.post('/auth/change-password', data)
+  const res: ChangePasswordData = await request.post('/auth/change-password', data)
   if (!res.success) {
     throw new Error(res.message || '修改密码失败')
   }

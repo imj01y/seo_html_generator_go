@@ -7,7 +7,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
 
 // AuthHandler 认证相关 handler
@@ -62,13 +62,13 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	err := h.db.Get(&admin, "SELECT id, username, password, last_login FROM admins WHERE username = ?", req.Username)
 	if err != nil {
 		log.Debug().Str("username", req.Username).Msg("Admin not found")
-		core.Success(c, LoginResponse{Success: false, Message: "用户名或密码错误"})
+		core.FailWithMessage(c, core.ErrUnauthorized, "用户名或密码错误")
 		return
 	}
 
 	if !core.VerifyPassword(req.Password, admin.Password) {
 		log.Debug().Str("username", req.Username).Msg("Invalid password")
-		core.Success(c, LoginResponse{Success: false, Message: "用户名或密码错误"})
+		core.FailWithMessage(c, core.ErrUnauthorized, "用户名或密码错误")
 		return
 	}
 
@@ -102,8 +102,16 @@ func (h *AuthHandler) Profile(c *gin.Context) {
 		return
 	}
 
-	claimsMap := claims.(map[string]interface{})
-	username := claimsMap["sub"].(string)
+	claimsMap, ok := claims.(map[string]interface{})
+	if !ok {
+		core.FailWithMessage(c, core.ErrUnauthorized, "无效的认证信息")
+		return
+	}
+	username, ok := claimsMap["sub"].(string)
+	if !ok {
+		core.FailWithMessage(c, core.ErrUnauthorized, "无效的用户信息")
+		return
+	}
 
 	if h.db == nil {
 		core.Success(c, gin.H{"username": username, "role": "admin", "last_login": nil})
@@ -144,10 +152,27 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	claims, _ := c.Get("claims")
-	claimsMap := claims.(map[string]interface{})
-	username := claimsMap["sub"].(string)
-	adminID := int(claimsMap["admin_id"].(float64))
+	claims, exists := c.Get("claims")
+	if !exists {
+		core.FailWithCode(c, core.ErrUnauthorized)
+		return
+	}
+	claimsMap, ok := claims.(map[string]interface{})
+	if !ok {
+		core.FailWithMessage(c, core.ErrUnauthorized, "无效的认证信息")
+		return
+	}
+	username, ok := claimsMap["sub"].(string)
+	if !ok {
+		core.FailWithMessage(c, core.ErrUnauthorized, "无效的用户信息")
+		return
+	}
+	adminIDFloat, ok := claimsMap["admin_id"].(float64)
+	if !ok {
+		core.FailWithMessage(c, core.ErrUnauthorized, "无效的管理员ID")
+		return
+	}
+	adminID := int(adminIDFloat)
 
 	var storedPassword string
 	err := h.db.Get(&storedPassword, "SELECT password FROM admins WHERE username = ?", username)

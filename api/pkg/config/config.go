@@ -13,9 +13,19 @@ import (
 type Config struct {
 	Server         ServerConfig         `yaml:"server"`
 	Database       DatabaseConfig       `yaml:"database"`
+	Redis          RedisConfig          `yaml:"redis"`
 	Cache          CacheConfig          `yaml:"cache"`
 	SpiderDetector SpiderDetectorConfig `yaml:"spider_detector"`
 	Auth           AuthConfig           `yaml:"auth"`
+}
+
+// RedisConfig holds Redis configuration
+type RedisConfig struct {
+	Enabled  bool   `yaml:"enabled"`
+	Host     string `yaml:"host"`
+	Port     int    `yaml:"port"`
+	DB       int    `yaml:"db"`
+	Password string `yaml:"password"`
 }
 
 // ServerConfig holds server configuration
@@ -123,9 +133,16 @@ func Load(configPath string) (*Config, error) {
 			PoolSize:    getInt(merged, "database.pool_size", 10),
 			PoolRecycle: getInt(merged, "database.pool_recycle", 3600),
 		},
+		Redis: RedisConfig{
+			Enabled:  getBoolEnv("REDIS_ENABLED", getBool(merged, "redis.enabled", false)),
+			Host:     getEnv("REDIS_HOST", getString(merged, "redis.host", "localhost")),
+			Port:     getIntEnv("REDIS_PORT", getInt(merged, "redis.port", 6379)),
+			DB:       getIntEnv("REDIS_DB", getInt(merged, "redis.db", 0)),
+			Password: getEnv("REDIS_PASSWORD", getString(merged, "redis.password", "")),
+		},
 		Cache: CacheConfig{
 			Enabled:     getBool(merged, "cache.enabled", true),
-			Dir:         getString(merged, "cache.dir", "./html_cache"),
+			Dir:         getString(merged, "cache.dir", "/data/cache"),
 			TTLHours:    getInt(merged, "cache.ttl_hours", 24),
 			MaxSizeGB:   getFloat(merged, "cache.max_size_gb", 10.0),
 			GzipEnabled: getBool(merged, "cache.gzip_enabled", true),
@@ -166,6 +183,19 @@ func getIntEnv(key string, defaultVal int) int {
 	return defaultVal
 }
 
+// getBoolEnv returns environment variable as bool or default
+func getBoolEnv(key string, defaultVal bool) bool {
+	if val := os.Getenv(key); val != "" {
+		if val == "true" || val == "1" || val == "yes" {
+			return true
+		}
+		if val == "false" || val == "0" || val == "no" {
+			return false
+		}
+	}
+	return defaultVal
+}
+
 // Get returns the global configuration
 func Get() *Config {
 	return globalConfig
@@ -176,7 +206,7 @@ func Get() *Config {
 func GetCacheDir(projectRoot string, configDir string) string {
 	cacheDir := configDir
 	if cacheDir == "" {
-		cacheDir = "./html_cache"
+		cacheDir = "/data/cache"
 	}
 
 	if filepath.IsAbs(cacheDir) {

@@ -40,7 +40,7 @@ COPY --from=builder /build/server .
 COPY --from=builder /build/templates ./templates
 
 # Create directories
-RUN mkdir -p /app/html_cache /app/logs
+RUN mkdir -p /data/cache /app/logs /app/data
 
 # Set environment variables
 ENV TZ=Asia/Shanghai \

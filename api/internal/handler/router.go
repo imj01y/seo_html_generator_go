@@ -329,9 +329,25 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		spiderDetectorRoutes.DELETE("/logs/clear", spiderDetectorHandler.ClearSpiderLogs)
 	}
 
+	// Processor routes (数据加工，require JWT)
+	processorHandler := &ProcessorHandler{}
+	processorRoutes := r.Group("/api/processor")
+	processorRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		processorRoutes.GET("/config", processorHandler.GetConfig)
+		processorRoutes.PUT("/config", processorHandler.UpdateConfig)
+		processorRoutes.GET("/status", processorHandler.GetStatus)
+		processorRoutes.POST("/start", processorHandler.Start)
+		processorRoutes.POST("/stop", processorHandler.Stop)
+		processorRoutes.POST("/retry-all", processorHandler.RetryAll)
+		processorRoutes.DELETE("/dead-queue", processorHandler.ClearDeadQueue)
+		processorRoutes.GET("/stats", processorHandler.GetStats)
+	}
+
 	// WebSocket routes (不需要认证)
 	wsHandler := &WebSocketHandler{}
 	r.GET("/ws/spider-logs/:id", wsHandler.SpiderLogs)
+	r.GET("/ws/spider-stats/:id", wsHandler.SpiderStats)
 	r.GET("/api/logs/ws", wsHandler.SystemLogs)
 
 	// Admin API group (require JWT)

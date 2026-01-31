@@ -11,7 +11,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
 
 // ArticlesHandler 文章管理 handler
@@ -166,16 +166,27 @@ func (h *ArticlesHandler) CreateGroup(c *gin.Context) {
 		return
 	}
 
-	if req.IsDefault {
-		h.db.Exec("UPDATE article_groups SET is_default = 0 WHERE is_default = 1")
-	}
-
 	isDefault := 0
 	if req.IsDefault {
 		isDefault = 1
 	}
 
-	result, err := h.db.Exec(
+	// 使用事务确保设置默认分组的原子性
+	tx, err := h.db.Beginx()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "开启事务失败")
+		return
+	}
+	defer tx.Rollback()
+
+	if req.IsDefault {
+		if _, err := tx.Exec("UPDATE article_groups SET is_default = 0 WHERE is_default = 1"); err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, "更新默认分组失败")
+			return
+		}
+	}
+
+	result, err := tx.Exec(
 		`INSERT INTO article_groups (site_group_id, name, description, is_default)
 		 VALUES (?, ?, ?, ?)`,
 		req.SiteGroupID, req.Name, req.Description, isDefault)
@@ -186,6 +197,11 @@ func (h *ArticlesHandler) CreateGroup(c *gin.Context) {
 			return
 		}
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "提交事务失败")
 		return
 	}
 
@@ -230,10 +246,8 @@ func (h *ArticlesHandler) UpdateGroup(c *gin.Context) {
 		updates = append(updates, "description = ?")
 		args = append(args, *req.Description)
 	}
+	needSetDefault := req.IsDefault != nil && *req.IsDefault == 1
 	if req.IsDefault != nil {
-		if *req.IsDefault == 1 {
-			h.db.Exec("UPDATE article_groups SET is_default = 0 WHERE is_default = 1")
-		}
 		updates = append(updates, "is_default = ?")
 		args = append(args, *req.IsDefault)
 	}
@@ -246,8 +260,28 @@ func (h *ArticlesHandler) UpdateGroup(c *gin.Context) {
 	args = append(args, id)
 	query := "UPDATE article_groups SET " + strings.Join(updates, ", ") + " WHERE id = ?"
 
-	if _, err := h.db.Exec(query, args...); err != nil {
+	// 使用事务确保设置默认分组的原子性
+	tx, err := h.db.Beginx()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "开启事务失败")
+		return
+	}
+	defer tx.Rollback()
+
+	if needSetDefault {
+		if _, err := tx.Exec("UPDATE article_groups SET is_default = 0 WHERE is_default = 1"); err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, "更新默认分组失败")
+			return
+		}
+	}
+
+	if _, err := tx.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, "提交事务失败")
 		return
 	}
 
@@ -269,14 +303,40 @@ func (h *ArticlesHandler) DeleteGroup(c *gin.Context) {
 	}
 
 	var isDefault int
-	h.db.Get(&isDefault, "SELECT is_default FROM article_groups WHERE id = ?", id)
+	if err := h.db.Get(&isDefault, "SELECT is_default FROM article_groups WHERE id = ?", id); err != nil {
+		if err == sql.ErrNoRows {
+			core.FailWithMessage(c, core.ErrNotFound, "分组不存在")
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, "查询分组失败")
+		return
+	}
 	if isDefault == 1 {
 		core.Success(c, gin.H{"success": false, "message": "不能删除默认分组"})
 		return
 	}
 
-	if _, err := h.db.Exec("UPDATE article_groups SET status = 0 WHERE id = ?", id); err != nil {
+	// 物理删除分组及其下所有文章
+	tx, err := h.db.Begin()
+	if err != nil {
+		core.Success(c, gin.H{"success": false, "message": "开启事务失败"})
+		return
+	}
+	defer tx.Rollback()
+
+	// 先删除分组下的所有文章
+	if _, err := tx.Exec("DELETE FROM original_articles WHERE group_id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+	// 再删除分组
+	if _, err := tx.Exec("DELETE FROM article_groups WHERE id = ?", id); err != nil {
+		core.Success(c, gin.H{"success": false, "message": err.Error()})
+		return
+	}
+
+	if err := tx.Commit(); err != nil {
+		core.Success(c, gin.H{"success": false, "message": "提交事务失败"})
 		return
 	}
 
@@ -315,7 +375,10 @@ func (h *ArticlesHandler) List(c *gin.Context) {
 	}
 
 	var total int64
-	h.db.Get(&total, "SELECT COUNT(*) FROM original_articles WHERE "+where, args...)
+	if err := h.db.Get(&total, "SELECT COUNT(*) FROM original_articles WHERE "+where, args...); err != nil {
+		log.Warn().Err(err).Msg("Failed to count articles")
+		total = 0
+	}
 
 	args = append(args, pageSize, offset)
 	query := `SELECT id, group_id, title, status, created_at
@@ -437,7 +500,8 @@ func (h *ArticlesHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	if _, err := h.db.Exec("UPDATE original_articles SET status = 0 WHERE id = ?", id); err != nil {
+	// 物理删除
+	if _, err := h.db.Exec("DELETE FROM original_articles WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
 	}
@@ -474,7 +538,8 @@ func (h *ArticlesHandler) BatchDelete(c *gin.Context) {
 		args[i] = id
 	}
 
-	query := fmt.Sprintf("UPDATE original_articles SET status = 0 WHERE id IN (%s)", placeholders)
+	// 物理删除
+	query := fmt.Sprintf("DELETE FROM original_articles WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
 		return
@@ -505,10 +570,11 @@ func (h *ArticlesHandler) DeleteAll(c *gin.Context) {
 	var result sql.Result
 	var err error
 
+	// 物理删除
 	if req.GroupID != nil {
-		result, err = h.db.Exec("UPDATE original_articles SET status = 0 WHERE group_id = ? AND status = 1", *req.GroupID)
+		result, err = h.db.Exec("DELETE FROM original_articles WHERE group_id = ?", *req.GroupID)
 	} else {
-		result, err = h.db.Exec("UPDATE original_articles SET status = 0 WHERE status = 1")
+		result, err = h.db.Exec("DELETE FROM original_articles")
 	}
 
 	if err != nil {

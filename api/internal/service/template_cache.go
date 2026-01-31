@@ -307,3 +307,14 @@ func (tc *TemplateCache) analyzeTemplate(tmpl *models.Template) {
 		tc.analyzer.AnalyzeTemplate(tmpl.Name, tmpl.SiteGroupID, tmpl.Content)
 	}()
 }
+
+// Range 遍历所有缓存的模板
+// 回调函数返回 false 时停止遍历
+func (tc *TemplateCache) Range(fn func(tmpl *models.Template) bool) {
+	tc.cache.Range(func(key, value interface{}) bool {
+		if tmpl, ok := value.(*models.Template); ok && tmpl != nil {
+			return fn(tmpl)
+		}
+		return true // 跳过 nil 值，继续遍历
+	})
+}

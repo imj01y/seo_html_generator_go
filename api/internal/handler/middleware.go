@@ -4,7 +4,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
-	"seo-generator/api/internal/service"
+	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
+
+	"seo-generator/api/pkg/config"
+	core "seo-generator/api/internal/service"
 )
 
 // AuthMiddleware JWT 认证中间件
@@ -38,6 +42,23 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 		c.Set("admin_id", claims["admin_id"])
 		c.Set("username", claims["sub"])
 
+		c.Next()
+	}
+}
+
+// DependencyInjectionMiddleware 依赖注入中间件
+// 将数据库、Redis 连接和配置注入到 Gin context 中，供 Handler 使用
+func DependencyInjectionMiddleware(db *sqlx.DB, rdb *redis.Client, cfg *config.Config) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if db != nil {
+			c.Set("db", db)
+		}
+		if rdb != nil {
+			c.Set("redis", rdb)
+		}
+		if cfg != nil {
+			c.Set("config", cfg)
+		}
 		c.Next()
 	}
 }

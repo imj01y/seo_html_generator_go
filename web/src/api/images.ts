@@ -89,6 +89,26 @@ export const addImageUrlsBatch = async (data: ImageUrlBatchAdd): Promise<BatchRe
   return { added: res.added, skipped: res.skipped }
 }
 
+// 上传 TXT 文件批量添加图片URL
+export const uploadImagesFile = async (file: File, groupId: number): Promise<{
+  success: boolean
+  message: string
+  total: number
+  added: number
+  skipped: number
+}> => {
+  const formData = new FormData()
+  formData.append('file', file)
+  formData.append('group_id', String(groupId))
+
+  return await request.post('/images/upload', formData, {
+    timeout: 300000,  // 5 分钟超时
+    headers: {
+      'Content-Type': 'multipart/form-data'
+    }
+  })
+}
+
 export const updateImageUrl = async (id: number, data: { url?: string; group_id?: number; status?: number }): Promise<void> => {
   const res: { success: boolean; message?: string } = await request.put(`/images/urls/${id}`, data)
   if (!res.success) {

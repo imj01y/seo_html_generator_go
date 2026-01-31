@@ -19,7 +19,7 @@ type Response struct {
 
 // PagedData represents paginated data
 type PagedData struct {
-	List     interface{} `json:"list"`
+	Items    interface{} `json:"items"`
 	Total    int64       `json:"total"`
 	Page     int         `json:"page"`
 	PageSize int         `json:"page_size"`
@@ -33,7 +33,7 @@ func NewPagedData(list interface{}, total int64, page, pageSize int) *PagedData 
 		pages++
 	}
 	return &PagedData{
-		List:     list,
+		Items:    list,
 		Total:    total,
 		Page:     page,
 		PageSize: pageSize,

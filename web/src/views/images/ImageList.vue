@@ -11,6 +11,10 @@
           <el-icon><Upload /></el-icon>
           批量添加
         </el-button>
+        <el-button type="success" @click="openUploadDialog">
+          <el-icon><Document /></el-icon>
+          上传文件
+        </el-button>
         <el-dropdown @command="handleDeleteAll" trigger="click">
           <el-button type="danger">
             删除全部 <el-icon class="el-icon--right"><ArrowDown /></el-icon>
@@ -320,12 +324,64 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 上传文件弹窗 -->
+    <el-dialog v-model="uploadDialogVisible" title="上传图片URL文件" width="500px" :close-on-click-modal="false" :close-on-press-escape="false" :before-close="handleUploadDialogClose">
+      <el-form label-width="80px">
+        <el-form-item label="所属图库" required>
+          <el-select v-model="uploadGroupId" style="width: 100%">
+            <el-option
+              v-for="g in groups"
+              :key="g.id"
+              :label="g.name + (g.is_default ? ' (默认)' : '')"
+              :value="g.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="选择文件" required>
+          <el-upload
+            ref="uploadRef"
+            :auto-upload="false"
+            multiple
+            accept=".txt"
+            :on-change="handleFileChange"
+            :on-remove="handleFileRemove"
+          >
+            <template #trigger>
+              <el-button type="primary">选择 TXT 文件</el-button>
+            </template>
+            <template #tip>
+              <div class="el-upload__tip">
+                支持同时选择多个 .txt 文件，每行一个图片URL
+              </div>
+            </template>
+          </el-upload>
+        </el-form-item>
+        <!-- 已选文件统计 -->
+        <el-form-item v-if="uploadFiles.length > 0" label="已选文件">
+          <el-tag type="info">{{ uploadFiles.length }} 个文件</el-tag>
+        </el-form-item>
+        <!-- 上传进度 -->
+        <el-form-item v-if="uploadProgress.total > 0" label="上传进度">
+          <el-progress
+            :percentage="Math.round((uploadProgress.current / uploadProgress.total) * 100)"
+            :format="() => `${uploadProgress.current}/${uploadProgress.total}`"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="closeUploadDialog" :disabled="uploadLoading">取消</el-button>
+        <el-button type="primary" :loading="uploadLoading" @click="handleUpload">
+          {{ uploadLoading ? `上传中 (${uploadProgress.current}/${uploadProgress.total})` : '上传' }}
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
-import { ElMessage, ElMessageBox, FormInstance, FormRules, TableInstance } from 'element-plus'
+import { ElMessage, ElMessageBox, FormInstance, FormRules, TableInstance, UploadInstance } from 'element-plus'
 import dayjs from 'dayjs'
 import {
   getImageGroups,
@@ -341,7 +397,8 @@ import {
   batchDeleteImages,
   batchUpdateImageStatus,
   batchMoveImages,
-  deleteAllImages
+  deleteAllImages,
+  uploadImagesFile
 } from '@/api/images'
 import type { ImageGroup, ImageUrl } from '@/types'
 
@@ -359,6 +416,17 @@ const editDialogVisible = ref(false)
 const groupFormRef = ref<FormInstance>()
 const editGroupFormRef = ref<FormInstance>()
 const tableRef = ref<TableInstance>()
+const uploadRef = ref<UploadInstance>()
+
+// 上传相关
+const uploadDialogVisible = ref(false)
+const uploadGroupId = ref(1)
+const uploadFiles = ref<File[]>([])
+const uploadLoading = ref(false)
+const uploadProgress = reactive({
+  current: 0,
+  total: 0
+})
 
 const groups = ref<ImageGroup[]>([])
 const activeGroupId = ref<number>(0)
@@ -391,6 +459,7 @@ const contextMenuY = ref(0)
 const contextMenuGroup = ref<ImageGroup | null>(null)
 
 const groupForm = reactive({
+  site_group_id: 1,
   name: '',
   description: ''
 })
@@ -622,6 +691,107 @@ const handleBatchAdd = async () => {
     }
   } finally {
     batchLoading.value = false
+  }
+}
+
+// 打开上传对话框
+const openUploadDialog = () => {
+  uploadGroupId.value = activeGroupId.value || 1
+  uploadFiles.value = []
+  uploadProgress.current = 0
+  uploadProgress.total = 0
+  uploadDialogVisible.value = true
+}
+
+// 上传弹窗关闭前的处理
+const handleUploadDialogClose = (done: () => void) => {
+  if (uploadLoading.value) {
+    ElMessage.warning('上传中，请等待完成')
+    return
+  }
+  resetUploadDialog()
+  done()
+}
+
+// 重置上传对话框
+const resetUploadDialog = () => {
+  uploadFiles.value = []
+  uploadProgress.current = 0
+  uploadProgress.total = 0
+  uploadLoading.value = false
+  uploadRef.value?.clearFiles()
+}
+
+// 关闭上传对话框
+const closeUploadDialog = () => {
+  if (uploadLoading.value) {
+    ElMessage.warning('上传中，请等待完成')
+    return
+  }
+  resetUploadDialog()
+  uploadDialogVisible.value = false
+}
+
+// 文件选择变化（支持多文件）
+const handleFileChange = (file: any, fileList: any[]) => {
+  uploadFiles.value = fileList.map(f => f.raw).filter(Boolean)
+}
+
+// 文件移除
+const handleFileRemove = (file: any, fileList: any[]) => {
+  uploadFiles.value = fileList.map(f => f.raw).filter(Boolean)
+}
+
+// 执行上传（支持多文件逐个上传）
+const handleUpload = async () => {
+  if (uploadFiles.value.length === 0) {
+    ElMessage.warning('请选择文件')
+    return
+  }
+
+  uploadLoading.value = true
+  uploadProgress.current = 0
+  uploadProgress.total = uploadFiles.value.length
+
+  let totalAdded = 0
+  let totalSkipped = 0
+  let successCount = 0
+  let failedFiles: string[] = []
+
+  try {
+    for (const file of uploadFiles.value) {
+      uploadProgress.current++
+      try {
+        const res = await uploadImagesFile(file, uploadGroupId.value)
+        totalAdded += res.added
+        totalSkipped += res.skipped
+        successCount++
+      } catch (error: any) {
+        failedFiles.push(file.name)
+      }
+    }
+
+    // 显示汇总结果
+    if (failedFiles.length === 0) {
+      ElMessage.success(
+        `全部上传成功！共 ${successCount} 个文件，添加 ${totalAdded} 个图片URL，跳过 ${totalSkipped} 个重复`
+      )
+      uploadLoading.value = false
+      closeUploadDialog()
+    } else {
+      ElMessage.warning(
+        `${successCount} 个文件成功，${failedFiles.length} 个失败。添加 ${totalAdded} 个图片URL，跳过 ${totalSkipped} 个重复`
+      )
+      uploadLoading.value = false
+    }
+
+    // 刷新列表
+    if (uploadGroupId.value === activeGroupId.value) {
+      await loadImages()
+    }
+  } catch (error: any) {
+    ElMessage.error(error.message || '上传失败')
+    uploadLoading.value = false
   }
 }
 

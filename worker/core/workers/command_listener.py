@@ -66,6 +66,24 @@ class CommandListener:
         self.running_tasks: Dict[int, asyncio.Task] = {}
         self.rdb = None
 
+    async def _publish_stats(self, project_id: int, items_count: int):
+        """发布实时统计更新到前端"""
+        # 更新 Redis 计数
+        stats_key = f"spider:{project_id}:stats"
+        await self.rdb.hincrby(stats_key, "completed", 1)
+
+        # 发布统计消息（前端 WebSocket 订阅）
+        stats_msg = {
+            "type": "stats",
+            "project_id": project_id,
+            "items_count": items_count,
+            "timestamp": datetime.now().isoformat()
+        }
+        await self.rdb.publish(
+            f"spider:stats:project_{project_id}",
+            json.dumps(stats_msg, ensure_ascii=False)
+        )
+
     async def start(self):
         """启动监听器"""
         self.rdb = get_redis_client()
@@ -203,8 +221,12 @@ class CommandListener:
                             keyword_manager = get_keyword_group()
                             if keyword_manager:
                                 result = await keyword_manager.add_keywords_batch(keywords, target_group)
-                                items_count += result.get('added', 0)
+                                added = result.get('added', 0)
+                                items_count += added
                                 await log.info(f"关键词写入: 新增 {result['added']}, 跳过 {result['skipped']}")
+                                # 发布实时统计
+                                if added > 0:
+                                    await self._publish_stats(project_id, items_count)
 
                     elif item_type == 'images':
                         # 写入图片表
@@ -216,8 +238,12 @@ class CommandListener:
                             image_manager = get_image_group()
                             if image_manager:
                                 result = await image_manager.add_urls_batch(urls, target_group)
-                                items_count += result.get('added', 0)
+                                added = result.get('added', 0)
+                                items_count += added
                                 await log.info(f"图片写入: 新增 {result['added']}, 跳过 {result['skipped']}")
+                                # 发布实时统计
+                                if added > 0:
+                                    await self._publish_stats(project_id, items_count)
 
                     else:
                         # 写入文章表
@@ -233,11 +259,13 @@ class CommandListener:
                             })
                             items_count += 1
 
-                            # 推送到待处理队列
+                            # 发布实时统计
+                            await self._publish_stats(project_id, items_count)
+
+                            # 推送到待处理队列（单一队列，不按分组）
                             if article_id:
                                 try:
-                                    queue_key = f"pending:articles:{target_group}"
-                                    await self.rdb.lpush(queue_key, article_id)
+                                    await self.rdb.lpush("pending:articles", article_id)
                                 except Exception as queue_err:
                                     await log.warning(f"推送到待处理队列失败: {queue_err}")
 

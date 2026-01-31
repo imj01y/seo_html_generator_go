@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -986,8 +987,9 @@ func (h *SpidersHandler) GetRealtimeStats(c *gin.Context) {
 		stats.Pending, _ = strconv.Atoi(statsData["pending"])
 		stats.Processing, _ = strconv.Atoi(statsData["processing"])
 
-		if stats.Total > 0 {
-			stats.SuccessRate = float64(stats.Completed) / float64(stats.Total) * 100
+		totalDone := stats.Completed + stats.Failed
+		if totalDone > 0 {
+			stats.SuccessRate = math.Round(float64(stats.Completed)/float64(totalDone)*10000) / 100
 		}
 	}
 
@@ -1007,25 +1009,17 @@ func (h *SpidersHandler) GetChartStats(c *gin.Context) {
 	period := c.DefaultQuery("period", "hour")
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
 
-	rows, err := sqlxDB.Queryx(`
-		SELECT period_start, total, completed, failed, retried, avg_speed
+	var data []StatsChartPoint
+	err := sqlxDB.Select(&data, `
+		SELECT period_start as time, total, completed, failed, retried, avg_speed
 		FROM spider_stats_history
 		WHERE project_id = ? AND period_type = ?
 		ORDER BY period_start DESC
 		LIMIT ?
 	`, id, period, limit)
 
-	if err != nil {
-		c.JSON(200, gin.H{"success": true, "data": []interface{}{}})
-		return
-	}
-	defer rows.Close()
-
-	data := []map[string]interface{}{}
-	for rows.Next() {
-		row := make(map[string]interface{})
-		rows.MapScan(row)
-		data = append(data, row)
+	if err != nil || data == nil {
+		data = []StatsChartPoint{}
 	}
 
 	c.JSON(200, gin.H{"success": true, "data": data})
@@ -1483,8 +1477,9 @@ func (h *SpiderStatsHandler) GetOverview(c *gin.Context) {
 	}
 
 	var successRate float64
-	if total > 0 {
-		successRate = float64(completed) / float64(total) * 100
+	totalDone := completed + failed
+	if totalDone > 0 {
+		successRate = math.Round(float64(completed)/float64(totalDone)*10000) / 100
 	}
 
 	c.JSON(200, gin.H{"success": true, "data": gin.H{
@@ -1530,8 +1525,8 @@ func (h *SpiderStatsHandler) GetChart(c *gin.Context) {
 
 		args = append(args, limit)
 
-		var data []map[string]interface{}
-		rows, err := sqlxDB.Queryx(`
+		var data []StatsChartPoint
+		err := sqlxDB.Select(&data, `
 			SELECT period_start as time, SUM(total) as total, SUM(completed) as completed,
 			       SUM(failed) as failed, SUM(retried) as retried, AVG(avg_speed) as avg_speed
 			FROM spider_stats_history
@@ -1541,16 +1536,7 @@ func (h *SpiderStatsHandler) GetChart(c *gin.Context) {
 			LIMIT ?
 		`, args...)
 
-		if err == nil {
-			for rows.Next() {
-				row := make(map[string]interface{})
-				rows.MapScan(row)
-				data = append(data, row)
-			}
-			rows.Close()
-		}
-
-		if len(data) > 0 {
+		if err == nil && len(data) > 0 {
 			// 反转为时间正序
 			for i, j := 0, len(data)-1; i < j; i, j = i+1, j-1 {
 				data[i], data[j] = data[j], data[i]
@@ -1637,8 +1623,9 @@ func (h *SpiderStatsHandler) GetByProject(c *gin.Context) {
 		}
 
 		var successRate float64
-		if total > 0 {
-			successRate = float64(completed) / float64(total) * 100
+		totalDone := completed + failed
+		if totalDone > 0 {
+			successRate = math.Round(float64(completed)/float64(totalDone)*10000) / 100
 		}
 
 		result = append(result, gin.H{

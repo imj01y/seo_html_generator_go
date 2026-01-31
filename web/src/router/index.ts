@@ -67,6 +67,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '图片管理', icon: 'Picture' }
       },
       {
+        path: 'processor',
+        name: 'Processor',
+        component: () => import('@/views/processor/ProcessorManage.vue'),
+        meta: { title: '数据加工', icon: 'Operation' }
+      },
+      {
         path: 'spiders/projects',
         name: 'SpiderProjects',
         component: () => import('@/views/spiders/ProjectList.vue'),

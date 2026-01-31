@@ -5,7 +5,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/internal/service"
+	core "seo-generator/api/internal/service"
 )
 
 // DashboardHandler 仪表盘 handler
@@ -70,28 +70,35 @@ func (h *DashboardHandler) Stats(c *gin.Context) {
 // SpiderVisits 获取蜘蛛访问统计
 // GET /api/dashboard/spider-visits
 func (h *DashboardHandler) SpiderVisits(c *gin.Context) {
-	// 从监控中获取蜘蛛统计
-	if h.monitor != nil {
-		snapshot := h.monitor.GetCurrentSnapshot()
-		core.Success(c, gin.H{
-			"total_visits": snapshot.SpiderRequests,
-			"today_visits": snapshot.SpiderRequests,
-		})
-		return
-	}
+	var total int
+	byType := make(map[string]int)
 
-	// 回退到数据库查询
-	var todayVisits int
 	if h.db != nil {
-		h.db.Get(&todayVisits, `
-			SELECT COUNT(*) FROM spider_logs
-			WHERE DATE(visit_time) = CURDATE()
+		// 总访问次数
+		h.db.Get(&total, "SELECT COUNT(*) FROM spider_logs")
+
+		// 按蜘蛛类型统计
+		var typeStats []struct {
+			SpiderType string `db:"spider_type"`
+			Count      int    `db:"count"`
+		}
+		err := h.db.Select(&typeStats, `
+			SELECT spider_type, COUNT(*) as count
+			FROM spider_logs
+			GROUP BY spider_type
+			ORDER BY count DESC
 		`)
+		if err == nil {
+			for _, ts := range typeStats {
+				byType[ts.SpiderType] = ts.Count
+			}
+		}
 	}
 
+	// 返回前端期望的格式: { total, by_type }
 	core.Success(c, gin.H{
-		"total_visits": todayVisits,
-		"today_visits": todayVisits,
+		"total":   total,
+		"by_type": byType,
 	})
 }
 

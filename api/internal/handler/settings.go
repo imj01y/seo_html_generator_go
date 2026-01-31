@@ -35,7 +35,7 @@ var cacheDefaultSettings = map[string]struct {
 	"image_pool_size":        {"500000", "number", "图片池大小(0=不限制)"},
 	"article_pool_size":      {"50000", "number", "文章池大小(0=不限制)"},
 	"file_cache_enabled":     {"false", "boolean", "是否启用文件缓存"},
-	"file_cache_dir":         {"./html_cache", "string", "文件缓存目录"},
+	"file_cache_dir":         {"/data/cache", "string", "文件缓存目录"},
 	"file_cache_max_size_gb": {"50", "number", "最大缓存大小(GB)"},
 	"file_cache_nginx_mode":  {"true", "boolean", "Nginx直服模式(不压缩)"},
 }
