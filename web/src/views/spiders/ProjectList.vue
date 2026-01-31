@@ -92,7 +92,7 @@
           {{ row.last_run_items || 0 }} / {{ formatNumber(row.total_items) }}
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="320" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="row.status !== 'running'"
@@ -685,5 +685,14 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
+}
+
+/* 固定列背景色与普通列保持一致 */
+:deep(.el-table__fixed-right) {
+  background: transparent;
+}
+
+:deep(.el-table__fixed-right .el-table__cell) {
+  background: inherit;
 }
 </style>
