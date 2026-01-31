@@ -204,10 +204,10 @@ monaco.editor.defineTheme('pycharm-darcula', {
   base: 'vs-dark',
   inherit: false,
   rules: [
-    // 变量名 - RGB(183, 189, 195) = #b7bdc3
-    { token: '', foreground: 'b7bdc3' },
-    { token: 'identifier', foreground: 'b7bdc3' },
-    { token: 'white', foreground: 'b7bdc3' },
+    // 变量名 - RGB(86, 168, 245) = #56a8f5
+    { token: '', foreground: '56a8f5' },
+    { token: 'identifier', foreground: '56a8f5' },
+    { token: 'white', foreground: '56a8f5' },
 
     // self, cls - RGB(148, 85, 141) = #94558d
     { token: 'variable.self', foreground: '94558d', fontStyle: 'italic' },
