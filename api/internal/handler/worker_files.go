@@ -4,10 +4,6 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-
-	"github.com/gin-gonic/gin"
-
-	core "seo-generator/api/internal/service"
 )
 
 // WorkerFilesHandler Worker 文件管理 handler
@@ -36,40 +32,23 @@ type TreeNode struct {
 	Children []*TreeNode `json:"children,omitempty"`
 }
 
-// validatePath 验证路径安全性，防止路径穿越攻击
-// 返回 (fullPath, ok)
-func (h *WorkerFilesHandler) validatePath(c *gin.Context, relativePath string) (string, bool) {
+// validatePath 验证路径安全性，防止路径穿越
+func (h *WorkerFilesHandler) validatePath(relativePath string) (string, bool) {
 	// 清理路径
 	cleanPath := filepath.Clean(relativePath)
 
 	// 检查是否包含 ".."
-	if strings.Contains(cleanPath, "..") {
-		core.FailWithMessage(c, core.ErrForbidden, "路径包含非法字符")
+	if strings.HasPrefix(cleanPath, "..") || strings.Contains(cleanPath, ".."+string(filepath.Separator)) {
 		return "", false
 	}
 
-	// 构建完整路径
 	fullPath := filepath.Join(h.workerDir, cleanPath)
 
-	// 确保路径在 workerDir 内
-	// 需要将两者都转为绝对路径进行比较
-	absWorkerDir, err := filepath.Abs(h.workerDir)
-	if err != nil {
-		core.FailWithMessage(c, core.ErrInternalServer, "无法解析工作目录")
+	// 使用 filepath.Rel 确保路径在 workerDir 内
+	rel, err := filepath.Rel(h.workerDir, fullPath)
+	if err != nil || strings.HasPrefix(rel, "..") {
 		return "", false
 	}
 
-	absFullPath, err := filepath.Abs(fullPath)
-	if err != nil {
-		core.FailWithMessage(c, core.ErrInternalServer, "无法解析目标路径")
-		return "", false
-	}
-
-	// 检查目标路径是否以 workerDir 为前缀
-	if !strings.HasPrefix(absFullPath, absWorkerDir) {
-		core.FailWithMessage(c, core.ErrForbidden, "路径超出允许范围")
-		return "", false
-	}
-
-	return absFullPath, true
+	return fullPath, true
 }
