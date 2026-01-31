@@ -32,11 +32,12 @@
     </div>
 
     <!-- Monaco 编辑器 -->
-    <div class="editor-container" ref="editorContainer">
+    <div class="editor-container">
       <div v-if="!store.activeTab.value" class="empty-editor">
         <el-icon :size="48"><Files /></el-icon>
         <p>选择文件开始编辑</p>
       </div>
+      <div v-show="store.activeTab.value" class="monaco-mount" ref="editorContainer"></div>
     </div>
   </div>
 </template>
@@ -289,6 +290,15 @@ async function handleSave() {
 .editor-container {
   flex: 1;
   min-height: 0;
+  position: relative;
+}
+
+.monaco-mount {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
 }
 
 .empty-editor {
