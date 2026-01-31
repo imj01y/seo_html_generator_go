@@ -251,13 +251,22 @@ class KeywordCachePool:
         Args:
             new_size: 新的缓存池大小
         """
+        # Acquire refill lock to prevent race with _refill_cache
+        if self._refill_lock:
+            async with self._refill_lock:
+                await self._resize_internal(new_size)
+        else:
+            await self._resize_internal(new_size)
+
+    async def _resize_internal(self, new_size: int) -> None:
+        """内部 resize 实现"""
         old_size = self._cache_size
         self._cache_size = new_size
         self._low_watermark = int(new_size * self._low_watermark_ratio)
 
         logger.info(f"KeywordCachePool resized: {old_size} -> {new_size}, low_watermark: {self._low_watermark}")
 
-        # If new size is larger, trigger refill
+        # If new size is larger, trigger refill (within the lock)
         if new_size > old_size:
             await self._refill_cache()
         elif new_size < old_size:

@@ -52,6 +52,7 @@ class PoolReloader:
 
     async def _listen(self):
         """监听 Redis 消息"""
+        pubsub = None
         try:
             pubsub = self._redis.pubsub()
             await pubsub.subscribe("pool:reload")
@@ -67,10 +68,11 @@ class PoolReloader:
         except Exception as e:
             logger.error(f"Pool reloader listen error: {e}")
         finally:
-            try:
-                await pubsub.unsubscribe("pool:reload")
-            except:
-                pass
+            if pubsub:
+                try:
+                    await pubsub.unsubscribe("pool:reload")
+                except Exception:
+                    pass
 
     async def _handle_message(self, data):
         """处理消息"""
@@ -93,10 +95,10 @@ class PoolReloader:
             keyword_pool = get_keyword_cache_pool()
             image_pool = get_image_cache_pool()
 
-            if keyword_pool and keyword_size:
+            if keyword_pool and keyword_size and isinstance(keyword_size, int) and keyword_size > 0:
                 await keyword_pool.resize(keyword_size)
 
-            if image_pool and image_size:
+            if image_pool and image_size and isinstance(image_size, int) and image_size > 0:
                 await image_pool.resize(image_size)
 
             logger.info("Pool sizes updated successfully")
