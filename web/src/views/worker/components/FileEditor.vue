@@ -29,7 +29,7 @@
       <div class="log-content" ref="logContainer">
         <div
           v-for="(log, index) in logs"
-          :key="index"
+          :key="`${index}-${log.type}`"
           :class="['log-line', log.type]"
         >
           {{ log.data }}
@@ -87,8 +87,14 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  // 先停止运行中的进程
+  if (stopRun) {
+    stopRun()
+    stopRun = null
+  }
+  // 释放 Monaco Editor 资源
   editor?.dispose()
-  stopRun?.()
+  editor = null
 })
 
 function handleSave() {
@@ -102,6 +108,12 @@ function handleSave() {
 
 function runFile() {
   if (!editor) return
+
+  // 停止之前的运行（防止多次调用导致 WebSocket 泄漏）
+  if (stopRun) {
+    stopRun()
+    stopRun = null
+  }
 
   running.value = true
   logs.value = []
