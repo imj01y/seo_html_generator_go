@@ -138,8 +138,13 @@ monaco.languages.setMonarchTokensProvider('python', {
       // 注释
       [/#.*$/, 'comment'],
 
-      // 括号
-      [/[{}()\[\]]/, '@brackets'],
+      // 括号 - 显式指定 token 以确保颜色正确
+      [/[{]/, 'delimiter.curly'],
+      [/[}]/, 'delimiter.curly'],
+      [/[\[]/, 'delimiter.bracket'],
+      [/[\]]/, 'delimiter.bracket'],
+      [/[(]/, 'delimiter.parenthesis'],
+      [/[)]/, 'delimiter.parenthesis'],
 
       // 运算符
       [/[+\-*/%&|^~<>=!]=?/, 'operator'],
