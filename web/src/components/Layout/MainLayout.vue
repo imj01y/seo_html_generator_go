@@ -146,7 +146,6 @@ const menuItems = [
   { path: '/spiders/projects', title: '数据抓取', icon: 'Cpu' },
   { path: '/spiders/stats', title: '抓取统计', icon: 'TrendCharts' },
   { path: '/processor', title: '数据处理', icon: 'Operation' },
-  { path: '/generators', title: '生成器管理', icon: 'Promotion' },
   { path: '/spiders', title: '蜘蛛日志', icon: 'Connection' },
   { path: '/cache', title: '缓存管理', icon: 'Coin' },
   { path: '/settings', title: '系统设置', icon: 'Setting' }
@@ -157,7 +156,6 @@ const activeMenu = computed(() => {
   // 处理子路由
   if (path.startsWith('/articles/')) return '/articles'
   if (path.startsWith('/templates/')) return '/templates'
-  if (path.startsWith('/generators/')) return '/generators'
   if (path.startsWith('/spiders/stats')) return '/spiders/stats'
   if (path.startsWith('/spiders/projects')) return '/spiders/projects'
   return path
