@@ -688,20 +688,20 @@ onUnmounted(() => {
 }
 
 /* 固定列背景色与普通列保持一致 */
-:deep(.el-table) {
-  --el-table-fixed-left-column: transparent;
-  --el-table-fixed-right-column: transparent;
+:deep(.el-table__fixed-right-patch),
+:deep(.el-table__fixed-right) {
+  background: transparent !important;
 }
 
-:deep(.el-table__body .el-table__row) {
-  --el-table-tr-bg-color: #fff;
+:deep(.el-table td.el-table-fixed-column--right) {
+  background: #fff !important;
 }
 
-:deep(.el-table__body .el-table__row.el-table__row--striped) {
-  --el-table-tr-bg-color: #fafafa;
+:deep(.el-table__row--striped td.el-table-fixed-column--right) {
+  background: #fafafa !important;
 }
 
-:deep(.el-table__body .el-table__row:hover > td) {
-  background-color: var(--el-table-row-hover-bg-color) !important;
+:deep(.el-table__row:hover td.el-table-fixed-column--right) {
+  background: var(--el-table-row-hover-bg-color) !important;
 }
 </style>
