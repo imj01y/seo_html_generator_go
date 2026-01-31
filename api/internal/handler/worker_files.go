@@ -435,3 +435,144 @@ func (h *WorkerFilesHandler) Delete(c *gin.Context) {
 
 	core.SuccessWithMessage(c, "删除成功", nil)
 }
+
+// MoveRequest 移动/重命名请求
+type MoveRequest struct {
+	NewPath string `json:"new_path" binding:"required"`
+}
+
+// Move 重命名或移动文件/目录
+// PATCH /api/worker/files/*path
+func (h *WorkerFilesHandler) Move(c *gin.Context) {
+	path := c.Param("path")
+
+	oldPath, ok := h.validatePath(path)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的源路径")
+		return
+	}
+
+	var req MoveRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, err.Error())
+		return
+	}
+
+	newPath, ok := h.validatePath(req.NewPath)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的目标路径")
+		return
+	}
+
+	// 检查源是否存在
+	if _, err := os.Stat(oldPath); err != nil {
+		if os.IsNotExist(err) {
+			core.FailWithCode(c, core.ErrNotFound)
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	// 检查目标是否已存在
+	if _, err := os.Stat(newPath); err == nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, "目标路径已存在")
+		return
+	}
+
+	// 确保目标父目录存在
+	if err := os.MkdirAll(filepath.Dir(newPath), 0755); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	if err := os.Rename(oldPath, newPath); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	core.Success(c, gin.H{"message": "移动成功", "new_path": req.NewPath})
+}
+
+// Upload 上传文件
+// POST /api/worker/upload/*path
+func (h *WorkerFilesHandler) Upload(c *gin.Context) {
+	path := c.Param("path")
+	if path == "" || path == "/" {
+		path = ""
+	}
+
+	dirPath, ok := h.validatePath(path)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的路径")
+		return
+	}
+
+	// 确保目录存在
+	if err := os.MkdirAll(dirPath, 0755); err != nil {
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	form, err := c.MultipartForm()
+	if err != nil {
+		core.FailWithMessage(c, core.ErrInvalidParam, err.Error())
+		return
+	}
+
+	files := form.File["files"]
+	if len(files) == 0 {
+		core.FailWithMessage(c, core.ErrInvalidParam, "没有上传文件")
+		return
+	}
+
+	uploaded := make([]string, 0, len(files))
+	for _, file := range files {
+		// 验证文件名
+		if strings.ContainsAny(file.Filename, "/\\:*?\"<>|") {
+			continue
+		}
+
+		dst := filepath.Join(dirPath, file.Filename)
+		if err := c.SaveUploadedFile(file, dst); err != nil {
+			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+			return
+		}
+		uploaded = append(uploaded, file.Filename)
+	}
+
+	core.Success(c, gin.H{
+		"message": "上传成功",
+		"files":   uploaded,
+		"count":   len(uploaded),
+	})
+}
+
+// Download 下载文件
+// GET /api/worker/download/*path
+func (h *WorkerFilesHandler) Download(c *gin.Context) {
+	path := c.Param("path")
+
+	fullPath, ok := h.validatePath(path)
+	if !ok {
+		core.FailWithMessage(c, core.ErrInvalidParam, "无效的路径")
+		return
+	}
+
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			core.FailWithCode(c, core.ErrNotFound)
+			return
+		}
+		core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+		return
+	}
+
+	if info.IsDir() {
+		core.FailWithMessage(c, core.ErrInvalidParam, "不能下载目录")
+		return
+	}
+
+	c.FileAttachment(fullPath, filepath.Base(path))
+}
