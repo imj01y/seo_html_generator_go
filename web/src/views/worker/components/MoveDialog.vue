@@ -34,6 +34,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import { Folder } from '@element-plus/icons-vue'
 import { getFileTree, type TreeNode } from '@/api/worker'
 
@@ -63,8 +64,9 @@ watch(() => props.modelValue, async (val) => {
     try {
       const tree = await getFileTree()
       treeData.value = [tree]
-    } catch {
+    } catch (err) {
       treeData.value = []
+      ElMessage.error('加载目录结构失败')
     } finally {
       loading.value = false
     }
