@@ -37,6 +37,7 @@ type ObjectPool[T any] struct {
 	totalGenerated int64
 	totalConsumed  int64
 	refillCount    atomic.Int64 // 补充次数统计
+	lastRefresh    atomic.Int64 // 最后刷新时间戳（Unix纳秒）
 
 	// 用于 Resize 的互斥锁
 	mu sync.RWMutex
@@ -107,6 +108,7 @@ func (p *ObjectPool[T]) prefillParallel() {
 	wg.Wait()
 	atomic.StoreInt64(&p.tail, p.size)
 	atomic.AddInt64(&p.totalGenerated, p.size)
+	p.lastRefresh.Store(time.Now().UnixNano())
 }
 
 // Get 获取对象（加读锁保护，防止 Resize 期间数据竞争）
@@ -173,6 +175,7 @@ func (p *ObjectPool[T]) checkAndRefill() {
 	if available < threshold {
 		p.refillParallel()
 		p.refillCount.Add(1)
+		p.lastRefresh.Store(time.Now().UnixNano())
 	}
 }
 
@@ -235,15 +238,37 @@ func (p *ObjectPool[T]) Stats() map[string]interface{} {
 	p.mu.RUnlock()
 
 	available := p.Available()
+	used := size - available
+
+	// 计算状态
+	status := "running"
+	if p.stopped.Load() {
+		status = "stopped"
+	} else if p.paused.Load() {
+		status = "paused"
+	}
+
+	// 转换 lastRefresh 时间戳
+	lastRefreshNano := p.lastRefresh.Load()
+	var lastRefresh *time.Time
+	if lastRefreshNano > 0 {
+		t := time.Unix(0, lastRefreshNano)
+		lastRefresh = &t
+	}
+
 	return map[string]interface{}{
 		"name":            p.name,
 		"size":            size,
 		"available":       available,
+		"used":            used,
 		"total_generated": atomic.LoadInt64(&p.totalGenerated),
 		"total_consumed":  atomic.LoadInt64(&p.totalConsumed),
 		"utilization":     float64(available) / float64(size) * 100,
 		"paused":          p.paused.Load(),
+		"status":          status,
 		"refill_count":    p.refillCount.Load(),
+		"num_workers":     p.numWorkers,
+		"last_refresh":    lastRefresh,
 	}
 }
 
