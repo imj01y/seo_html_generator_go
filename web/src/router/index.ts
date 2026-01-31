@@ -75,7 +75,7 @@ const routes: RouteRecordRaw[] = [
       {
         path: 'worker',
         name: 'WorkerCode',
-        component: () => import('@/views/worker/WorkerCodeManager.vue'),
+        component: () => import('@/views/worker/WorkerCodeEditor.vue'),
         meta: { title: 'Worker代码', icon: 'EditPen' }
       },
       {
