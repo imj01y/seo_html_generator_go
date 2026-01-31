@@ -16,7 +16,7 @@
     </div>
 
     <!-- 详情弹窗 -->
-    <el-dialog v-model="detailVisible" title="数据详情" width="700px" top="5vh">
+    <el-dialog v-model="detailVisible" title="数据详情" width="75%" top="5vh">
       <div class="item-detail" v-if="currentItem">
         <div class="detail-row" v-for="(value, key) in currentItem" :key="key">
           <div class="detail-label">{{ key }}</div>
