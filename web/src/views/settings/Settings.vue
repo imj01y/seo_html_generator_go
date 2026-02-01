@@ -177,26 +177,43 @@
               />
               <span class="form-tip">毫秒</span>
             </el-form-item>
+
+            <el-divider content-position="left">关键词/图片配置</el-divider>
+
+            <el-form-item label="关键词池大小">
+              <el-input-number
+                v-model="cachePoolForm.keywords_size"
+                :min="1000"
+                :max="500000"
+                :step="10000"
+              />
+              <span class="form-tip">条</span>
+            </el-form-item>
+            <el-form-item label="图片池大小">
+              <el-input-number
+                v-model="cachePoolForm.images_size"
+                :min="1000"
+                :max="500000"
+                :step="10000"
+              />
+              <span class="form-tip">条</span>
+            </el-form-item>
+            <el-form-item label="刷新间隔">
+              <el-input-number
+                v-model="cachePoolForm.refresh_interval_ms"
+                :min="60000"
+                :max="3600000"
+                :step="60000"
+              />
+              <span class="form-tip">毫秒（关键词/图片定期重新加载）</span>
+            </el-form-item>
+
             <el-form-item>
               <el-button type="primary" :loading="cachePoolSaveLoading" @click="handleSaveCachePool">
                 保存配置
               </el-button>
             </el-form-item>
           </el-form>
-
-          <!-- 池状态统计 -->
-          <el-divider content-position="left">运行状态</el-divider>
-          <el-descriptions :column="1" border v-if="cachePoolStats">
-            <el-descriptions-item label="标题池">
-              {{ formatPoolSummary(cachePoolStats.titles) }}
-            </el-descriptions-item>
-            <el-descriptions-item label="正文池">
-              {{ formatPoolSummary(cachePoolStats.contents) }}
-            </el-descriptions-item>
-          </el-descriptions>
-          <el-button @click="loadCachePoolStats" :loading="cachePoolStatsLoading" style="margin-top: 10px">
-            刷新状态
-          </el-button>
         </div>
       </el-tab-pane>
     </el-tabs>
@@ -210,7 +227,7 @@ import { View, Hide, QuestionFilled } from '@element-plus/icons-vue'
 import { getSettings, updateSettings, getApiTokenSettings, updateApiTokenSettings, generateApiToken } from '@/api/settings'
 import ApiTokenGuide from '@/components/ApiTokenGuide.vue'
 import { changePassword } from '@/api/auth'
-import { getCachePoolConfig, updateCachePoolConfig, getCachePoolStats, formatPoolSummary, type CachePoolConfig, type CachePoolStats } from '@/api/cache-pool'
+import { getCachePoolConfig, updateCachePoolConfig, type CachePoolConfig } from '@/api/cache-pool'
 
 const activeTab = ref('system')
 
@@ -244,13 +261,14 @@ const apiTokenForm = reactive({
 // 缓存池配置相关
 const cachePoolLoading = ref(false)
 const cachePoolSaveLoading = ref(false)
-const cachePoolStatsLoading = ref(false)
-const cachePoolStats = ref<CachePoolStats | null>(null)
 const cachePoolForm = reactive<CachePoolConfig>({
   titles_size: 5000,
   contents_size: 5000,
   threshold: 1000,
-  refill_interval_ms: 1000
+  refill_interval_ms: 1000,
+  keywords_size: 50000,
+  images_size: 50000,
+  refresh_interval_ms: 300000
 })
 
 function showApiTokenGuide() {
@@ -411,21 +429,13 @@ const loadCachePoolConfig = async () => {
     cachePoolForm.contents_size = config.contents_size
     cachePoolForm.threshold = config.threshold
     cachePoolForm.refill_interval_ms = config.refill_interval_ms
+    cachePoolForm.keywords_size = config.keywords_size
+    cachePoolForm.images_size = config.images_size
+    cachePoolForm.refresh_interval_ms = config.refresh_interval_ms
   } catch (e) {
     console.error('Failed to load cache pool config:', e)
   } finally {
     cachePoolLoading.value = false
-  }
-}
-
-const loadCachePoolStats = async () => {
-  cachePoolStatsLoading.value = true
-  try {
-    cachePoolStats.value = await getCachePoolStats()
-  } catch (e) {
-    console.error('Failed to load cache pool stats:', e)
-  } finally {
-    cachePoolStatsLoading.value = false
   }
 }
 
@@ -434,7 +444,6 @@ const handleSaveCachePool = async () => {
   try {
     await updateCachePoolConfig(cachePoolForm)
     ElMessage.success('缓存池配置已保存')
-    loadCachePoolStats()
   } catch (e) {
     ElMessage.error((e as Error).message || '保存失败')
   } finally {
@@ -446,7 +455,6 @@ onMounted(() => {
   loadSettings()
   loadApiTokenSettings()
   loadCachePoolConfig()
-  loadCachePoolStats()
 })
 </script>
 

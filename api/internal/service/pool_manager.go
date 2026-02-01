@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -16,31 +17,67 @@ import (
 // ErrCachePoolEmpty is returned when the cache pool is empty
 var ErrCachePoolEmpty = errors.New("cache pool is empty")
 
-// PoolManager manages memory pools for titles and contents
+// PoolManager manages memory pools for titles, contents, keywords, and images
 type PoolManager struct {
+	// 消费型池（FIFO，消费后标记）
 	titles   map[int]*MemoryPool // groupID -> pool
 	contents map[int]*MemoryPool // groupID -> pool
-	config   *CachePoolConfig
-	db       *sqlx.DB
-	mu       sync.RWMutex
+
+	// 复用型数据（随机获取，可重复）
+	keywords    map[int][]string // groupID -> encoded keywords
+	rawKeywords map[int][]string // groupID -> raw keywords
+	images      map[int][]string // groupID -> image URLs
+	keywordsMu  sync.RWMutex
+	imagesMu    sync.RWMutex
+
+	// 辅助组件
+	encoder      *HTMLEntityEncoder
+	emojiManager *EmojiManager
+
+	// 配置和数据库
+	config *CachePoolConfig
+	db     *sqlx.DB
+	mu     sync.RWMutex
+
+	// 后台任务
 	ctx      context.Context
 	cancel   context.CancelFunc
 	updateCh chan UpdateTask
 	wg       sync.WaitGroup
 	stopped  atomic.Bool
+
+	// 状态追踪
+	lastRefresh time.Time
+}
+
+// PoolStatusStats 数据池运行状态统计（用于前端显示）
+type PoolStatusStats struct {
+	Name        string     `json:"name"`
+	Size        int        `json:"size"`
+	Available   int        `json:"available"`
+	Used        int        `json:"used"`
+	Utilization float64    `json:"utilization"`
+	Status      string     `json:"status"`
+	NumWorkers  int        `json:"num_workers"`
+	LastRefresh *time.Time `json:"last_refresh"`
 }
 
 // NewPoolManager creates a new pool manager
 func NewPoolManager(db *sqlx.DB) *PoolManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &PoolManager{
-		titles:   make(map[int]*MemoryPool),
-		contents: make(map[int]*MemoryPool),
-		config:   DefaultCachePoolConfig(),
-		db:       db,
-		ctx:      ctx,
-		cancel:   cancel,
-		updateCh: make(chan UpdateTask, 1000),
+		titles:       make(map[int]*MemoryPool),
+		contents:     make(map[int]*MemoryPool),
+		keywords:     make(map[int][]string),
+		rawKeywords:  make(map[int][]string),
+		images:       make(map[int][]string),
+		encoder:      GetEncoder(),
+		emojiManager: NewEmojiManager(),
+		config:       DefaultCachePoolConfig(),
+		db:           db,
+		ctx:          ctx,
+		cancel:       cancel,
+		updateCh:     make(chan UpdateTask, 1000),
 	}
 }
 
@@ -53,7 +90,7 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	}
 	m.config = config
 
-	// Discover and initialize pools for all groups
+	// Discover and initialize pools for all groups (titles/contents)
 	groupIDs, err := m.discoverGroups(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to discover groups: %w", err)
@@ -64,18 +101,38 @@ func (m *PoolManager) Start(ctx context.Context) error {
 		m.getOrCreatePool("contents", gid)
 	}
 
-	// Initial fill
+	// Initial fill for titles/contents
 	m.checkAndRefillAll()
 
+	// Discover and load keywords/images
+	keywordGroupIDs, _ := m.discoverKeywordGroups(ctx)
+	imageGroupIDs, _ := m.discoverImageGroups(ctx)
+
+	for _, gid := range keywordGroupIDs {
+		if _, err := m.LoadKeywords(ctx, gid); err != nil {
+			log.Warn().Err(err).Int("group", gid).Msg("Failed to load keywords")
+		}
+	}
+	for _, gid := range imageGroupIDs {
+		if _, err := m.LoadImages(ctx, gid); err != nil {
+			log.Warn().Err(err).Int("group", gid).Msg("Failed to load images")
+		}
+	}
+
 	// Start background workers
-	m.wg.Add(2)
+	m.wg.Add(3)
 	go m.refillLoop()
 	go m.updateWorker()
+	go m.refreshLoop(keywordGroupIDs, imageGroupIDs)
 
 	log.Info().
-		Int("groups", len(groupIDs)).
+		Int("article_groups", len(groupIDs)).
+		Int("keyword_groups", len(keywordGroupIDs)).
+		Int("image_groups", len(imageGroupIDs)).
 		Int("titles_size", m.config.TitlesSize).
 		Int("contents_size", m.config.ContentsSize).
+		Int("keywords_size", m.config.KeywordsSize).
+		Int("images_size", m.config.ImagesSize).
 		Msg("PoolManager started")
 
 	return nil
@@ -313,11 +370,8 @@ func (m *PoolManager) Reload(ctx context.Context) error {
 // GetStats returns pool statistics
 func (m *PoolManager) GetStats() map[string]interface{} {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-
 	titlesStats := make(map[int]map[string]int)
 	contentsStats := make(map[int]map[string]int)
-
 	for gid, pool := range m.titles {
 		titlesStats[gid] = map[string]int{
 			"current":   pool.Len(),
@@ -332,15 +386,36 @@ func (m *PoolManager) GetStats() map[string]interface{} {
 			"threshold": m.config.Threshold,
 		}
 	}
+	m.mu.RUnlock()
+
+	m.keywordsMu.RLock()
+	keywordsStats := make(map[int]int)
+	for gid, items := range m.keywords {
+		keywordsStats[gid] = len(items)
+	}
+	m.keywordsMu.RUnlock()
+
+	m.imagesMu.RLock()
+	imagesStats := make(map[int]int)
+	for gid, items := range m.images {
+		imagesStats[gid] = len(items)
+	}
+	m.imagesMu.RUnlock()
 
 	return map[string]interface{}{
 		"titles":   titlesStats,
 		"contents": contentsStats,
+		"keywords": keywordsStats,
+		"images":   imagesStats,
+		"emojis":   m.emojiManager.Count(),
 		"config": map[string]interface{}{
-			"titles_size":        m.config.TitlesSize,
-			"contents_size":      m.config.ContentsSize,
-			"threshold":          m.config.Threshold,
-			"refill_interval_ms": m.config.RefillIntervalMs,
+			"titles_size":         m.config.TitlesSize,
+			"contents_size":       m.config.ContentsSize,
+			"threshold":           m.config.Threshold,
+			"refill_interval_ms":  m.config.RefillIntervalMs,
+			"keywords_size":       m.config.KeywordsSize,
+			"images_size":         m.config.ImagesSize,
+			"refresh_interval_ms": m.config.RefreshIntervalMs,
 		},
 	}
 }
@@ -350,4 +425,411 @@ func (m *PoolManager) GetConfig() *CachePoolConfig {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.config
+}
+
+// ============================================================
+// Keywords 方法
+// ============================================================
+
+// LoadKeywords loads keywords for a group from the database
+func (m *PoolManager) LoadKeywords(ctx context.Context, groupID int) (int, error) {
+	query := `SELECT keyword FROM keywords WHERE group_id = ? AND status = 1 ORDER BY RAND() LIMIT ?`
+
+	var keywords []string
+	if err := m.db.SelectContext(ctx, &keywords, query, groupID, m.config.KeywordsSize); err != nil {
+		return 0, err
+	}
+
+	// Store raw keywords
+	rawCopy := make([]string, len(keywords))
+	copy(rawCopy, keywords)
+
+	// Pre-encode keywords
+	encoded := make([]string, len(keywords))
+	for i, kw := range keywords {
+		encoded[i] = m.encoder.EncodeText(kw)
+	}
+
+	m.keywordsMu.Lock()
+	m.keywords[groupID] = encoded
+	m.rawKeywords[groupID] = rawCopy
+	m.keywordsMu.Unlock()
+
+	log.Info().Int("group_id", groupID).Int("count", len(encoded)).Msg("Keywords loaded")
+	return len(encoded), nil
+}
+
+// GetRandomKeywords returns random pre-encoded keywords
+func (m *PoolManager) GetRandomKeywords(groupID int, count int) []string {
+	m.keywordsMu.RLock()
+	items := m.keywords[groupID]
+	if len(items) == 0 {
+		items = m.keywords[1] // fallback to default group
+	}
+	m.keywordsMu.RUnlock()
+
+	return getRandomItems(items, count)
+}
+
+// GetRawKeywords returns raw (not encoded) keywords
+func (m *PoolManager) GetRawKeywords(groupID int, count int) []string {
+	m.keywordsMu.RLock()
+	items := m.rawKeywords[groupID]
+	if len(items) == 0 {
+		items = m.rawKeywords[1]
+	}
+	m.keywordsMu.RUnlock()
+
+	return getRandomItems(items, count)
+}
+
+// getRandomItems 从切片中随机选取指定数量的元素（Fisher-Yates 部分洗牌）
+func getRandomItems(items []string, count int) []string {
+	n := len(items)
+	if n == 0 || count == 0 {
+		return nil
+	}
+	if count > n {
+		count = n
+	}
+
+	swapped := make(map[int]int, count)
+	result := make([]string, count)
+
+	for i := 0; i < count; i++ {
+		j := i + rand.IntN(n-i)
+		vi, oki := swapped[i]
+		if !oki {
+			vi = i
+		}
+		vj, okj := swapped[j]
+		if !okj {
+			vj = j
+		}
+		swapped[i] = vj
+		swapped[j] = vi
+		result[i] = items[vj]
+	}
+	return result
+}
+
+// ============================================================
+// Images 方法
+// ============================================================
+
+// LoadImages loads image URLs for a group from the database
+func (m *PoolManager) LoadImages(ctx context.Context, groupID int) (int, error) {
+	query := `SELECT url FROM images WHERE group_id = ? AND status = 1 ORDER BY RAND() LIMIT ?`
+
+	var urls []string
+	if err := m.db.SelectContext(ctx, &urls, query, groupID, m.config.ImagesSize); err != nil {
+		return 0, err
+	}
+
+	m.imagesMu.Lock()
+	m.images[groupID] = urls
+	m.imagesMu.Unlock()
+
+	log.Info().Int("group_id", groupID).Int("count", len(urls)).Msg("Images loaded")
+	return len(urls), nil
+}
+
+// GetRandomImage returns a random image URL
+func (m *PoolManager) GetRandomImage(groupID int) string {
+	m.imagesMu.RLock()
+	items := m.images[groupID]
+	if len(items) == 0 {
+		items = m.images[1]
+	}
+	m.imagesMu.RUnlock()
+
+	if len(items) == 0 {
+		return ""
+	}
+	return items[rand.IntN(len(items))]
+}
+
+// GetImages returns all image URLs for a group
+func (m *PoolManager) GetImages(groupID int) []string {
+	m.imagesMu.RLock()
+	urls := m.images[groupID]
+	m.imagesMu.RUnlock()
+
+	if len(urls) == 0 {
+		return nil
+	}
+
+	result := make([]string, len(urls))
+	copy(result, urls)
+	return result
+}
+
+// ============================================================
+// Emoji 方法
+// ============================================================
+
+// LoadEmojis loads emojis from a JSON file
+func (m *PoolManager) LoadEmojis(path string) error {
+	return m.emojiManager.LoadFromFile(path)
+}
+
+// GetRandomEmoji returns a random emoji
+func (m *PoolManager) GetRandomEmoji() string {
+	return m.emojiManager.GetRandom()
+}
+
+// GetRandomEmojiExclude returns a random emoji not in the exclude set
+func (m *PoolManager) GetRandomEmojiExclude(exclude map[string]bool) string {
+	return m.emojiManager.GetRandomExclude(exclude)
+}
+
+// GetEmojiCount returns the number of loaded emojis
+func (m *PoolManager) GetEmojiCount() int {
+	return m.emojiManager.Count()
+}
+
+// ============================================================
+// 分组发现和刷新循环
+// ============================================================
+
+// discoverKeywordGroups finds all keyword group IDs
+func (m *PoolManager) discoverKeywordGroups(ctx context.Context) ([]int, error) {
+	query := `SELECT DISTINCT id FROM keyword_groups`
+	var ids []int
+	if err := m.db.SelectContext(ctx, &ids, query); err != nil {
+		log.Warn().Err(err).Msg("Failed to query keyword groups, using default")
+		return []int{1}, nil
+	}
+	if len(ids) == 0 {
+		return []int{1}, nil
+	}
+	return ids, nil
+}
+
+// discoverImageGroups finds all image group IDs
+func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
+	query := `SELECT DISTINCT id FROM image_groups`
+	var ids []int
+	if err := m.db.SelectContext(ctx, &ids, query); err != nil {
+		log.Warn().Err(err).Msg("Failed to query image groups, using default")
+		return []int{1}, nil
+	}
+	if len(ids) == 0 {
+		return []int{1}, nil
+	}
+	return ids, nil
+}
+
+// refreshLoop periodically refreshes keywords and images
+func (m *PoolManager) refreshLoop(keywordGroupIDs, imageGroupIDs []int) {
+	defer m.wg.Done()
+
+	ticker := time.NewTicker(m.config.RefreshInterval())
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			ctx := context.Background()
+			for _, gid := range keywordGroupIDs {
+				if _, err := m.LoadKeywords(ctx, gid); err != nil {
+					log.Warn().Err(err).Int("group", gid).Msg("Failed to refresh keywords")
+				}
+			}
+			for _, gid := range imageGroupIDs {
+				if _, err := m.LoadImages(ctx, gid); err != nil {
+					log.Warn().Err(err).Int("group", gid).Msg("Failed to refresh images")
+				}
+			}
+			m.mu.Lock()
+			m.lastRefresh = time.Now()
+			m.mu.Unlock()
+			log.Debug().Msg("Keywords and images refreshed")
+		case <-m.ctx.Done():
+			return
+		}
+	}
+}
+
+// ============================================================
+// 兼容性方法（供 router/websocket 使用）
+// ============================================================
+
+// GetDataPoolsStats 返回数据池运行状态统计（与前端展示格式一致）
+// 返回全部 5 个池：标题池、正文池、关键词池、图片池、表情库
+func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
+	m.mu.RLock()
+	lastRefresh := m.lastRefresh
+	stopped := m.stopped.Load()
+	m.mu.RUnlock()
+
+	status := "running"
+	if stopped {
+		status = "stopped"
+	}
+
+	var lastRefreshPtr *time.Time
+	if !lastRefresh.IsZero() {
+		lastRefreshPtr = &lastRefresh
+	}
+
+	pools := []PoolStatusStats{}
+
+	// 1. 标题池（消费型，汇总所有分组）
+	m.mu.RLock()
+	var titlesMax, titlesCurrent int
+	for _, pool := range m.titles {
+		titlesMax += pool.GetMaxSize()
+		titlesCurrent += pool.Len()
+	}
+	m.mu.RUnlock()
+
+	titlesUsed := titlesMax - titlesCurrent
+	titlesUtil := 0.0
+	if titlesMax > 0 {
+		titlesUtil = float64(titlesUsed) / float64(titlesMax) * 100
+	}
+	pools = append(pools, PoolStatusStats{
+		Name:        "标题池",
+		Size:        titlesMax,
+		Available:   titlesCurrent,
+		Used:        titlesUsed,
+		Utilization: titlesUtil,
+		Status:      status,
+		NumWorkers:  1,
+		LastRefresh: lastRefreshPtr,
+	})
+
+	// 2. 正文池（消费型，汇总所有分组）
+	m.mu.RLock()
+	var contentsMax, contentsCurrent int
+	for _, pool := range m.contents {
+		contentsMax += pool.GetMaxSize()
+		contentsCurrent += pool.Len()
+	}
+	m.mu.RUnlock()
+
+	contentsUsed := contentsMax - contentsCurrent
+	contentsUtil := 0.0
+	if contentsMax > 0 {
+		contentsUtil = float64(contentsUsed) / float64(contentsMax) * 100
+	}
+	pools = append(pools, PoolStatusStats{
+		Name:        "正文池",
+		Size:        contentsMax,
+		Available:   contentsCurrent,
+		Used:        contentsUsed,
+		Utilization: contentsUtil,
+		Status:      status,
+		NumWorkers:  1,
+		LastRefresh: lastRefreshPtr,
+	})
+
+	// 3. 关键词池（复用型，utilization = 0）
+	m.keywordsMu.RLock()
+	var totalKeywords int
+	for _, items := range m.keywords {
+		totalKeywords += len(items)
+	}
+	m.keywordsMu.RUnlock()
+	pools = append(pools, PoolStatusStats{
+		Name:        "关键词池",
+		Size:        totalKeywords,
+		Available:   totalKeywords,
+		Used:        0,
+		Utilization: 0,
+		Status:      status,
+		NumWorkers:  1,
+		LastRefresh: lastRefreshPtr,
+	})
+
+	// 4. 图片池（复用型，utilization = 0）
+	m.imagesMu.RLock()
+	var totalImages int
+	for _, items := range m.images {
+		totalImages += len(items)
+	}
+	m.imagesMu.RUnlock()
+	pools = append(pools, PoolStatusStats{
+		Name:        "图片池",
+		Size:        totalImages,
+		Available:   totalImages,
+		Used:        0,
+		Utilization: 0,
+		Status:      status,
+		NumWorkers:  1,
+		LastRefresh: lastRefreshPtr,
+	})
+
+	// 5. 表情库（静态数据）
+	emojiCount := m.emojiManager.Count()
+	pools = append(pools, PoolStatusStats{
+		Name:        "表情库",
+		Size:        emojiCount,
+		Available:   emojiCount,
+		Used:        0,
+		Utilization: 0,
+		Status:      status,
+		NumWorkers:  0,
+		LastRefresh: nil,
+	})
+
+	return pools
+}
+
+// SimplePoolStats 简化的池统计（用于健康检查）
+type SimplePoolStats struct {
+	Keywords int `json:"keywords"`
+	Images   int `json:"images"`
+}
+
+// GetPoolStatsSimple 返回简化的池统计
+func (m *PoolManager) GetPoolStatsSimple() SimplePoolStats {
+	m.keywordsMu.RLock()
+	var totalKeywords int
+	for _, items := range m.keywords {
+		totalKeywords += len(items)
+	}
+	m.keywordsMu.RUnlock()
+
+	m.imagesMu.RLock()
+	var totalImages int
+	for _, items := range m.images {
+		totalImages += len(items)
+	}
+	m.imagesMu.RUnlock()
+
+	return SimplePoolStats{
+		Keywords: totalKeywords,
+		Images:   totalImages,
+	}
+}
+
+// RefreshData 手动刷新指定数据池
+func (m *PoolManager) RefreshData(ctx context.Context, pool string) error {
+	switch pool {
+	case "keywords", "all":
+		groupIDs, _ := m.discoverKeywordGroups(ctx)
+		for _, gid := range groupIDs {
+			if _, err := m.LoadKeywords(ctx, gid); err != nil {
+				return err
+			}
+		}
+	}
+
+	switch pool {
+	case "images", "all":
+		groupIDs, _ := m.discoverImageGroups(ctx)
+		for _, gid := range groupIDs {
+			if _, err := m.LoadImages(ctx, gid); err != nil {
+				return err
+			}
+		}
+	}
+
+	m.mu.Lock()
+	m.lastRefresh = time.Now()
+	m.mu.Unlock()
+
+	return nil
 }
