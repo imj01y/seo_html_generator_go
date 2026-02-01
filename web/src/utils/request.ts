@@ -10,6 +10,21 @@ interface ApiResponse<T = unknown> {
   timestamp: number
 }
 
+// 根据 HTTP 状态码返回默认错误消息
+function getDefaultErrorMessage(status?: number): string {
+  switch (status) {
+    case 400: return '请求参数错误'
+    case 403: return '没有访问权限'
+    case 404: return '请求的资源不存在'
+    case 422: return '参数校验失败'
+    case 500: return '服务器内部错误'
+    case 502: return '网关错误'
+    case 503: return '服务暂时不可用'
+    case 504: return '网关超时'
+    default: return '请求失败，请稍后重试'
+  }
+}
+
 const request = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 30000,
@@ -50,6 +65,10 @@ request.interceptors.response.use(
           localStorage.removeItem('token')
           router.push('/login')
           ElMessage.error('登录已过期，请重新登录')
+          // 标记已处理，组件层跳过重复提示
+          const authError = new Error('登录已过期，请重新登录')
+          ;(authError as any)._handled = true
+          return Promise.reject(authError)
         }
         return Promise.reject(new Error(errorMsg))
       }
@@ -68,37 +87,48 @@ request.interceptors.response.use(
     const message = (data && 'message' in data ? data.message : undefined) ||
                     (data && 'detail' in data ? data.detail : undefined)
 
-    switch (status) {
-      case 401:
-        // 检查是否是登录页面的请求（登录失败）
-        if (error.config?.url?.includes('/auth/login')) {
-          // 登录失败，抛出带有后端消息的错误，让调用方处理
-          const loginError = new Error(message || '用户名或密码错误')
-          return Promise.reject(loginError)
-        }
-        // 其他 401 是 token 过期
-        localStorage.removeItem('token')
-        router.push('/login')
-        ElMessage.error('登录已过期，请重新登录')
-        break
-      case 403:
-        ElMessage.error(message || '没有访问权限')
-        break
-      case 404:
-        ElMessage.error(message || '请求的资源不存在')
-        break
-      case 422:
-        ElMessage.error(message || '参数错误')
-        break
-      case 503:
-        ElMessage.warning(message || '服务暂时不可用')
-        break
-      default:
-        ElMessage.error(message || '请求失败，请稍后重试')
+    // 401 特殊处理：需要跳转登录页
+    if (status === 401) {
+      // 检查是否是登录页面的请求（登录失败）
+      if (error.config?.url?.includes('/auth/login')) {
+        // 登录失败，抛出带有后端消息的错误，让调用方处理
+        return Promise.reject(new Error(message || '用户名或密码错误'))
+      }
+      // 其他 401 是 token 过期，弹窗提示并跳转
+      localStorage.removeItem('token')
+      router.push('/login')
+      ElMessage.error('登录已过期，请重新登录')
+      // 返回一个特殊错误，组件层可以识别并跳过重复提示
+      const authError = new Error('登录已过期，请重新登录')
+      ;(authError as any)._handled = true
+      return Promise.reject(authError)
     }
 
-    return Promise.reject(error)
+    // 其他错误：不弹窗，让组件层处理
+    // 将后端消息附加到错误对象，便于组件获取
+    const errorMessage = message || getDefaultErrorMessage(status)
+    return Promise.reject(new Error(errorMessage))
   }
 )
+
+/**
+ * 通用错误处理函数
+ * 用于组件 catch 块中，自动跳过已处理的错误（如 401 登录过期）
+ *
+ * @example
+ * try {
+ *   await api.save(data)
+ * } catch (e) {
+ *   handleError(e, '保存失败')
+ * }
+ */
+export function handleError(error: unknown, fallbackMessage = '操作失败'): void {
+  // 跳过已处理的错误（如 401 登录过期已在拦截器中弹窗）
+  if (error && typeof error === 'object' && '_handled' in error) {
+    return
+  }
+  const message = error instanceof Error ? error.message : fallbackMessage
+  ElMessage.error(message || fallbackMessage)
+}
 
 export default request

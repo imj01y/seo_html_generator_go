@@ -394,10 +394,15 @@ func (h *SpidersHandler) Create(c *gin.Context) {
 
 	// 插入文件（带错误检查）
 	for _, f := range req.Files {
+		// 确保文件路径以 / 开头
+		filePath := f.Filename
+		if !strings.HasPrefix(filePath, "/") {
+			filePath = "/" + filePath
+		}
 		_, err := tx.Exec(`
-			INSERT INTO spider_project_files (project_id, filename, content)
-			VALUES (?, ?, ?)
-		`, projectID, f.Filename, f.Content)
+			INSERT INTO spider_project_files (project_id, path, type, content)
+			VALUES (?, ?, 'file', ?)
+		`, projectID, filePath, f.Content)
 		if err != nil {
 			tx.Rollback()
 			c.JSON(500, gin.H{"success": false, "message": "创建文件失败: " + err.Error()})

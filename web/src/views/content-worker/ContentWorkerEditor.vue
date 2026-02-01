@@ -49,7 +49,7 @@ function getWsUrl(path: string): string {
   return `${protocol}//${host}${path}`
 }
 
-// 处理 WebSocket 消息
+// 处理 WebSocket 消息（重启日志）
 function handleWsMessage(event: MessageEvent) {
   const store = editorPanel.value?.store
   if (!store) return
@@ -65,6 +65,35 @@ function handleWsMessage(event: MessageEvent) {
       store.addLog({
         type: msg.type as 'stdout' | 'stderr' | 'info',
         data: msg.data
+      })
+    }
+  } catch {
+    // 非 JSON 消息，作为普通日志处理
+    store.addLog({ type: 'stdout', data: event.data })
+  }
+}
+
+// 日志级别到显示类型的映射
+const LOG_LEVEL_MAP: Record<string, 'stdout' | 'stderr' | 'info'> = {
+  ERROR: 'stderr',
+  WARNING: 'info'
+}
+
+// 处理数据处理日志消息
+function handleProcessorWsMessage(event: MessageEvent) {
+  const store = editorPanel.value?.store
+  if (!store) return
+
+  try {
+    const msg = JSON.parse(event.data)
+
+    if (msg.type === 'log') {
+      const level = msg.level?.toUpperCase() || 'INFO'
+      const logType = LOG_LEVEL_MAP[level] || 'stdout'
+
+      store.addLog({
+        type: logType,
+        data: `[${level}] ${msg.message}`
       })
     }
   } catch {
@@ -138,14 +167,14 @@ function startLogsWs() {
   store.setLogRunning(true)
   store.addLog({ type: 'command', data: '> 正在连接实时日志...' })
 
-  logsWs = new WebSocket(getWsUrl('/ws/worker-logs'))
+  logsWs = new WebSocket(getWsUrl('/ws/processor-logs'))
 
   logsWs.onopen = () => {
     logsActive.value = true
-    store.addLog({ type: 'info', data: '> 已连接，正在监听容器日志...' })
+    store.addLog({ type: 'info', data: '> 已连接，正在监听数据处理日志...' })
   }
 
-  logsWs.onmessage = handleWsMessage
+  logsWs.onmessage = handleProcessorWsMessage
 
   logsWs.onerror = () => {
     store.addLog({ type: 'stderr', data: '> WebSocket 连接错误' })

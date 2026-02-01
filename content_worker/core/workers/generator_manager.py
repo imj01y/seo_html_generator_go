@@ -18,6 +18,54 @@ from core.redis_client import get_redis_client
 from core.workers.generator_worker import GeneratorWorker
 
 
+class ProcessorLogger:
+    """数据处理日志发布到 Redis，Go 订阅后推送给前端"""
+
+    CHANNEL = "processor:logs"
+
+    # 日志级别到 loguru 方法的映射
+    _LEVEL_METHODS = {
+        "INFO": logger.info,
+        "WARNING": logger.warning,
+        "ERROR": logger.error,
+        "DEBUG": logger.debug,
+    }
+
+    def __init__(self, rdb):
+        self.rdb = rdb
+
+    async def _log(self, level: str, message: str):
+        """统一的日志处理：发布到 Redis 并记录到本地"""
+        # 发布到 Redis
+        if self.rdb:
+            log_data = {
+                "type": "log",
+                "level": level,
+                "message": message,
+                "timestamp": datetime.now().isoformat()
+            }
+            try:
+                await self.rdb.publish(self.CHANNEL, json.dumps(log_data, ensure_ascii=False))
+            except Exception:
+                pass
+
+        # 记录到本地日志
+        log_method = self._LEVEL_METHODS.get(level, logger.info)
+        log_method(message)
+
+    async def info(self, msg: str):
+        await self._log("INFO", msg)
+
+    async def warning(self, msg: str):
+        await self._log("WARNING", msg)
+
+    async def error(self, msg: str):
+        await self._log("ERROR", msg)
+
+    async def debug(self, msg: str):
+        await self._log("DEBUG", msg)
+
+
 class GeneratorManager:
     """
     数据加工管理器
@@ -41,6 +89,8 @@ class GeneratorManager:
         # 速度计算
         self._last_processed_count = 0
         self._last_stats_time = None
+        # 日志发布器
+        self.log: Optional[ProcessorLogger] = None
 
     async def load_config(self) -> Dict:
         """从数据库加载配置"""
@@ -86,16 +136,19 @@ class GeneratorManager:
             logger.error("Redis 未初始化，无法启动数据加工管理器")
             return
 
+        # 初始化日志发布器
+        self.log = ProcessorLogger(self.rdb)
+
         if not self.db_pool:
-            logger.error("数据库未初始化，无法启动数据加工管理器")
+            await self.log.error("数据库未初始化，无法启动数据加工管理器")
             return
 
         # 加载配置
         self.config = await self.load_config()
-        logger.info(f"数据加工管理器配置: {self.config}")
+        await self.log.info(f"数据加工管理器配置: {self.config}")
 
         if not self.config.get('enabled', True):
-            logger.info("数据加工已禁用，不启动 Worker")
+            await self.log.info("数据加工已禁用，不启动 Worker")
             # 仍然监听命令，以便可以通过命令启动
             await self.listen_commands()
             return
@@ -112,11 +165,11 @@ class GeneratorManager:
     async def _start_workers(self):
         """启动 Worker 协程"""
         if self.running:
-            logger.warning("Workers 已在运行中")
+            await self.log.warning("Workers 已在运行中")
             return
 
         concurrency = self.config.get('concurrency', 3)
-        logger.info(f"启动 {concurrency} 个数据加工 Worker...")
+        await self.log.info(f"启动 {concurrency} 个数据加工 Worker...")
 
         self.running = True
         self._stop_event.clear()
@@ -128,6 +181,7 @@ class GeneratorManager:
                 batch_size=self.config.get('batch_size', 50),
                 min_paragraph_length=self.config.get('min_paragraph_length', 20),
                 retry_max=self.config.get('retry_max', 3),
+                log=self.log,  # 传递日志发布器
             )
             self.worker_instances.append(worker)
 
@@ -139,7 +193,7 @@ class GeneratorManager:
 
         # 更新状态
         await self._update_status()
-        logger.info(f"已启动 {len(self.workers)} 个数据加工 Worker")
+        await self.log.info(f"已启动 {len(self.workers)} 个数据加工 Worker")
 
     async def _run_worker(self, worker: GeneratorWorker, index: int):
         """运行单个 Worker"""
@@ -158,7 +212,7 @@ class GeneratorManager:
         if not self.running:
             return
 
-        logger.info("正在停止数据加工 Workers...")
+        await self.log.info("正在停止数据加工 Workers...")
         self.running = False
         self._stop_event.set()
 
@@ -184,18 +238,18 @@ class GeneratorManager:
 
         # 更新状态
         await self._update_status()
-        logger.info("数据加工 Workers 已停止")
+        await self.log.info("数据加工 Workers 已停止")
 
     async def reload_config(self):
         """重新加载配置"""
         old_config = self.config.copy()
         self.config = await self.load_config()
 
-        logger.info(f"配置已重新加载: {self.config}")
+        await self.log.info(f"配置已重新加载: {self.config}")
 
         # 如果并发数改变，重启 Workers
         if old_config.get('concurrency') != self.config.get('concurrency'):
-            logger.info("并发数已改变，重启 Workers...")
+            await self.log.info("并发数已改变，重启 Workers...")
             await self.stop()
             if self.config.get('enabled', True):
                 await self._start_workers()
@@ -235,7 +289,7 @@ class GeneratorManager:
     async def handle_command(self, cmd: dict):
         """处理命令"""
         action = cmd.get("action")
-        logger.info(f"收到数据加工命令: {action}")
+        await self.log.info(f"收到数据加工命令: {action}")
 
         if action == "start":
             if not self.running:
@@ -244,7 +298,7 @@ class GeneratorManager:
                 if not self._stats_task or self._stats_task.done():
                     self._stats_task = asyncio.create_task(self._update_stats_loop())
             else:
-                logger.info("Workers 已在运行中")
+                await self.log.info("Workers 已在运行中")
 
         elif action == "stop":
             await self.stop()

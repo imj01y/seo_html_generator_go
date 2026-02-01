@@ -50,6 +50,7 @@ class GeneratorWorker:
         batch_size: int = 50,
         min_paragraph_length: int = 20,
         retry_max: int = 3,
+        log=None,
     ):
         """
         初始化正文生成工作进程
@@ -61,6 +62,7 @@ class GeneratorWorker:
             batch_size: 批量写入大小
             min_paragraph_length: 段落最小长度
             retry_max: 最大重试次数
+            log: 日志发布器（可选，用于发布实时日志到前端）
         """
         self.db_pool = db_pool
         self.redis = redis_client
@@ -68,6 +70,7 @@ class GeneratorWorker:
         self.batch_size = batch_size
         self.min_paragraph_length = min_paragraph_length
         self.retry_max = retry_max
+        self.log = log  # 日志发布器
 
         # 文本处理器（延迟初始化）
         self.annotator = None
@@ -428,6 +431,7 @@ class GeneratorWorker:
         group_id = article.get('group_id', 1)
         title = article.get('title', '')
         content = article.get('content', '')
+        article_id = article.get('id', 0)
 
         try:
             # 1. 保存标题
@@ -435,6 +439,7 @@ class GeneratorWorker:
                 await self.save_title(title, group_id)
 
             # 2. 处理正文：拆分段落 → 清理 → 拼音标注 → 保存
+            paragraph_count = 0
             if content:
                 # 按换行拆分段落
                 paragraphs = content.split('\n') if isinstance(content, str) else []
@@ -446,6 +451,7 @@ class GeneratorWorker:
                     annotated = self.annotator.annotate(para)
                     # 保存到 contents 表
                     await self.save_content(annotated, group_id)
+                    paragraph_count += 1
 
             self._processed_count += 1
 
@@ -459,10 +465,16 @@ class GeneratorWorker:
             # 更新今日处理量
             await self._update_daily_stats()
 
+            # 每处理 10 篇文章发布一次日志
+            if self.log and self._processed_count % 10 == 0:
+                await self.log.info(f"已处理 {self._processed_count} 篇文章")
+
             return True
 
         except Exception as e:
-            logger.error(f"Failed to process article {article.get('id')}: {e}")
+            logger.error(f"Failed to process article {article_id}: {e}")
+            if self.log:
+                await self.log.error(f"处理文章 {article_id} 失败: {e}")
             return False
 
     async def _update_daily_stats(self):

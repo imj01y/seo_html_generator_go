@@ -22,28 +22,12 @@ var upgrader = websocket.Upgrader{
 // WebSocketHandler WebSocket 处理器
 type WebSocketHandler struct{}
 
-// SystemLogs 系统日志 WebSocket
-// GET /api/logs/ws
-func (h *WebSocketHandler) SystemLogs(c *gin.Context) {
-	rdb, exists := c.Get("redis")
-	if !exists {
-		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
-		return
-	}
-	redisClient := rdb.(*redis.Client)
-
-	// 升级为 WebSocket 连接
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
-	if err != nil {
-		return
-	}
-	defer conn.Close()
-
+// subscribeAndForward 订阅 Redis 频道并转发消息到 WebSocket
+// 这是一个通用的辅助函数，用于简化 Redis Pub/Sub 到 WebSocket 的转发逻辑
+func subscribeAndForward(conn *websocket.Conn, redisClient *redis.Client, channel string) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 订阅系统日志频道
-	channel := "system:logs"
 	pubsub := redisClient.Subscribe(ctx, channel)
 	defer pubsub.Close()
 
@@ -58,7 +42,7 @@ func (h *WebSocketHandler) SystemLogs(c *gin.Context) {
 		}
 	}()
 
-	// 接收并转发日志
+	// 接收并转发消息
 	ch := pubsub.Channel()
 	for {
 		select {
@@ -66,14 +50,32 @@ func (h *WebSocketHandler) SystemLogs(c *gin.Context) {
 			if msg == nil {
 				return
 			}
-			err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Payload))
-			if err != nil {
+			if err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Payload)); err != nil {
 				return
 			}
 		case <-ctx.Done():
 			return
 		}
 	}
+}
+
+// SystemLogs 系统日志 WebSocket
+// GET /api/logs/ws
+func (h *WebSocketHandler) SystemLogs(c *gin.Context) {
+	rdb, exists := c.Get("redis")
+	if !exists {
+		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
+		return
+	}
+	redisClient := rdb.(*redis.Client)
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	subscribeAndForward(conn, redisClient, "system:logs")
 }
 
 // SpiderStats 爬虫统计实时推送
@@ -94,38 +96,7 @@ func (h *WebSocketHandler) SpiderStats(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// 订阅统计频道
-	channel := "spider:stats:project_" + projectID
-	pubsub := redisClient.Subscribe(ctx, channel)
-	defer pubsub.Close()
-
-	// 监听客户端断开
-	go func() {
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				cancel()
-				return
-			}
-		}
-	}()
-
-	// 转发统计更新
-	ch := pubsub.Channel()
-	for {
-		select {
-		case msg := <-ch:
-			if msg == nil {
-				return
-			}
-			conn.WriteMessage(websocket.TextMessage, []byte(msg.Payload))
-		case <-ctx.Done():
-			return
-		}
-	}
+	subscribeAndForward(conn, redisClient, "spider:stats:project_"+projectID)
 }
 
 // WorkerRestart Worker 重启 WebSocket
@@ -355,6 +326,26 @@ func (h *WebSocketHandler) WorkerLogs(c *gin.Context) {
 	sendLog("info", "> 日志监听已停止")
 }
 
+// ProcessorLogs 数据处理日志 WebSocket
+// 订阅 processor:logs 频道，推送数据加工任务的实时日志
+// GET /ws/processor-logs
+func (h *WebSocketHandler) ProcessorLogs(c *gin.Context) {
+	rdb, exists := c.Get("redis")
+	if !exists {
+		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
+		return
+	}
+	redisClient := rdb.(*redis.Client)
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	subscribeAndForward(conn, redisClient, "processor:logs")
+}
+
 // SpiderLogs 爬虫日志 WebSocket
 // 支持 query 参数 type=test|project，默认 project
 // GET /ws/spider-logs/:id?type=test
@@ -367,48 +358,15 @@ func (h *WebSocketHandler) SpiderLogs(c *gin.Context) {
 	redisClient := rdb.(*redis.Client)
 
 	projectID := c.Param("id")
-	logType := c.DefaultQuery("type", "project") // test 或 project
+	logType := c.DefaultQuery("type", "project")
 
-	// 升级为 WebSocket 连接
 	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		return
 	}
 	defer conn.Close()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
 	// 订阅 Redis 日志频道（格式：spider:logs:test_1 或 spider:logs:project_1）
 	channel := "spider:logs:" + logType + "_" + projectID
-	pubsub := redisClient.Subscribe(ctx, channel)
-	defer pubsub.Close()
-
-	// 监听客户端断开
-	go func() {
-		for {
-			_, _, err := conn.ReadMessage()
-			if err != nil {
-				cancel()
-				return
-			}
-		}
-	}()
-
-	// 接收并转发日志
-	ch := pubsub.Channel()
-	for {
-		select {
-		case msg := <-ch:
-			if msg == nil {
-				return
-			}
-			err := conn.WriteMessage(websocket.TextMessage, []byte(msg.Payload))
-			if err != nil {
-				return
-			}
-		case <-ctx.Done():
-			return
-		}
-	}
+	subscribeAndForward(conn, redisClient, channel)
 }

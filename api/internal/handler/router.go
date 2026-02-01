@@ -370,6 +370,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	r.GET("/ws/spider-stats/:id", wsHandler.SpiderStats)
 	r.GET("/ws/worker-restart", wsHandler.WorkerRestart)
 	r.GET("/ws/worker-logs", wsHandler.WorkerLogs)
+	r.GET("/ws/processor-logs", wsHandler.ProcessorLogs)
 	r.GET("/api/logs/ws", wsHandler.SystemLogs)
 
 	// Admin API group (require JWT)
