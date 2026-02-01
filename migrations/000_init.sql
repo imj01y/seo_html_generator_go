@@ -219,6 +219,26 @@ CREATE TABLE IF NOT EXISTS system_settings (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统设置表';
 
 -- ============================================
+-- 缓存池配置表
+-- ============================================
+CREATE TABLE IF NOT EXISTS pool_config (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    titles_size INT NOT NULL DEFAULT 5000 COMMENT '标题池大小',
+    contents_size INT NOT NULL DEFAULT 5000 COMMENT '正文池大小',
+    threshold INT NOT NULL DEFAULT 1000 COMMENT '补充阈值',
+    refill_interval_ms INT NOT NULL DEFAULT 1000 COMMENT '补充间隔(毫秒)',
+    keywords_size INT NOT NULL DEFAULT 50000 COMMENT '关键词池大小',
+    images_size INT NOT NULL DEFAULT 50000 COMMENT '图片池大小',
+    refresh_interval_ms INT NOT NULL DEFAULT 300000 COMMENT '刷新间隔(毫秒)',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='缓存池配置表';
+
+-- 默认缓存池配置
+INSERT INTO pool_config (id, titles_size, contents_size, threshold, refill_interval_ms, keywords_size, images_size, refresh_interval_ms) VALUES
+(1, 5000, 5000, 1000, 1000, 50000, 50000, 300000)
+ON DUPLICATE KEY UPDATE id = id;
+
+-- ============================================
 -- 蜘蛛日志表
 -- ============================================
 CREATE TABLE IF NOT EXISTS spider_logs (
@@ -1351,17 +1371,18 @@ CREATE TABLE IF NOT EXISTS spider_projects (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='爬虫项目表';
 
 -- ============================================
--- 爬虫项目文件表（支持多文件项目）
+-- 爬虫项目文件表（支持多文件项目，树形结构）
 -- ============================================
 CREATE TABLE IF NOT EXISTS spider_project_files (
     id INT AUTO_INCREMENT PRIMARY KEY,
     project_id INT NOT NULL COMMENT '所属项目ID',
-    filename VARCHAR(100) NOT NULL COMMENT '文件名（如 spider.py, utils.py）',
+    path VARCHAR(500) NOT NULL COMMENT '文件路径（如 /spider.py, /utils/helper.py）',
+    type VARCHAR(10) NOT NULL DEFAULT 'file' COMMENT '类型: file 或 dir',
     content LONGTEXT NOT NULL COMMENT '文件内容',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 
-    UNIQUE KEY uk_project_file (project_id, filename),
+    UNIQUE KEY uk_project_file (project_id, path(255)),
     INDEX idx_project_id (project_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='爬虫项目文件表';
 
@@ -1490,13 +1511,13 @@ CREATE TABLE IF NOT EXISTS task_logs (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     task_id INT NOT NULL COMMENT '任务ID',
     status ENUM('running', 'success', 'failed') NOT NULL DEFAULT 'running',
-    start_time DATETIME NOT NULL,
-    end_time DATETIME,
-    duration_ms INT COMMENT '执行耗时(毫秒)',
-    result TEXT COMMENT '执行结果',
-    error_msg TEXT COMMENT '错误信息',
+    message TEXT COMMENT '执行结果或错误信息',
+    duration BIGINT COMMENT '执行耗时(毫秒)',
+    started_at DATETIME NOT NULL,
+    ended_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_task_id (task_id),
-    INDEX idx_start_time (start_time),
+    INDEX idx_started_at (started_at),
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='任务执行日志';
 
