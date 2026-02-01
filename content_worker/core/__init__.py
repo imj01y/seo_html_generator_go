@@ -1,52 +1,43 @@
 """
-SEO HTML生成器核心模块
+Content Worker 核心模块
 
-提供SEO核心功能的模块集合：
-- encoder: HTML实体编码器
-- class_generator: 随机class生成器
-- emoji: Emoji管理器
-- link_generator: 内链URL生成器
-- title_generator: Title生成器
-- seo_core: SEO核心整合类
+提供内容处理的核心功能：
+- redis_client: Redis 客户端
+- spider_detector: 蜘蛛检测器
+- auth: 认证模块
+- title_manager: 标题管理器
+- content_manager: 正文管理器
+- initializers: 组件初始化
+
+注意：模板渲染功能已迁移到 Go API (api/internal/service/)
 """
 
-from .encoder import HTMLEntityEncoder, encode, encode_text
-from .class_generator import ClassGenerator, cls, generate_class
-from .emoji import EmojiManager, get_emoji_manager, get_random_emoji, get_random_emojis
-from .link_generator import LinkGenerator, random_url, random_internal_link, generate_url_list
-from .title_generator import TitleGenerator, generate_title
-from .seo_core import (
-    SEOCore,
-    get_seo_core,
-    init_seo_core,
-    render_page,
-)
+from .redis_client import init_redis_client, get_redis_client
+from .spider_detector import init_spider_detector, get_spider_detector
+from .auth import ensure_default_admin
+from .title_manager import init_title_manager, get_title_manager
+from .content_manager import init_content_manager, get_content_manager
+from .initializers import init_components
+from .pool_filler import PoolFiller, PoolFillerManager
 
 __all__ = [
-    # Encoder
-    'HTMLEntityEncoder',
-    'encode',
-    'encode_text',
-    # Class Generator
-    'ClassGenerator',
-    'cls',
-    'generate_class',
-    # Emoji
-    'EmojiManager',
-    'get_emoji_manager',
-    'get_random_emoji',
-    'get_random_emojis',
-    # Link Generator
-    'LinkGenerator',
-    'random_url',
-    'random_internal_link',
-    'generate_url_list',
-    # Title Generator
-    'TitleGenerator',
-    'generate_title',
-    # SEO Core
-    'SEOCore',
-    'get_seo_core',
-    'init_seo_core',
-    'render_page',
+    # Redis
+    'init_redis_client',
+    'get_redis_client',
+    # Spider Detector
+    'init_spider_detector',
+    'get_spider_detector',
+    # Auth
+    'ensure_default_admin',
+    # Title Manager
+    'init_title_manager',
+    'get_title_manager',
+    # Content Manager
+    'init_content_manager',
+    'get_content_manager',
+    # Initializers
+    'init_components',
+    # Pool Filler
+    'PoolFiller',
+    'PoolFillerManager',
 ]
