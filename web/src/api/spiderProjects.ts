@@ -244,15 +244,6 @@ export function createSpiderEditorApi(projectId: number) {
 }
 
 // ============================================
-// 代码模板 API
-// ============================================
-
-export async function getCodeTemplates(): Promise<CodeTemplate[]> {
-  const res: { data: CodeTemplate[] } = await request.get('/spider-projects/templates')
-  return res.data || []
-}
-
-// ============================================
 // WebSocket API
 // ============================================
 

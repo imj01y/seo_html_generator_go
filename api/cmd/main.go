@@ -465,16 +465,3 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
-
-// queryGroupIDs 查询指定表的分组 ID 列表
-func queryGroupIDs(ctx context.Context, db interface {
-	SelectContext(ctx context.Context, dest interface{}, query string, args ...interface{}) error
-}, table string, defaultID int) []int {
-	var ids []int
-	query := fmt.Sprintf("SELECT DISTINCT id FROM %s", table)
-	if err := db.SelectContext(ctx, &ids, query); err != nil {
-		log.Warn().Err(err).Str("table", table).Msg("Failed to query group IDs, using default")
-		return []int{defaultID}
-	}
-	return ids
-}

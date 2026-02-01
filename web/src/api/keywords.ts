@@ -116,11 +116,6 @@ export async function reloadKeywordGroup(_group_id?: number): Promise<{ total: n
   return { total: res.total }
 }
 
-export async function getRandomKeywords(count?: number): Promise<string[]> {
-  const res: { keywords: string[] } = await request.get('/keywords/random', { params: { count } })
-  return res.keywords
-}
-
 // ============================================
 // 批量操作 API
 // ============================================

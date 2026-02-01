@@ -45,15 +45,6 @@ export async function getSettings(): Promise<Setting[]> {
   ]
 }
 
-export async function getSetting(key: string): Promise<Setting> {
-  const settings = await getSettings()
-  const setting = settings.find((s) => s.key === key)
-  if (!setting) {
-    throw new Error(`Setting ${key} not found`)
-  }
-  return setting
-}
-
 export async function updateSettings(settings: Record<string, string>): Promise<void> {
   const res: SuccessResponse = await request.put('/settings/cache', settings)
   assertSuccess(res, '更新失败')
@@ -85,19 +76,6 @@ export async function getCacheStats(): Promise<CacheStats> {
 
 export function clearDomainCache(domain: string): Promise<{ success: boolean; cleared: number }> {
   return request.post(`/cache/clear/${domain}`)
-}
-
-// ============================================
-// 系统状态 API
-// ============================================
-
-export function checkDatabase(): Promise<{
-  connected: boolean
-  pool_size?: number
-  free_connections?: number
-  error?: string
-}> {
-  return request.get('/settings/database')
 }
 
 // ============================================

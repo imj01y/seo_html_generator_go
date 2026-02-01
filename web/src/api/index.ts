@@ -29,9 +29,8 @@ export * from './logs'
 
 // 设置（排除冲突的 getCacheStats）
 export {
-  getSettings, getSetting, updateSettings,
+  getSettings, updateSettings,
   clearCache, getCacheStats, clearDomainCache,
-  checkDatabase,
   getApiTokenSettings, updateApiTokenSettings, generateApiToken
 } from './settings'
 export type { ApiTokenResponse } from './settings'

@@ -22,37 +22,6 @@ export interface CachePoolConfig {
   updated_at?: string
 }
 
-/** 单个分组的池状态 */
-export interface GroupPoolStats {
-  current: number
-  max_size: number
-  threshold: number
-}
-
-/** 缓存池状态统计 */
-export interface CachePoolStats {
-  titles: Record<number, GroupPoolStats>
-  contents: Record<number, GroupPoolStats>
-  keywords: Record<number, number>
-  images: Record<number, number>
-  emojis: number
-  config: {
-    titles_size: number
-    contents_size: number
-    threshold: number
-    refill_interval_ms: number
-    keywords_size: number
-    images_size: number
-    refresh_interval_ms: number
-  }
-}
-
-/** 更新配置响应 */
-export interface UpdateCachePoolConfigResponse {
-  success: boolean
-  config: CachePoolConfig
-}
-
 // ============================================
 // API 接口
 // ============================================
@@ -63,33 +32,6 @@ export function getCachePoolConfig(): Promise<CachePoolConfig> {
 }
 
 /** 更新缓存池配置 */
-export function updateCachePoolConfig(config: CachePoolConfig): Promise<UpdateCachePoolConfigResponse> {
+export function updateCachePoolConfig(config: CachePoolConfig): Promise<{ success: boolean; config: CachePoolConfig }> {
   return request.put('/cache-pool/config', config)
-}
-
-/** 获取缓存池状态统计 */
-export function getCachePoolStats(): Promise<CachePoolStats> {
-  return request.get('/cache-pool/stats')
-}
-
-/** 重载缓存池配置 */
-export function reloadCachePool(): Promise<{ success: boolean }> {
-  return request.post('/cache-pool/reload')
-}
-
-// ============================================
-// 工具函数
-// ============================================
-
-/** 格式化池状态摘要 */
-export function formatPoolSummary(pools: Record<number, GroupPoolStats>): string {
-  const entries = Object.entries(pools)
-  if (entries.length === 0) return '无数据'
-  return entries.map(([gid, p]) => `分组${gid}: ${p.current}/${p.max_size}`).join(', ')
-}
-
-/** 计算池使用率 */
-export function calculateUtilization(current: number, maxSize: number): number {
-  if (maxSize <= 0) return 0
-  return Math.round((current / maxSize) * 100)
 }
