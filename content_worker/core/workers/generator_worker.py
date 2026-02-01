@@ -51,6 +51,7 @@ class GeneratorWorker:
         min_paragraph_length: int = 20,
         retry_max: int = 3,
         log=None,
+        on_complete=None,
     ):
         """
         初始化正文生成工作进程
@@ -71,6 +72,7 @@ class GeneratorWorker:
         self.min_paragraph_length = min_paragraph_length
         self.retry_max = retry_max
         self.log = log  # 日志发布器
+        self.on_complete = on_complete  # 任务完成回调
 
         # 文本处理器（延迟初始化）
         self.annotator = None
@@ -505,17 +507,25 @@ class GeneratorWorker:
             article = await self.get_article_by_id(article_id)
             if article is None:
                 logger.warning(f"Article {article_id} not found in database")
+                if self.on_complete:
+                    await self.on_complete()
                 return False
 
             success = await self.process_article(article)
             if not success:
                 await self.handle_failure(article_id, "Processing failed")
+                if self.on_complete:
+                    await self.on_complete()
                 return False
 
+            if self.on_complete:
+                await self.on_complete()
             return True
 
         except Exception as e:
             await self.handle_failure(article_id, str(e))
+            if self.on_complete:
+                await self.on_complete()
             return False
 
     async def run_once(self, count: int = 100) -> int:
