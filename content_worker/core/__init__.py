@@ -18,7 +18,6 @@ from .auth import ensure_default_admin
 from .title_manager import init_title_manager, get_title_manager
 from .content_manager import init_content_manager, get_content_manager
 from .initializers import init_components
-from .pool_filler import PoolFiller, PoolFillerManager
 
 __all__ = [
     # Redis
@@ -37,7 +36,4 @@ __all__ = [
     'get_content_manager',
     # Initializers
     'init_components',
-    # Pool Filler
-    'PoolFiller',
-    'PoolFillerManager',
 ]
