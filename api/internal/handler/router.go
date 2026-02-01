@@ -395,15 +395,12 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		template.GET("/analysis", templateAnalysisListHandler(deps))
 		template.GET("/analysis/:id", templateAnalysisByIDHandler(deps))
 		template.POST("/analyze/:id", templateAnalyzeHandler(deps))
-		template.GET("/pool-config", templatePoolConfigHandler(deps))
 	}
 
 	// Data pool routes
 	data := admin.Group("/data")
 	{
 		data.GET("/stats", dataStatsHandler(deps))
-		data.GET("/seo", dataSEOHandler(deps))
-		data.GET("/recommendations", dataRecommendationsHandler(deps))
 		data.POST("/refresh", dataRefreshHandler(deps))
 	}
 
@@ -743,26 +740,6 @@ func templateAnalyzeHandler(deps *Dependencies) gin.HandlerFunc {
 	}
 }
 
-// templatePoolConfigHandler GET /pool-config - 获取推荐的池配置
-func templatePoolConfigHandler(deps *Dependencies) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if deps.TemplateAnalyzer == nil {
-			core.FailWithCode(c, core.ErrInternalServer)
-			return
-		}
-
-		config := deps.TemplateAnalyzer.CalculatePoolSize()
-		memoryEstimate := core.EstimateMemoryUsage(config)
-		memoryHuman := core.FormatMemorySize(memoryEstimate)
-
-		core.Success(c, gin.H{
-			"config":          config,
-			"memory_estimate": memoryEstimate,
-			"memory_human":    memoryHuman,
-		})
-	}
-}
-
 // ============ Data Pool Handlers ============
 
 // dataStatsHandler GET /stats - 获取数据池运行状态统计
@@ -778,22 +755,6 @@ func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 		core.Success(c, gin.H{
 			"pools": pools,
 		})
-	}
-}
-
-// dataSEOHandler GET /seo - 获取 SEO 分析结果
-func dataSEOHandler(deps *Dependencies) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// TODO: 重新实现 SEO 分析功能
-		core.Success(c, gin.H{"message": "SEO analysis temporarily disabled during refactoring"})
-	}
-}
-
-// dataRecommendationsHandler GET /recommendations - 获取数据池优化建议
-func dataRecommendationsHandler(deps *Dependencies) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		// TODO: 重新实现推荐功能
-		core.Success(c, gin.H{"message": "Recommendations temporarily disabled during refactoring"})
 	}
 }
 
