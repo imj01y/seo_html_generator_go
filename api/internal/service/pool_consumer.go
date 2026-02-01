@@ -123,3 +123,58 @@ func (c *PoolConsumer) Pop(ctx context.Context, poolType string, groupID int) (s
 
 	return item.Text, nil
 }
+
+// PopWithFallback tries Redis first, falls back to DB on failure
+func (c *PoolConsumer) PopWithFallback(ctx context.Context, poolType string, groupID int) (string, error) {
+	// Try Redis first
+	text, err := c.Pop(ctx, poolType, groupID)
+	if err == nil {
+		return text, nil
+	}
+
+	// Fallback to DB on Redis errors
+	if err == ErrPoolEmpty || errors.Is(err, redis.Nil) || c.redis == nil {
+		log.Debug().Str("pool", poolType).Int("group", groupID).Msg("Falling back to DB")
+		return c.fallbackFromDB(ctx, poolType, groupID)
+	}
+
+	return "", err
+}
+
+// fallbackFromDB queries DB directly when Redis is unavailable
+func (c *PoolConsumer) fallbackFromDB(ctx context.Context, poolType string, groupID int) (string, error) {
+	column := "title"
+	if poolType == "contents" {
+		column = "content"
+	}
+
+	query := fmt.Sprintf(`
+		SELECT id, %s as text FROM %s
+		WHERE group_id = ? AND status = 1
+		ORDER BY batch_id DESC, id ASC
+		LIMIT 1
+	`, column, poolType)
+
+	var item PoolItem
+	if err := c.db.GetContext(ctx, &item, query, groupID); err != nil {
+		return "", fmt.Errorf("db fallback failed: %w", err)
+	}
+
+	// Async update status
+	select {
+	case c.updateCh <- UpdateTask{Table: poolType, ID: item.ID}:
+	default:
+		log.Warn().Str("table", poolType).Int64("id", item.ID).Msg("Update channel full, dropping task")
+	}
+
+	return item.Text, nil
+}
+
+// GetPoolLength returns the current length of a pool
+func (c *PoolConsumer) GetPoolLength(ctx context.Context, poolType string, groupID int) (int64, error) {
+	if c.redis == nil {
+		return 0, errors.New("redis client is nil")
+	}
+	key := fmt.Sprintf("%s:pool:%d", poolType, groupID)
+	return c.redis.LLen(ctx, key).Result()
+}
