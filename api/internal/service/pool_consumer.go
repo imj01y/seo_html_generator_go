@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -158,9 +159,13 @@ func (c *PoolConsumer) PopWithFallback(ctx context.Context, poolType string, gro
 		return text, nil
 	}
 
-	// Fallback to DB on Redis errors
-	if err == ErrPoolEmpty || errors.Is(err, redis.Nil) || c.redis == nil {
-		log.Debug().Str("pool", poolType).Int("group", groupID).Msg("Falling back to DB")
+	// Fallback to DB on Redis errors or parse errors
+	if err == ErrPoolEmpty ||
+		errors.Is(err, redis.Nil) ||
+		c.redis == nil ||
+		strings.Contains(err.Error(), "json unmarshal") ||
+		strings.Contains(err.Error(), "redis") {
+		log.Debug().Err(err).Str("pool", poolType).Int("group", groupID).Msg("Falling back to DB")
 		return c.fallbackFromDB(ctx, poolType, groupID)
 	}
 

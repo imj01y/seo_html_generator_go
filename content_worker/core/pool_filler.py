@@ -6,6 +6,7 @@
 """
 import asyncio
 import json
+from asyncio import timeout
 from typing import Optional
 
 from loguru import logger
@@ -62,35 +63,41 @@ class PoolFiller:
         key = self._get_key(pool_type)
         lock_key = self._get_lock_key(pool_type)
 
-        # 1. 检查队列长度
-        length = await self.redis.llen(key)
-        if length >= self.threshold:
-            return 0
-
-        # 2. 尝试获取补充锁（防止并发）
-        acquired = await self.redis.set(lock_key, "1", nx=True, ex=60)
-        if not acquired:
-            logger.debug(f"[{pool_type}:{self.group_id}] Another filler is working")
-            return 0
-
         try:
-            # 3. 计算需要补充的数量
-            need = min(self.pool_size - length, self.batch_size)
-            logger.info(f"[{pool_type}:{self.group_id}] Pool low ({length}/{self.threshold}), filling {need} items")
+            async with timeout(30):  # 30 秒超时
+                # 1. 检查队列长度
+                length = await self.redis.llen(key)
+                if length >= self.threshold:
+                    return 0
 
-            # 4. 从 DB 查询可用数据
-            items = await self._fetch_available(pool_type, need)
-            if not items:
-                logger.warning(f"[{pool_type}:{self.group_id}] No available items in DB")
-                return 0
+                # 2. 尝试获取补充锁（防止并发）
+                acquired = await self.redis.set(lock_key, "1", nx=True, ex=60)
+                if not acquired:
+                    logger.debug(f"[{pool_type}:{self.group_id}] Another filler is working")
+                    return 0
 
-            # 5. 批量入队
-            filled = await self._push_to_queue(key, items)
-            logger.info(f"[{pool_type}:{self.group_id}] Filled {filled} items, new length: {length + filled}")
-            return filled
+                try:
+                    # 3. 计算需要补充的数量
+                    need = min(self.pool_size - length, self.batch_size)
+                    logger.info(f"[{pool_type}:{self.group_id}] Pool low ({length}/{self.threshold}), filling {need} items")
 
-        finally:
-            await self.redis.delete(lock_key)
+                    # 4. 从 DB 查询可用数据
+                    items = await self._fetch_available(pool_type, need)
+                    if not items:
+                        logger.warning(f"[{pool_type}:{self.group_id}] No available items in DB")
+                        return 0
+
+                    # 5. 批量入队
+                    filled = await self._push_to_queue(key, items)
+                    logger.info(f"[{pool_type}:{self.group_id}] Filled {filled} items, new length: {length + filled}")
+                    return filled
+
+                finally:
+                    await self.redis.delete(lock_key)
+
+        except TimeoutError:
+            logger.error(f"[{pool_type}:{self.group_id}] Operation timed out")
+            return 0
 
     async def _fetch_available(self, pool_type: str, limit: int) -> list[dict]:
         """
@@ -111,11 +118,15 @@ class PoolFiller:
             LIMIT %s
         """
 
-        async with self.db.acquire() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(query, (self.group_id, limit))
-                rows = await cur.fetchall()
-                return [{"id": row[0], "text": row[1]} for row in rows]
+        try:
+            async with self.db.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(query, (self.group_id, limit))
+                    rows = await cur.fetchall()
+                    return [{"id": row[0], "text": row[1]} for row in rows]
+        except Exception as e:
+            logger.error(f"[{pool_type}:{self.group_id}] DB query failed: {e}")
+            return []
 
     async def _push_to_queue(self, key: str, items: list[dict]) -> int:
         """
@@ -131,14 +142,18 @@ class PoolFiller:
         if not items:
             return 0
 
-        # 使用 pipeline 批量 LPUSH
-        pipe = self.redis.pipeline()
-        for item in items:
-            data = json.dumps(item, ensure_ascii=False)
-            pipe.lpush(key, data)
+        try:
+            # 使用 pipeline 批量 LPUSH
+            pipe = self.redis.pipeline()
+            for item in items:
+                data = json.dumps(item, ensure_ascii=False)
+                pipe.lpush(key, data)
 
-        await pipe.execute()
-        return len(items)
+            await pipe.execute()
+            return len(items)
+        except Exception as e:
+            logger.error(f"[{key}] Redis push failed: {e}")
+            return 0
 
     async def get_pool_stats(self, pool_type: str) -> dict:
         """获取池状态统计"""

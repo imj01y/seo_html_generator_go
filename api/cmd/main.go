@@ -201,13 +201,18 @@ func main() {
 	}
 
 	// 加载所有文章分组（标题和内容）
-	for _, gid := range articleGroupIDs {
-		if _, err := dataManager.LoadTitles(ctx, gid, 10000); err != nil {
-			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load titles for group")
+	// 如果 poolConsumer 可用，跳过加载（因为会从 Redis 消费）
+	if poolConsumer == nil {
+		for _, gid := range articleGroupIDs {
+			if _, err := dataManager.LoadTitles(ctx, gid, 10000); err != nil {
+				log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load titles for group")
+			}
+			if _, err := dataManager.LoadContents(ctx, gid, 5000); err != nil {
+				log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load contents for group")
+			}
 		}
-		if _, err := dataManager.LoadContents(ctx, gid, 5000); err != nil {
-			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load contents for group")
-		}
+	} else {
+		log.Info().Msg("Skipping DataManager titles/contents loading (PoolConsumer is enabled)")
 	}
 
 	log.Info().
