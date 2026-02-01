@@ -821,39 +821,6 @@ func (h *ImagesHandler) BatchMove(c *gin.Context) {
 	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
 }
 
-// Stats 获取统计信息
-// GET /api/images/urls/stats
-func (h *ImagesHandler) Stats(c *gin.Context) {
-	if h.db == nil {
-		core.Success(c, gin.H{"total": 0, "groups": []interface{}{}})
-		return
-	}
-
-	type GroupStat struct {
-		GroupID   int    `db:"group_id" json:"group_id"`
-		GroupName string `db:"group_name" json:"group_name"`
-		Count     int    `db:"count" json:"count"`
-	}
-
-	var stats []GroupStat
-	h.db.Select(&stats, `
-		SELECT ig.id as group_id, ig.name as group_name, COUNT(i.id) as count
-		FROM image_groups ig
-		LEFT JOIN images i ON i.group_id = ig.id AND i.status = 1
-		WHERE ig.status = 1
-		GROUP BY ig.id, ig.name
-		ORDER BY ig.is_default DESC, ig.name
-	`)
-
-	var total int64
-	h.db.Get(&total, "SELECT COUNT(*) FROM images WHERE status = 1")
-
-	core.Success(c, gin.H{
-		"total":  total,
-		"groups": stats,
-	})
-}
-
 // Random 随机获取图片URL
 // GET /api/images/urls/random
 func (h *ImagesHandler) Random(c *gin.Context) {
@@ -904,10 +871,4 @@ func (h *ImagesHandler) Reload(c *gin.Context) {
 	h.db.Get(&total, "SELECT COUNT(*) FROM images WHERE status = 1")
 
 	core.Success(c, gin.H{"success": true, "total": total})
-}
-
-// ClearCache 清理缓存
-// POST /api/images/cache/clear
-func (h *ImagesHandler) ClearCache(c *gin.Context) {
-	core.Success(c, gin.H{"success": true, "cleared": 0, "message": "缓存已清理"})
 }

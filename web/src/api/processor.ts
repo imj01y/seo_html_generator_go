@@ -25,16 +25,6 @@ export interface ProcessorStatus {
   last_error: string | null
 }
 
-export interface ProcessorStats {
-  total_processed: number
-  total_failed: number
-  total_retried: number
-  success_rate: number
-  avg_processing_ms: number
-  titles_generated: number
-  contents_generated: number
-}
-
 // ============================================
 // 响应类型
 // ============================================
@@ -89,10 +79,4 @@ export async function clearDeadQueue(): Promise<{ count: number }> {
   const res: CountResponse = await request.delete('/processor/dead-queue')
   assertSuccess(res, '清空失败')
   return { count: res.count }
-}
-
-export async function getProcessorStats(): Promise<ProcessorStats> {
-  const res: DataResponse<ProcessorStats> = await request.get('/processor/stats')
-  assertSuccess(res, '获取统计失败')
-  return res.data
 }

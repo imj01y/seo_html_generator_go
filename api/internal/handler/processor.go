@@ -3,7 +3,6 @@ package api
 import (
 	"context"
 	"encoding/json"
-	"math"
 	"strconv"
 	"time"
 
@@ -32,17 +31,6 @@ type ProcessorStatus struct {
 	ProcessedToday int64   `json:"processed_today"`
 	Speed          float64 `json:"speed"`
 	LastError      *string `json:"last_error"`
-}
-
-// ProcessorStats 数据加工统计
-type ProcessorStats struct {
-	TotalProcessed   int64   `json:"total_processed"`
-	TotalFailed      int64   `json:"total_failed"`
-	TotalRetried     int64   `json:"total_retried"`
-	SuccessRate      float64 `json:"success_rate"`
-	AvgProcessingMs  float64 `json:"avg_processing_ms"`
-	TitlesGenerated  int64   `json:"titles_generated"`
-	ContentsGenerated int64  `json:"contents_generated"`
 }
 
 // ProcessorCommand Redis 命令结构
@@ -279,59 +267,6 @@ func (h *ProcessorHandler) ClearDeadQueue(c *gin.Context) {
 	redisClient.Del(ctx, "pending:articles:dead")
 
 	c.JSON(200, gin.H{"success": true, "message": "死信队列已清空", "count": length})
-}
-
-// GetStats 获取统计数据
-func (h *ProcessorHandler) GetStats(c *gin.Context) {
-	db, exists := c.Get("db")
-	if !exists {
-		c.JSON(500, gin.H{"success": false, "message": "数据库未连接"})
-		return
-	}
-	sqlxDB := db.(*sqlx.DB)
-
-	rdb, exists := c.Get("redis")
-	if !exists {
-		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
-		return
-	}
-	redisClient := rdb.(*redis.Client)
-
-	ctx := context.Background()
-
-	// 从 Redis 获取实时统计
-	statsData, _ := redisClient.HGetAll(ctx, "processor:stats").Result()
-
-	stats := ProcessorStats{}
-
-	if total, ok := statsData["total_processed"]; ok {
-		stats.TotalProcessed = int64(strToInt(total))
-	}
-	if failed, ok := statsData["total_failed"]; ok {
-		stats.TotalFailed = int64(strToInt(failed))
-	}
-	if retried, ok := statsData["total_retried"]; ok {
-		stats.TotalRetried = int64(strToInt(retried))
-	}
-	if avgMs, ok := statsData["avg_processing_ms"]; ok {
-		stats.AvgProcessingMs = strToFloat(avgMs)
-	}
-
-	// 计算成功率：成功 / (成功 + 失败)
-	totalDone := stats.TotalProcessed + stats.TotalFailed
-	if totalDone > 0 {
-		stats.SuccessRate = math.Round(float64(stats.TotalProcessed)/float64(totalDone)*10000) / 100
-	}
-
-	// 从数据库获取生成的标题和段落数量
-	var titlesCount, contentsCount int64
-	sqlxDB.Get(&titlesCount, "SELECT COUNT(*) FROM titles")
-	sqlxDB.Get(&contentsCount, "SELECT COUNT(*) FROM contents")
-
-	stats.TitlesGenerated = titlesCount
-	stats.ContentsGenerated = contentsCount
-
-	c.JSON(200, gin.H{"success": true, "data": stats})
 }
 
 // ============================================

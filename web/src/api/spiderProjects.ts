@@ -34,11 +34,15 @@ export interface SpiderProject {
   total_items: number
   created_at: string
   updated_at: string
+  // 前端运行时属性
+  toggling?: boolean
 }
 
 export interface ProjectFile {
   id: number
   filename: string
+  path?: string  // 文件路径（后端返回）
+  type?: string  // 文件类型：file 或 directory
   content: string
   created_at: string
   updated_at: string

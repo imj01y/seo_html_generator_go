@@ -14,3 +14,10 @@ CREATE TABLE IF NOT EXISTS pool_config (
 -- 插入默认配置
 INSERT IGNORE INTO pool_config (id, titles_size, contents_size, threshold, refill_interval_ms)
 VALUES (1, 5000, 5000, 1000, 1000);
+
+-- 添加 keywords/images 配置字段（如果不存在）
+-- 注意：MySQL 不支持 IF NOT EXISTS，使用存储过程或忽略错误
+ALTER TABLE pool_config
+ADD COLUMN keywords_size INT NOT NULL DEFAULT 50000 COMMENT '关键词池大小',
+ADD COLUMN images_size INT NOT NULL DEFAULT 50000 COMMENT '图片池大小',
+ADD COLUMN refresh_interval_ms INT NOT NULL DEFAULT 300000 COMMENT '刷新间隔(毫秒)';

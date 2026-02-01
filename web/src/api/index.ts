@@ -30,16 +30,11 @@ export * from './logs'
 // 设置（排除冲突的 getCacheStats）
 export {
   getSettings, getSetting, updateSettings,
-  getCacheSettings, updateCacheSettings, applyCacheSettings, clearCache,
-  getCacheStats, clearDomainCache, getCacheEntries,
-  checkDatabase, getGeneratorWorkerStatus, getGeneratorQueueStats, clearGeneratorQueue,
-  getContentPoolAlert, resetContentPool, getCachePoolsStats,
+  clearCache, getCacheStats, clearDomainCache,
+  checkDatabase,
   getApiTokenSettings, updateApiTokenSettings, generateApiToken
 } from './settings'
-export type {
-  CacheSettingItem, ContentPoolAlert, CachePoolStats, CachePoolsStatsResponse,
-  FileCacheSettings, ApiTokenResponse
-} from './settings'
+export type { ApiTokenResponse } from './settings'
 
 // 数据加工
 export * from './processor'

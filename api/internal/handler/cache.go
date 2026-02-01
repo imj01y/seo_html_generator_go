@@ -284,17 +284,6 @@ func (h *CacheHandler) GetCacheStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
-// GetPoolsStats 获取缓存池统计（关键词和图片池）
-// GET /api/cache/pools/stats
-func (h *CacheHandler) GetPoolsStats(c *gin.Context) {
-	// 这里需要从关键词和图片缓存服务获取统计
-	// 目前返回占位数据，实际应从对应服务获取
-	c.JSON(http.StatusOK, gin.H{
-		"keyword_pool": nil,
-		"image_pool":   nil,
-	})
-}
-
 // ReloadCacheConfig 重载缓存配置
 // POST /api/cache/config/reload
 func (h *CacheHandler) ReloadCacheConfig(c *gin.Context) {

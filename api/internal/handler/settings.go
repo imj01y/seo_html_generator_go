@@ -21,23 +21,15 @@ type SystemSetting struct {
 // SettingsHandler 系统设置处理器
 type SettingsHandler struct{}
 
-// 缓存默认设置
+// 池大小默认设置
 var cacheDefaultSettings = map[string]struct {
 	Value       string
 	Type        string
 	Description string
 }{
-	"keyword_cache_ttl":      {"86400", "number", "关键词缓存过期时间(秒)"},
-	"image_cache_ttl":        {"86400", "number", "图片URL缓存过期时间(秒)"},
-	"cache_compress_enabled": {"true", "boolean", "是否启用缓存压缩"},
-	"cache_compress_level":   {"6", "number", "压缩级别(1-9)"},
-	"keyword_pool_size":      {"500000", "number", "关键词池大小(0=不限制)"},
-	"image_pool_size":        {"500000", "number", "图片池大小(0=不限制)"},
-	"article_pool_size":      {"50000", "number", "文章池大小(0=不限制)"},
-	"file_cache_enabled":     {"false", "boolean", "是否启用文件缓存"},
-	"file_cache_dir":         {"/data/cache", "string", "文件缓存目录"},
-	"file_cache_max_size_gb": {"50", "number", "最大缓存大小(GB)"},
-	"file_cache_nginx_mode":  {"true", "boolean", "Nginx直服模式(不压缩)"},
+	"keyword_pool_size": {"500000", "number", "关键词池大小(0=不限制)"},
+	"image_pool_size":   {"500000", "number", "图片池大小(0=不限制)"},
+	"article_pool_size": {"50000", "number", "文章池大小(0=不限制)"},
 }
 
 // convertSettingValue 根据类型转换设置值

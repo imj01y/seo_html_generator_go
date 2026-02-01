@@ -11,6 +11,8 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/redis/go-redis/v9"
+
+	core "seo-generator/api/internal/service"
 )
 
 var upgrader = websocket.Upgrader{
@@ -20,7 +22,18 @@ var upgrader = websocket.Upgrader{
 }
 
 // WebSocketHandler WebSocket 处理器
-type WebSocketHandler struct{}
+type WebSocketHandler struct {
+	templateFuncs *core.TemplateFuncsManager
+	poolManager   *core.PoolManager
+}
+
+// NewWebSocketHandler 创建 WebSocket 处理器
+func NewWebSocketHandler(templateFuncs *core.TemplateFuncsManager, poolManager *core.PoolManager) *WebSocketHandler {
+	return &WebSocketHandler{
+		templateFuncs: templateFuncs,
+		poolManager:   poolManager,
+	}
+}
 
 // subscribeAndForward 订阅 Redis 频道并转发消息到 WebSocket
 // 这是一个通用的辅助函数，用于简化 Redis Pub/Sub 到 WebSocket 的转发逻辑
@@ -388,4 +401,78 @@ func (h *WebSocketHandler) ProcessorStatus(c *gin.Context) {
 	defer conn.Close()
 
 	subscribeAndForward(conn, redisClient, "processor:status:realtime")
+}
+
+// PoolStatus 池状态实时推送
+// 每秒推送一次对象池和数据池的状态
+// GET /ws/pool-status
+func (h *WebSocketHandler) PoolStatus(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 监听客户端断开
+	go func() {
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	// 每秒推送一次状态
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// 立即发送一次初始状态
+	h.sendPoolStatus(conn)
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := h.sendPoolStatus(conn); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// sendPoolStatus 发送池状态消息
+func (h *WebSocketHandler) sendPoolStatus(conn *websocket.Conn) error {
+	// 构建状态消息
+	msg := map[string]interface{}{
+		"type":      "pool_status",
+		"timestamp": time.Now().Format(time.RFC3339Nano),
+	}
+
+	// 获取对象池状态
+	if h.templateFuncs != nil {
+		msg["object_pools"] = h.templateFuncs.GetPoolStats()
+	} else {
+		msg["object_pools"] = map[string]interface{}{}
+	}
+
+	// 获取数据池状态
+	if h.poolManager != nil {
+		msg["data_pools"] = h.poolManager.GetDataPoolsStats()
+	} else {
+		msg["data_pools"] = []interface{}{}
+	}
+
+	// 序列化并发送
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	return conn.WriteMessage(websocket.TextMessage, data)
 }

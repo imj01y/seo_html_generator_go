@@ -6,8 +6,7 @@ import type {
   Keyword,
   KeywordBatchAdd,
   PaginatedResponse,
-  BatchResult,
-  GroupStats
+  BatchResult
 } from '@/types'
 import { assertSuccess, type SuccessResponse, type CreateResponse, type CountResponse } from './shared'
 
@@ -117,19 +116,9 @@ export async function reloadKeywordGroup(_group_id?: number): Promise<{ total: n
   return { total: res.total }
 }
 
-export async function clearKeywordCache(): Promise<{ cleared: number; message: string }> {
-  const res: { success: boolean; cleared: number; message: string } = await request.post('/keywords/cache/clear')
-  assertSuccess(res, '清理失败')
-  return { cleared: res.cleared, message: res.message }
-}
-
 export async function getRandomKeywords(count?: number): Promise<string[]> {
   const res: { keywords: string[] } = await request.get('/keywords/random', { params: { count } })
   return res.keywords
-}
-
-export function getKeywordStats(): Promise<GroupStats> {
-  return request.get('/keywords/stats')
 }
 
 // ============================================

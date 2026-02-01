@@ -220,7 +220,6 @@ import {
   getProjectFiles,
   createProjectFile,
   updateProjectFile,
-  deleteProjectFile,
   testProject,
   stopTestProject,
   subscribeTestLogs,
@@ -263,7 +262,7 @@ const articleGroups = ref([{ id: 1, name: '默认文章分组' }])
 const editorOptions = {
   minimap: { enabled: false },
   fontSize: 14,
-  lineNumbers: 'on',
+  lineNumbers: 'on' as const,
   scrollBeyondLastLine: false,
   automaticLayout: true
 }
@@ -365,11 +364,6 @@ function isDraftDifferentFromDefault(draft: any): boolean {
 function clearDraft() {
   localStorage.removeItem(draftKey.value)
 }
-
-// 防抖自动保存草稿
-const autoSaveDraft = useDebounceFn(() => {
-  saveDraft()
-}, 2000)
 
 // 自动保存到数据库（3秒防抖）- 仅对已存在的项目生效
 const autoSaveToDatabase = useDebounceFn(async () => {

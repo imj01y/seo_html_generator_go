@@ -1,49 +1,10 @@
 import request from '@/utils/request'
-import type { Setting, CacheStats } from '@/types'
+import type { Setting } from '@/types'
 import { assertSuccess, type SuccessResponse } from './shared'
 
 // ============================================
 // 类型定义
 // ============================================
-
-export interface CacheSettingItem {
-  value: number | string | boolean
-  type: string
-  description: string
-}
-
-export interface ContentPoolAlert {
-  level: 'normal' | 'warning' | 'critical' | 'exhausted' | 'unknown'
-  message: string
-  pool_size: number
-  used_size: number
-  total: number
-  updated_at: string
-}
-
-export interface CachePoolStats {
-  cache_size: number
-  cursor: number
-  remaining: number
-  low_watermark: number
-  target_size: number
-  total_consumed: number
-  total_refilled: number
-  total_merged: number
-  running: boolean
-}
-
-export interface CachePoolsStatsResponse {
-  keyword_pool: CachePoolStats | null
-  image_pool: CachePoolStats | null
-}
-
-export interface FileCacheSettings {
-  file_cache_enabled: boolean
-  file_cache_dir: string
-  file_cache_max_size_gb: number
-  file_cache_nginx_mode: boolean
-}
 
 export interface ApiTokenResponse {
   success: boolean
@@ -63,17 +24,9 @@ interface BackendSettings {
   spider_detector: { enabled: boolean; dns_verify_enabled: boolean; return_404_for_non_spider: boolean }
 }
 
-interface GroupStatsResponse {
-  total: number
-  cursor: number
-  remaining: number
-  loaded: boolean
-  memory_mb: number
-  redis_pool_count?: number
-}
-
-interface CacheSettingsResponse extends SuccessResponse {
-  settings: Record<string, CacheSettingItem>
+interface CacheStats {
+  html_cache_entries: number
+  html_cache_memory_mb: number
 }
 
 // ============================================
@@ -107,47 +60,16 @@ export async function updateSettings(settings: Record<string, string>): Promise<
 }
 
 // ============================================
-// 缓存配置 API
+// 缓存 API
 // ============================================
-
-export async function getCacheSettings(): Promise<Record<string, CacheSettingItem>> {
-  const res: CacheSettingsResponse = await request.get('/settings/cache')
-  assertSuccess(res, '获取失败')
-  return res.settings
-}
-
-export async function updateCacheSettings(settings: Record<string, number | string | boolean>): Promise<void> {
-  const res: SuccessResponse = await request.put('/settings/cache', settings)
-  assertSuccess(res, '更新失败')
-}
-
-export async function applyCacheSettings(): Promise<{ message: string; applied: string[] }> {
-  const res: SuccessResponse & { applied: string[] } = await request.post('/settings/cache/apply')
-  assertSuccess(res, '应用失败')
-  return { message: res.message || '', applied: res.applied }
-}
 
 export async function clearCache(): Promise<{ message: string }> {
   const res: { success: boolean; cleared: number } = await request.post('/cache/clear')
   return { message: `已清理 ${res.cleared} 条缓存` }
 }
 
-// ============================================
-// 缓存统计 API
-// ============================================
-
-const defaultGroupStats: GroupStatsResponse = {
-  total: 0,
-  cursor: 0,
-  remaining: 0,
-  loaded: false,
-  memory_mb: 0
-}
-
 export async function getCacheStats(): Promise<CacheStats> {
   let htmlCacheStats = { total_entries: 0, total_size_mb: 0 }
-  let keywordStats = { ...defaultGroupStats }
-  let imageStats = { ...defaultGroupStats }
 
   try {
     htmlCacheStats = await request.get('/cache/stats')
@@ -155,23 +77,7 @@ export async function getCacheStats(): Promise<CacheStats> {
     // ignore
   }
 
-  try {
-    keywordStats = await request.get('/keywords/stats')
-  } catch {
-    // ignore
-  }
-
-  try {
-    imageStats = await request.get('/images/urls/stats')
-  } catch {
-    // ignore
-  }
-
   return {
-    keyword_cache_size: keywordStats.total,
-    image_cache_size: imageStats.redis_pool_count ?? imageStats.total,
-    keyword_group_stats: keywordStats,
-    image_group_stats: imageStats,
     html_cache_entries: htmlCacheStats.total_entries || 0,
     html_cache_memory_mb: htmlCacheStats.total_size_mb || 0
   }
@@ -179,10 +85,6 @@ export async function getCacheStats(): Promise<CacheStats> {
 
 export function clearDomainCache(domain: string): Promise<{ success: boolean; cleared: number }> {
   return request.post(`/cache/clear/${domain}`)
-}
-
-export function getCacheEntries(params?: { domain?: string; offset?: number; limit?: number }): Promise<unknown> {
-  return request.get('/cache/entries', { params })
 }
 
 // ============================================
@@ -196,58 +98,6 @@ export function checkDatabase(): Promise<{
   error?: string
 }> {
   return request.get('/settings/database')
-}
-
-export function getGeneratorWorkerStatus(): Promise<{
-  success: boolean
-  running: boolean
-  worker_initialized: boolean
-}> {
-  return request.get('/generator/worker/status')
-}
-
-export function getGeneratorQueueStats(groupId: number = 1): Promise<{
-  success: boolean
-  group_id: number
-  queue_size: number
-}> {
-  return request.get('/generator/queue/stats', { params: { group_id: groupId } })
-}
-
-export function clearGeneratorQueue(groupId: number = 1): Promise<{
-  success: boolean
-  cleared: number
-  message: string
-}> {
-  return request.post('/generator/queue/clear', null, { params: { group_id: groupId } })
-}
-
-// ============================================
-// 段落池 API
-// ============================================
-
-export function getContentPoolAlert(): Promise<{
-  success: boolean
-  alert: ContentPoolAlert
-  message?: string
-}> {
-  return request.get('/alerts/content-pool')
-}
-
-export function resetContentPool(): Promise<{
-  success: boolean
-  message: string
-  count: number
-}> {
-  return request.post('/alerts/content-pool/reset')
-}
-
-// ============================================
-// 缓存池 API
-// ============================================
-
-export function getCachePoolsStats(): Promise<CachePoolsStatsResponse> {
-  return request.get('/cache/pools/stats')
 }
 
 // ============================================

@@ -9,13 +9,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// CachePoolConfig holds cache pool configuration for titles and contents
+// CachePoolConfig holds cache pool configuration for titles, contents, keywords, and images
 type CachePoolConfig struct {
 	ID               int       `db:"id" json:"id"`
 	TitlesSize       int       `db:"titles_size" json:"titles_size"`
 	ContentsSize     int       `db:"contents_size" json:"contents_size"`
 	Threshold        int       `db:"threshold" json:"threshold"`
 	RefillIntervalMs int       `db:"refill_interval_ms" json:"refill_interval_ms"`
+	// keywords/images 配置
+	KeywordsSize      int `db:"keywords_size" json:"keywords_size"`
+	ImagesSize        int `db:"images_size" json:"images_size"`
+	RefreshIntervalMs int `db:"refresh_interval_ms" json:"refresh_interval_ms"`
 	UpdatedAt        time.Time `db:"updated_at" json:"updated_at"`
 }
 
@@ -24,14 +28,22 @@ func (c *CachePoolConfig) RefillInterval() time.Duration {
 	return time.Duration(c.RefillIntervalMs) * time.Millisecond
 }
 
+// RefreshInterval returns the refresh interval for keywords/images as time.Duration
+func (c *CachePoolConfig) RefreshInterval() time.Duration {
+	return time.Duration(c.RefreshIntervalMs) * time.Millisecond
+}
+
 // DefaultCachePoolConfig returns default configuration
 func DefaultCachePoolConfig() *CachePoolConfig {
 	return &CachePoolConfig{
-		ID:               1,
-		TitlesSize:       5000,
-		ContentsSize:     5000,
-		Threshold:        1000,
-		RefillIntervalMs: 1000,
+		ID:                1,
+		TitlesSize:        5000,
+		ContentsSize:      5000,
+		Threshold:         1000,
+		RefillIntervalMs:  1000,
+		KeywordsSize:      50000,
+		ImagesSize:        50000,
+		RefreshIntervalMs: 300000, // 5 minutes
 	}
 }
 
@@ -49,19 +61,25 @@ func LoadCachePoolConfig(ctx context.Context, db *sqlx.DB) (*CachePoolConfig, er
 // SaveCachePoolConfig saves configuration to database
 func SaveCachePoolConfig(ctx context.Context, db *sqlx.DB, config *CachePoolConfig) error {
 	query := `
-		INSERT INTO pool_config (id, titles_size, contents_size, threshold, refill_interval_ms)
-		VALUES (1, ?, ?, ?, ?)
+		INSERT INTO pool_config (id, titles_size, contents_size, threshold, refill_interval_ms, keywords_size, images_size, refresh_interval_ms)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			titles_size = VALUES(titles_size),
 			contents_size = VALUES(contents_size),
 			threshold = VALUES(threshold),
-			refill_interval_ms = VALUES(refill_interval_ms)
+			refill_interval_ms = VALUES(refill_interval_ms),
+			keywords_size = VALUES(keywords_size),
+			images_size = VALUES(images_size),
+			refresh_interval_ms = VALUES(refresh_interval_ms)
 	`
 	_, err := db.ExecContext(ctx, query,
 		config.TitlesSize,
 		config.ContentsSize,
 		config.Threshold,
 		config.RefillIntervalMs,
+		config.KeywordsSize,
+		config.ImagesSize,
+		config.RefreshIntervalMs,
 	)
 	return err
 }

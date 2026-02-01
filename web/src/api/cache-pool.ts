@@ -16,6 +16,9 @@ export interface CachePoolConfig {
   contents_size: number
   threshold: number
   refill_interval_ms: number
+  keywords_size: number
+  images_size: number
+  refresh_interval_ms: number
   updated_at?: string
 }
 
@@ -30,11 +33,17 @@ export interface GroupPoolStats {
 export interface CachePoolStats {
   titles: Record<number, GroupPoolStats>
   contents: Record<number, GroupPoolStats>
+  keywords: Record<number, number>
+  images: Record<number, number>
+  emojis: number
   config: {
     titles_size: number
     contents_size: number
     threshold: number
     refill_interval_ms: number
+    keywords_size: number
+    images_size: number
+    refresh_interval_ms: number
   }
 }
 

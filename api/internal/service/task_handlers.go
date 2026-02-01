@@ -11,13 +11,13 @@ import (
 
 // RefreshDataHandler 刷新数据池处理器
 type RefreshDataHandler struct {
-	dataManager *DataManager
+	poolManager *PoolManager
 }
 
 // NewRefreshDataHandler 创建刷新数据池处理器
-func NewRefreshDataHandler(manager *DataManager) *RefreshDataHandler {
+func NewRefreshDataHandler(manager *PoolManager) *RefreshDataHandler {
 	return &RefreshDataHandler{
-		dataManager: manager,
+		poolManager: manager,
 	}
 }
 
@@ -47,13 +47,7 @@ func (h *RefreshDataHandler) Handle(task *ScheduledTask) TaskResult {
 		Int("site_id", params.SiteID).
 		Msg("Refreshing data pool")
 
-	// 使用分组 ID（默认为 1）
-	groupID := 1
-	if params.SiteID > 0 {
-		groupID = params.SiteID // 如果指定了 site_id，用作 group_id
-	}
-
-	refreshErr := h.dataManager.Refresh(ctx, groupID, params.PoolName)
+	refreshErr := h.poolManager.RefreshData(ctx, params.PoolName)
 
 	if refreshErr != nil {
 		return TaskResult{
@@ -63,10 +57,10 @@ func (h *RefreshDataHandler) Handle(task *ScheduledTask) TaskResult {
 		}
 	}
 
-	stats := h.dataManager.GetPoolStats()
+	stats := h.poolManager.GetPoolStatsSimple()
 	return TaskResult{
 		Success:  true,
-		Message:  fmt.Sprintf("refreshed %s, keywords=%d, images=%d, titles=%d, contents=%d", params.PoolName, stats.Keywords, stats.Images, stats.Titles, stats.Contents),
+		Message:  fmt.Sprintf("refreshed %s, keywords=%d, images=%d", params.PoolName, stats.Keywords, stats.Images),
 		Duration: time.Since(startTime).Milliseconds(),
 	}
 }
@@ -259,10 +253,10 @@ func (h *PushURLsHandler) Handle(task *ScheduledTask) TaskResult {
 }
 
 // RegisterAllHandlers 注册所有任务处理器
-func RegisterAllHandlers(scheduler *Scheduler, dataManager *DataManager, templateCache *TemplateCache, htmlCache *HTMLCache, siteCache *SiteCache) {
+func RegisterAllHandlers(scheduler *Scheduler, poolManager *PoolManager, templateCache *TemplateCache, htmlCache *HTMLCache, siteCache *SiteCache) {
 	// 注册刷新数据池处理器
-	if dataManager != nil {
-		scheduler.RegisterHandler(NewRefreshDataHandler(dataManager))
+	if poolManager != nil {
+		scheduler.RegisterHandler(NewRefreshDataHandler(poolManager))
 	}
 
 	// 注册刷新模板缓存处理器

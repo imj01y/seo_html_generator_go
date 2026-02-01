@@ -32,6 +32,7 @@ export interface SiteGroup {
   name: string
   description: string | null
   status: number  // 1=启用, 0=禁用
+  is_default?: number  // 1=默认站群, 0=普通站群
   created_at: string
   updated_at: string
 }
@@ -83,9 +84,9 @@ export interface SiteCreate {
   domain: string
   name: string
   template?: string
-  keyword_group_id?: number  // 绑定的关键词分组ID
-  image_group_id?: number    // 绑定的图片分组ID
-  article_group_id?: number  // 绑定的文章分组ID
+  keyword_group_id?: number | null  // 绑定的关键词分组ID
+  image_group_id?: number | null    // 绑定的图片分组ID
+  article_group_id?: number | null  // 绑定的文章分组ID
   icp_number?: string
   baidu_token?: string
   analytics?: string
@@ -96,9 +97,9 @@ export interface SiteUpdate {
   name?: string
   template?: string
   status?: number  // 1=启用, 0=禁用
-  keyword_group_id?: number  // 绑定的关键词分组ID
-  image_group_id?: number    // 绑定的图片分组ID
-  article_group_id?: number  // 绑定的文章分组ID
+  keyword_group_id?: number | null  // 绑定的关键词分组ID
+  image_group_id?: number | null    // 绑定的图片分组ID
+  article_group_id?: number | null  // 绑定的文章分组ID
   icp_number?: string
   baidu_token?: string
   analytics?: string
@@ -296,6 +297,7 @@ export interface SpiderLog {
 export interface SpiderLogQuery extends PaginationParams {
   spider_type?: string
   domain?: string
+  status_code?: number
   start_date?: string
   end_date?: string
 }

@@ -7,6 +7,9 @@
       <el-tab-pane label="代码编辑" name="code">
         <ContentWorkerEditor />
       </el-tab-pane>
+      <el-tab-pane label="配置" name="config">
+        <ProcessorConfig />
+      </el-tab-pane>
     </el-tabs>
   </div>
 </template>
@@ -14,6 +17,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import ProcessorManage from './ProcessorManage.vue'
+import ProcessorConfig from './ProcessorConfig.vue'
 import ContentWorkerEditor from '@/views/content-worker/ContentWorkerEditor.vue'
 
 const activeTab = ref('monitor')

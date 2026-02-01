@@ -95,7 +95,6 @@ func main() {
 	siteCache := core.NewSiteCache(db)
 	templateCache := core.NewTemplateCache(db)
 	htmlCache := core.NewHTMLCache(cacheDir, cfg.Cache.MaxSizeGB)
-	dataManager := core.NewDataManager(db, core.GetEncoder(), 5*time.Minute)
 	funcsManager := core.NewTemplateFuncsManager(core.GetEncoder())
 
 	// Initialize pool manager for titles and contents (in-memory cache)
@@ -151,7 +150,7 @@ func main() {
 	scheduler := core.NewScheduler(db)
 
 	// Register task handlers
-	core.RegisterAllHandlers(scheduler, dataManager, templateCache, htmlCache, siteCache)
+	core.RegisterAllHandlers(scheduler, poolManager, templateCache, htmlCache, siteCache)
 
 	// Start scheduler
 	schedCtx := context.Background()
@@ -159,68 +158,24 @@ func main() {
 		log.Warn().Err(err).Msg("Failed to start scheduler (tables may not exist)")
 	}
 
-	// Load emojis from data/emojis.json
+	// Load emojis from data/emojis.json into PoolManager
 	emojisPath := filepath.Join(projectRoot, "data", "emojis.json")
-	emojiManager := core.NewEmojiManager()
-	if err := emojiManager.LoadFromFile(emojisPath); err != nil {
+	if err := poolManager.LoadEmojis(emojisPath); err != nil {
 		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis")
 	} else {
-		log.Info().Int("count", emojiManager.Count()).Msg("Emojis loaded")
+		log.Info().Int("count", poolManager.GetEmojiCount()).Msg("Emojis loaded to PoolManager")
 	}
 
-	// Also load emojis into dataManager for backward compatibility
-	if err := dataManager.LoadEmojis(emojisPath); err != nil {
-		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis to data manager")
+	// Also create a separate emojiManager for funcsManager (used in template rendering)
+	emojiManager := core.NewEmojiManager()
+	if err := emojiManager.LoadFromFile(emojisPath); err != nil {
+		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis for funcsManager")
 	}
-
-	// Set emoji manager on funcsManager for keyword+emoji generation
 	funcsManager.SetEmojiManager(emojiManager)
 
-	// Load initial data for all groups
-	log.Info().Msg("Loading initial data for all groups...")
-
-	// 查询所有分组 ID
-	keywordGroupIDs := queryGroupIDs(ctx, db, "keyword_groups", 1)
-	imageGroupIDs := queryGroupIDs(ctx, db, "image_groups", 1)
-	articleGroupIDs := queryGroupIDs(ctx, db, "article_groups", 1)
-
-	// 加载所有关键词分组
-	for _, gid := range keywordGroupIDs {
-		if _, err := dataManager.LoadKeywords(ctx, gid, 50000); err != nil {
-			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load keywords for group")
-		}
-	}
-
-	// 加载所有图片分组
-	for _, gid := range imageGroupIDs {
-		if _, err := dataManager.LoadImageURLs(ctx, gid, 50000); err != nil {
-			log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load images for group")
-		}
-	}
-
-	// 跳过加载文章分组标题和内容（由 PoolManager 管理）
-	log.Info().
-		Int("article_groups", len(articleGroupIDs)).
-		Msg("Skipping DataManager titles/contents loading (managed by PoolManager)")
-
-	log.Info().
-		Int("keyword_groups", len(keywordGroupIDs)).
-		Int("image_groups", len(imageGroupIDs)).
-		Int("article_groups", len(articleGroupIDs)).
-		Msg("Initial data loaded for all groups")
-
-	// 启动自动刷新
-	allGroupIDs := make([]int, 0)
-	for _, gid := range keywordGroupIDs {
-		allGroupIDs = append(allGroupIDs, gid)
-	}
-	dataManager.StartAutoRefresh(allGroupIDs)
-	log.Info().Int("groups", len(allGroupIDs)).Msg("DataManager auto refresh started")
-
-	// Also load data into funcsManager for template rendering
-	// This connects funcsManager to dataManager for keywords and images
-	// Use raw keywords (not encoded) - LoadKeywords will encode them
-	rawKeywords := dataManager.GetRawKeywords(1, 50000)
+	// Note: keywords/images are now loaded by PoolManager.Start()
+	// Load data into funcsManager for template rendering
+	rawKeywords := poolManager.GetRawKeywords(1, 50000)
 	if len(rawKeywords) > 0 {
 		funcsManager.LoadKeywords(rawKeywords)
 		log.Info().Int("count", len(rawKeywords)).Msg("Keywords loaded to funcs manager")
@@ -232,7 +187,7 @@ func main() {
 	}
 
 	// Load image URLs into funcsManager
-	imageURLs := dataManager.GetImageURLs(1)
+	imageURLs := poolManager.GetImages(1)
 	if len(imageURLs) > 0 {
 		funcsManager.LoadImageURLs(imageURLs)
 		log.Info().Int("count", len(imageURLs)).Msg("Image URLs loaded to funcs manager")
@@ -245,7 +200,6 @@ func main() {
 		siteCache,
 		templateCache,
 		htmlCache,
-		dataManager,
 		funcsManager,
 		poolManager,
 	)
@@ -370,7 +324,6 @@ func main() {
 		Config:           cfg,
 		TemplateAnalyzer: templateAnalyzer,
 		TemplateFuncs:    funcsManager,
-		DataManager:      dataManager,
 		Scheduler:        scheduler,
 		TemplateCache:    templateCache,
 		Monitor:          monitor,
@@ -467,10 +420,6 @@ func main() {
 	// Stop scheduler
 	scheduler.Stop()
 	log.Info().Msg("Scheduler stopped")
-
-	// Stop data manager auto-refresh
-	dataManager.StopAutoRefresh()
-	log.Info().Msg("DataManager auto-refresh stopped")
 
 	// Graceful shutdown with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

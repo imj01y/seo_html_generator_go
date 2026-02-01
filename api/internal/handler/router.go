@@ -26,7 +26,6 @@ type Dependencies struct {
 	Config           *config.Config
 	TemplateAnalyzer *core.TemplateAnalyzer
 	TemplateFuncs    *core.TemplateFuncsManager
-	DataManager      *core.DataManager
 	Scheduler        *core.Scheduler
 	TemplateCache    *core.TemplateCache
 	Monitor          *core.Monitor
@@ -362,7 +361,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// WebSocket routes (不需要认证)
-	wsHandler := NewWebSocketHandler(deps.TemplateFuncs, deps.DataManager)
+	wsHandler := NewWebSocketHandler(deps.TemplateFuncs, deps.PoolManager)
 	r.GET("/ws/spider-logs/:id", wsHandler.SpiderLogs)
 	r.GET("/ws/spider-stats/:id", wsHandler.SpiderStats)
 	r.GET("/ws/worker-restart", wsHandler.WorkerRestart)
@@ -769,13 +768,13 @@ func templatePoolConfigHandler(deps *Dependencies) gin.HandlerFunc {
 // dataStatsHandler GET /stats - 获取数据池运行状态统计
 func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if deps.DataManager == nil {
+		if deps.PoolManager == nil {
 			core.FailWithCode(c, core.ErrInternalServer)
 			return
 		}
 
 		// 返回与对象池格式一致的统计
-		pools := deps.DataManager.GetDataPoolsStats()
+		pools := deps.PoolManager.GetDataPoolsStats()
 		core.Success(c, gin.H{
 			"pools": pools,
 		})
@@ -806,7 +805,7 @@ type dataRefreshRequest struct {
 // dataRefreshHandler POST /refresh - 刷新数据池
 func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if deps.DataManager == nil {
+		if deps.PoolManager == nil {
 			core.FailWithCode(c, core.ErrInternalServer)
 			return
 		}
@@ -820,13 +819,13 @@ func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		// 刷新默认分组（group_id=1）的数据
-		if err := deps.DataManager.Refresh(ctx, 1, req.Pool); err != nil {
+		// 刷新指定的数据池
+		if err := deps.PoolManager.RefreshData(ctx, req.Pool); err != nil {
 			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
 			return
 		}
 
-		stats := deps.DataManager.GetPoolStats()
+		stats := deps.PoolManager.GetPoolStatsSimple()
 		core.Success(c, gin.H{
 			"success": true,
 			"pool":    req.Pool,
@@ -1054,8 +1053,8 @@ func systemInfoHandler(deps *Dependencies) gin.HandlerFunc {
 		}
 
 		// 获取数据池统计
-		if deps.DataManager != nil {
-			info["data"] = deps.DataManager.GetPoolStats()
+		if deps.PoolManager != nil {
+			info["data"] = deps.PoolManager.GetPoolStatsSimple()
 		}
 
 		// 获取模板分析统计
@@ -1097,8 +1096,8 @@ func systemHealthHandler(deps *Dependencies) gin.HandlerFunc {
 		}
 
 		// 检查数据池
-		if deps.DataManager != nil {
-			dataStats := deps.DataManager.GetPoolStats()
+		if deps.PoolManager != nil {
+			dataStats := deps.PoolManager.GetPoolStatsSimple()
 			if dataStats.Keywords == 0 && dataStats.Images == 0 {
 				checks["data_pool"] = gin.H{
 					"status":  "degraded",

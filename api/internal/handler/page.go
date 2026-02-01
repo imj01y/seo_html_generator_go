@@ -26,7 +26,6 @@ type PageHandler struct {
 	siteCache        *core.SiteCache
 	templateCache    *core.TemplateCache
 	htmlCache        *core.HTMLCache
-	dataManager      *core.DataManager
 	templateRenderer *core.TemplateRenderer
 	funcsManager     *core.TemplateFuncsManager
 	poolManager      *core.PoolManager
@@ -39,7 +38,6 @@ func NewPageHandler(
 	siteCache *core.SiteCache,
 	templateCache *core.TemplateCache,
 	htmlCache *core.HTMLCache,
-	dataManager *core.DataManager,
 	funcsManager *core.TemplateFuncsManager,
 	poolManager *core.PoolManager,
 ) *PageHandler {
@@ -50,7 +48,6 @@ func NewPageHandler(
 		siteCache:        siteCache,
 		templateCache:    templateCache,
 		htmlCache:        htmlCache,
-		dataManager:      dataManager,
 		templateRenderer: core.NewTemplateRenderer(funcsManager),
 		funcsManager:     funcsManager,
 		poolManager:      poolManager,
@@ -137,41 +134,25 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 		articleGroupID = int(site.ArticleGroupID.Int64)
 	}
 
-	// Get title and content from pool (or fallback)
+	// Get title and content from pool
 	var title, content string
-	if h.poolManager != nil {
-		var err error
-		title, err = h.poolManager.Pop("titles", articleGroupID)
-		if err != nil {
-			log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get title from pool")
-			titles := h.dataManager.GetRandomTitles(articleGroupID, 1)
-			if len(titles) > 0 {
-				title = titles[0]
-			}
-		}
-		content, err = h.poolManager.Pop("contents", articleGroupID)
-		if err != nil {
-			log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get content from pool")
-			content = h.dataManager.GetRandomContent(articleGroupID)
-		}
-	} else {
-		// Fallback to dataManager when poolManager is not available
-		titles := h.dataManager.GetRandomTitles(articleGroupID, 1)
-		if len(titles) > 0 {
-			title = titles[0]
-		}
-		content = h.dataManager.GetRandomContent(articleGroupID)
+	title, err = h.poolManager.Pop("titles", articleGroupID)
+	if err != nil {
+		log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get title from pool")
+	}
+	content, err = h.poolManager.Pop("contents", articleGroupID)
+	if err != nil {
+		log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get content from pool")
 	}
 	// 获取关键词用于标题生成（使用关键词分组）
-	titleKeywords := h.dataManager.GetRandomKeywords(keywordGroupID, 3)
+	titleKeywords := h.poolManager.GetRandomKeywords(keywordGroupID, 3)
 	fetchTime := time.Since(t4)
 
 	// Build article content using fetched title and content
 	articleContent := core.BuildArticleContentFromSingle(title, content)
 
-	// Pre-load content for template's content() function
-	preloadContent := h.dataManager.GetRandomContent(articleGroupID)
-	h.templateRenderer.SetPreloadContent(preloadContent)
+	// Pre-load content for template's content() function (use already fetched content)
+	h.templateRenderer.SetPreloadContent(content)
 
 	// Prepare render data
 	analyticsCode := getNullString(site.Analytics)
@@ -184,7 +165,7 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	var cachedTitle string
 	titleGenerator := func() string {
 		if cachedTitle == "" {
-			kws := h.dataManager.GetRandomKeywords(keywordGroupID, 3)
+			kws := h.poolManager.GetRandomKeywords(keywordGroupID, 3)
 			cachedTitle = h.generateTitle(kws)
 		}
 		return cachedTitle
@@ -282,7 +263,7 @@ func (h *PageHandler) generateTitle(keywords []string) string {
 		builder.WriteString(keywords[i])
 		// 在前两个关键词后添加 Emoji
 		if i < 2 {
-			if emoji := h.dataManager.GetRandomEmojiExclude(usedEmojis); emoji != "" {
+			if emoji := h.poolManager.GetRandomEmojiExclude(usedEmojis); emoji != "" {
 				usedEmojis[emoji] = true
 				builder.WriteString(emoji)
 			}
@@ -404,10 +385,10 @@ func (h *PageHandler) Health(c *gin.Context) {
 // Stats handles stats endpoint
 func (h *PageHandler) Stats(c *gin.Context) {
 	stats := gin.H{
-		"spider_detector":        h.spiderDetector.GetStats(),
-		"site_cache":             h.siteCache.GetStats(),
-		"html_cache":             h.htmlCache.GetStats(),
-		"data_manager":           h.dataManager.GetStats(),
+		"spider_detector":         h.spiderDetector.GetStats(),
+		"site_cache":              h.siteCache.GetStats(),
+		"html_cache":              h.htmlCache.GetStats(),
+		"pool_manager":            h.poolManager.GetStats(),
 		"template_compiled_cache": h.templateRenderer.GetCacheStats(),
 	}
 	if h.templateCache != nil {

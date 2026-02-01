@@ -858,13 +858,13 @@ const closeUploadDialog = () => {
 }
 
 // 文件选择变化（支持多文件）
-const handleFileChange = (file: any, fileList: any[]) => {
+const handleFileChange = (_file: any, fileList: any[]) => {
   // 从 fileList 提取所有文件
   uploadFiles.value = fileList.map(f => f.raw).filter(Boolean)
 }
 
 // 文件移除
-const handleFileRemove = (file: any, fileList: any[]) => {
+const handleFileRemove = (_file: any, fileList: any[]) => {
   uploadFiles.value = fileList.map(f => f.raw).filter(Boolean)
 }
 

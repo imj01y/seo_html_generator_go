@@ -183,9 +183,9 @@
           <el-select v-model="configForm.entry_file" style="width: 100%">
             <el-option
               v-for="file in configFiles"
-              :key="file.path"
-              :label="file.path"
-              :value="file.path.replace(/^\//, '')"
+              :key="file.path || file.filename"
+              :label="file.path || file.filename"
+              :value="(file.path || file.filename || '').replace(/^\//, '')"
             />
           </el-select>
         </el-form-item>
@@ -307,7 +307,7 @@ const articleGroups = ref<{ id: number; name: string }[]>([])
 async function loadArticleGroups() {
   try {
     const res = await getArticleGroups()
-    articleGroups.value = res.items || []
+    articleGroups.value = res || []
   } catch {
     articleGroups.value = [{ id: 1, name: '默认文章分组' }]
   }
