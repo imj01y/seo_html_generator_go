@@ -3,10 +3,12 @@ package core
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
+	"github.com/rs/zerolog/log"
 )
 
 var (
@@ -44,5 +46,46 @@ func NewPoolConsumer(redisClient *redis.Client, db *sqlx.DB) *PoolConsumer {
 		updateCh: make(chan UpdateTask, 1000),
 		ctx:      ctx,
 		cancel:   cancel,
+	}
+}
+
+// Start starts the async update worker
+func (c *PoolConsumer) Start() {
+	c.wg.Add(1)
+	go c.updateWorker()
+	log.Info().Msg("PoolConsumer started")
+}
+
+// Stop stops the pool consumer gracefully
+func (c *PoolConsumer) Stop() {
+	c.cancel()
+	close(c.updateCh)
+	c.wg.Wait()
+	log.Info().Msg("PoolConsumer stopped")
+}
+
+// updateWorker processes status update tasks
+func (c *PoolConsumer) updateWorker() {
+	defer c.wg.Done()
+
+	for task := range c.updateCh {
+		select {
+		case <-c.ctx.Done():
+			return
+		default:
+			c.processUpdate(task)
+		}
+	}
+}
+
+// processUpdate updates the status of a consumed item
+func (c *PoolConsumer) processUpdate(task UpdateTask) {
+	query := fmt.Sprintf("UPDATE %s SET status = 0 WHERE id = ?", task.Table)
+	_, err := c.db.ExecContext(c.ctx, query, task.ID)
+	if err != nil {
+		log.Warn().Err(err).
+			Str("table", task.Table).
+			Int64("id", task.ID).
+			Msg("Failed to update status")
 	}
 }
