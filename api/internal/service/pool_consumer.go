@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
@@ -15,6 +16,20 @@ import (
 var (
 	ErrPoolEmpty = errors.New("pool is empty")
 )
+
+// validTables is a whitelist of allowed table names for SQL queries
+var validTables = map[string]bool{
+	"titles":   true,
+	"contents": true,
+}
+
+// validatePoolType validates that the pool type is in the whitelist
+func validatePoolType(poolType string) error {
+	if !validTables[poolType] {
+		return fmt.Errorf("invalid pool type: %s", poolType)
+	}
+	return nil
+}
 
 // PoolItem represents an item in the pool
 type PoolItem struct {
@@ -36,6 +51,7 @@ type PoolConsumer struct {
 	wg       sync.WaitGroup
 	ctx      context.Context
 	cancel   context.CancelFunc
+	stopped  atomic.Bool
 }
 
 // NewPoolConsumer creates a new pool consumer
@@ -59,6 +75,7 @@ func (c *PoolConsumer) Start() {
 
 // Stop stops the pool consumer gracefully
 func (c *PoolConsumer) Stop() {
+	c.stopped.Store(true) // Mark as stopped first to prevent channel sends
 	c.cancel()
 	close(c.updateCh)
 	c.wg.Wait()
@@ -81,6 +98,10 @@ func (c *PoolConsumer) updateWorker() {
 
 // processUpdate updates the status of a consumed item
 func (c *PoolConsumer) processUpdate(task UpdateTask) {
+	if err := validatePoolType(task.Table); err != nil {
+		log.Error().Err(err).Str("table", task.Table).Msg("Invalid table in update task")
+		return
+	}
 	query := fmt.Sprintf("UPDATE %s SET status = 0 WHERE id = ?", task.Table)
 	_, err := c.db.ExecContext(c.ctx, query, task.ID)
 	if err != nil {
@@ -93,6 +114,9 @@ func (c *PoolConsumer) processUpdate(task UpdateTask) {
 
 // Pop retrieves and removes an item from the pool
 func (c *PoolConsumer) Pop(ctx context.Context, poolType string, groupID int) (string, error) {
+	if err := validatePoolType(poolType); err != nil {
+		return "", err
+	}
 	if c.redis == nil {
 		return "", errors.New("redis client is nil")
 	}
@@ -114,11 +138,13 @@ func (c *PoolConsumer) Pop(ctx context.Context, poolType string, groupID int) (s
 		return "", fmt.Errorf("json unmarshal failed: %w", err)
 	}
 
-	// Async update status
-	select {
-	case c.updateCh <- UpdateTask{Table: poolType, ID: item.ID}:
-	default:
-		log.Warn().Str("table", poolType).Int64("id", item.ID).Msg("Update channel full, dropping task")
+	// Async update status (check stopped flag first to avoid panic on closed channel)
+	if !c.stopped.Load() {
+		select {
+		case c.updateCh <- UpdateTask{Table: poolType, ID: item.ID}:
+		default:
+			log.Warn().Str("table", poolType).Int64("id", item.ID).Msg("Update channel full, dropping task")
+		}
 	}
 
 	return item.Text, nil
@@ -143,6 +169,9 @@ func (c *PoolConsumer) PopWithFallback(ctx context.Context, poolType string, gro
 
 // fallbackFromDB queries DB directly when Redis is unavailable
 func (c *PoolConsumer) fallbackFromDB(ctx context.Context, poolType string, groupID int) (string, error) {
+	if err := validatePoolType(poolType); err != nil {
+		return "", err
+	}
 	column := "title"
 	if poolType == "contents" {
 		column = "content"
@@ -160,11 +189,13 @@ func (c *PoolConsumer) fallbackFromDB(ctx context.Context, poolType string, grou
 		return "", fmt.Errorf("db fallback failed: %w", err)
 	}
 
-	// Async update status
-	select {
-	case c.updateCh <- UpdateTask{Table: poolType, ID: item.ID}:
-	default:
-		log.Warn().Str("table", poolType).Int64("id", item.ID).Msg("Update channel full, dropping task")
+	// Async update status (check stopped flag first to avoid panic on closed channel)
+	if !c.stopped.Load() {
+		select {
+		case c.updateCh <- UpdateTask{Table: poolType, ID: item.ID}:
+		default:
+			log.Warn().Str("table", poolType).Int64("id", item.ID).Msg("Update channel full, dropping task")
+		}
 	}
 
 	return item.Text, nil
