@@ -30,6 +30,7 @@ type Dependencies struct {
 	Scheduler        *core.Scheduler
 	TemplateCache    *core.TemplateCache
 	Monitor          *core.Monitor
+	PoolManager      *core.PoolManager
 }
 
 // SetupRouter configures all API routes
@@ -278,6 +279,19 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		poolConfigGroup.PUT("", poolConfigHandler.UpdateConfig)
 	}
 
+	// Cache Pool routes (require JWT) - 标题和正文缓存池配置
+	if deps.PoolManager != nil {
+		cachePoolHandler := NewPoolHandler(deps.DB, deps.PoolManager)
+		cachePoolGroup := r.Group("/api/cache-pool")
+		cachePoolGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+		{
+			cachePoolGroup.GET("/config", cachePoolHandler.GetConfig)
+			cachePoolGroup.PUT("/config", cachePoolHandler.UpdateConfig)
+			cachePoolGroup.GET("/stats", cachePoolHandler.GetStats)
+			cachePoolGroup.POST("/reload", cachePoolHandler.Reload)
+		}
+	}
+
 	// Settings routes (require JWT)
 	settingsHandler := &SettingsHandler{}
 	settingsRoutes := r.Group("/api/settings")
@@ -348,13 +362,14 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// WebSocket routes (不需要认证)
-	wsHandler := &WebSocketHandler{}
+	wsHandler := NewWebSocketHandler(deps.TemplateFuncs, deps.DataManager)
 	r.GET("/ws/spider-logs/:id", wsHandler.SpiderLogs)
 	r.GET("/ws/spider-stats/:id", wsHandler.SpiderStats)
 	r.GET("/ws/worker-restart", wsHandler.WorkerRestart)
 	r.GET("/ws/worker-logs", wsHandler.WorkerLogs)
 	r.GET("/ws/processor-logs", wsHandler.ProcessorLogs)
 	r.GET("/ws/processor-status", wsHandler.ProcessorStatus)
+	r.GET("/ws/pool-status", wsHandler.PoolStatus)
 	r.GET("/api/logs/ws", wsHandler.SystemLogs)
 
 	// Admin API group (require JWT)
