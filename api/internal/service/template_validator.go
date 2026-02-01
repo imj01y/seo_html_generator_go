@@ -2,8 +2,6 @@ package core
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"regexp"
 	"strings"
 )
@@ -104,54 +102,6 @@ func (v *TemplateValidator) Validate(template string) *ValidationResult {
 	if len(varErrors) > 0 {
 		result.Valid = false
 		result.Errors = append(result.Errors, varErrors...)
-	}
-
-	return result
-}
-
-// ValidateAndCompile performs all validation including compilation checks
-func (v *TemplateValidator) ValidateAndCompile(template, templateName, templatesDir string) *ValidationResult {
-	// First do static validation
-	result := v.Validate(template)
-	if !result.Valid {
-		return result
-	}
-
-	// Convert to quicktemplate
-	converter := NewJinja2ToQuickTemplate(templateName)
-	qtplContent, err := converter.Convert(template)
-	if err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, &ValidationError{
-			Stage:   "转换",
-			Message: err.Error(),
-		})
-		return result
-	}
-
-	// Save .qtpl file
-	qtplPath := fmt.Sprintf("%s/%s.qtpl", templatesDir, templateName)
-	if err := os.WriteFile(qtplPath, []byte(qtplContent), 0644); err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, &ValidationError{
-			Stage:   "保存文件",
-			Message: fmt.Sprintf("无法保存 .qtpl 文件: %s", err.Error()),
-		})
-		return result
-	}
-
-	// Layer 3: qtc compilation check
-	if err := v.validateQtcCompile(templatesDir); err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, err)
-		return result
-	}
-
-	// Layer 4: go build check
-	if err := v.validateGoBuild(); err != nil {
-		result.Valid = false
-		result.Errors = append(result.Errors, err)
-		return result
 	}
 
 	return result
@@ -298,32 +248,6 @@ func (v *TemplateValidator) validateVariables(template string) []*ValidationErro
 	}
 
 	return errors
-}
-
-// validateQtcCompile runs qtc compiler to check for syntax errors
-func (v *TemplateValidator) validateQtcCompile(templatesDir string) *ValidationError {
-	cmd := exec.Command("qtc", "-dir="+templatesDir)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return &ValidationError{
-			Stage:   "quicktemplate 编译",
-			Message: string(output),
-		}
-	}
-	return nil
-}
-
-// validateGoBuild runs go build to check for compilation errors
-func (v *TemplateValidator) validateGoBuild() *ValidationError {
-	cmd := exec.Command("go", "build", "-o", "/dev/null", ".")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return &ValidationError{
-			Stage:   "Go 编译",
-			Message: string(output),
-		}
-	}
-	return nil
 }
 
 // findLineNumber finds the line number of a substring in the template
