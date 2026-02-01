@@ -103,6 +103,45 @@ async def main():
     from core.pool_reloader import start_pool_reloader, stop_pool_reloader
     pool_reloader = await start_pool_reloader()
 
+    # 初始化缓存池填充器
+    from core.pool_filler import PoolFillerManager
+    from database.db import get_db_pool
+    from core.redis_client import get_redis_client
+
+    pool_filler_manager = PoolFillerManager(
+        redis_client=get_redis_client(),
+        db_pool=get_db_pool(),
+    )
+
+    # 获取活跃的分组 ID
+    async def get_active_group_ids():
+        async with get_db_pool().acquire() as conn:
+            async with conn.cursor() as cur:
+                # 查询有数据的分组
+                await cur.execute("""
+                    SELECT DISTINCT group_id FROM (
+                        SELECT group_id FROM titles WHERE status = 1
+                        UNION
+                        SELECT group_id FROM contents WHERE status = 1
+                    ) t
+                """)
+                rows = await cur.fetchall()
+                return [row[0] for row in rows] if rows else [1]
+
+    group_ids = await get_active_group_ids()
+    logger.info(f"发现 {len(group_ids)} 个活跃分组: {group_ids}")
+
+    # 为每个分组添加填充器
+    for gid in group_ids:
+        pool_filler_manager.add_group(gid)
+
+    # 启动时立即填充
+    logger.info("初始化缓存池...")
+    await pool_filler_manager.fill_all_now()
+
+    # 启动填充循环
+    await pool_filler_manager.start(check_interval=5.0)
+
     # 设置信号处理
     shutdown_event = asyncio.Event()
 
@@ -145,6 +184,7 @@ async def main():
         logger.error(f"Worker 运行异常: {e}")
     finally:
         await stop_pool_reloader()
+        await pool_filler_manager.stop()
         await generator.stop()
         await listener.stop()
         await cleanup()
