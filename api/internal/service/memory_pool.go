@@ -2,11 +2,39 @@
 package core
 
 import (
+	"errors"
+	"fmt"
 	"sync"
 )
 
-// Note: PoolItem and UpdateTask are defined in pool_consumer.go
-// They will remain there until pool_consumer.go is deleted
+// ErrPoolEmpty is returned when the pool is empty
+var ErrPoolEmpty = errors.New("pool is empty")
+
+// validTables is a whitelist of allowed table names for SQL queries
+var validTables = map[string]bool{
+	"titles":   true,
+	"contents": true,
+}
+
+// validatePoolType validates that the pool type is in the whitelist
+func validatePoolType(poolType string) error {
+	if !validTables[poolType] {
+		return fmt.Errorf("invalid pool type: %s", poolType)
+	}
+	return nil
+}
+
+// PoolItem represents an item in the pool
+type PoolItem struct {
+	ID   int64  `db:"id" json:"id"`
+	Text string `db:"text" json:"text"`
+}
+
+// UpdateTask represents a status update task
+type UpdateTask struct {
+	Table string
+	ID    int64
+}
 
 // MemoryPool is a thread-safe FIFO queue for pool items
 type MemoryPool struct {
