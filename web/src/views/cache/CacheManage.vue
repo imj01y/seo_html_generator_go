@@ -86,8 +86,8 @@
           </el-row>
         </el-tab-pane>
 
-        <!-- 并发配置 -->
-        <el-tab-pane label="并发配置" name="config">
+        <!-- 对象池配置 -->
+        <el-tab-pane label="对象池配置" name="config">
           <el-row :gutter="16" class="config-cards">
             <!-- 配置卡片 -->
             <el-col :xs="24" :lg="12">
@@ -206,6 +206,107 @@
             </el-col>
           </el-row>
         </el-tab-pane>
+
+        <!-- 数据池配置 -->
+        <el-tab-pane label="数据池配置" name="dataPool">
+          <div class="data-pool-content" v-loading="cachePoolLoading">
+            <el-form
+              :model="cachePoolForm"
+              label-width="140px"
+            >
+              <el-row :gutter="24">
+                <el-col :xs="24" :lg="12">
+                  <div class="config-card">
+                    <div class="card-header">
+                      <span class="card-title">标题/正文池</span>
+                    </div>
+                    <div class="card-content">
+                      <el-form-item label="标题池大小">
+                        <el-input-number
+                          v-model="cachePoolForm.titles_size"
+                          :min="100"
+                          :max="100000"
+                          :step="1000"
+                        />
+                        <span class="form-tip">条</span>
+                      </el-form-item>
+                      <el-form-item label="正文池大小">
+                        <el-input-number
+                          v-model="cachePoolForm.contents_size"
+                          :min="100"
+                          :max="100000"
+                          :step="1000"
+                        />
+                        <span class="form-tip">条</span>
+                      </el-form-item>
+                      <el-form-item label="补充阈值">
+                        <el-input-number
+                          v-model="cachePoolForm.threshold"
+                          :min="10"
+                          :max="cachePoolForm.titles_size"
+                          :step="100"
+                        />
+                        <span class="form-tip">低于此值时触发补充</span>
+                      </el-form-item>
+                      <el-form-item label="检查间隔">
+                        <el-input-number
+                          v-model="cachePoolForm.refill_interval_ms"
+                          :min="100"
+                          :max="60000"
+                          :step="100"
+                        />
+                        <span class="form-tip">毫秒</span>
+                      </el-form-item>
+                    </div>
+                  </div>
+                </el-col>
+
+                <el-col :xs="24" :lg="12">
+                  <div class="config-card">
+                    <div class="card-header">
+                      <span class="card-title">关键词/图片池</span>
+                    </div>
+                    <div class="card-content">
+                      <el-form-item label="关键词池大小">
+                        <el-input-number
+                          v-model="cachePoolForm.keywords_size"
+                          :min="1000"
+                          :max="500000"
+                          :step="10000"
+                        />
+                        <span class="form-tip">条</span>
+                      </el-form-item>
+                      <el-form-item label="图片池大小">
+                        <el-input-number
+                          v-model="cachePoolForm.images_size"
+                          :min="1000"
+                          :max="500000"
+                          :step="10000"
+                        />
+                        <span class="form-tip">条</span>
+                      </el-form-item>
+                      <el-form-item label="刷新间隔">
+                        <el-input-number
+                          v-model="cachePoolForm.refresh_interval_ms"
+                          :min="60000"
+                          :max="3600000"
+                          :step="60000"
+                        />
+                        <span class="form-tip">毫秒（定期重新加载）</span>
+                      </el-form-item>
+                    </div>
+                  </div>
+                </el-col>
+              </el-row>
+
+              <div class="form-actions">
+                <el-button type="primary" :loading="cachePoolSaveLoading" @click="handleSaveCachePool">
+                  保存配置
+                </el-button>
+              </div>
+            </el-form>
+          </div>
+        </el-tab-pane>
       </el-tabs>
     </div>
   </div>
@@ -216,6 +317,7 @@ import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PoolStatusCard from '@/components/PoolStatusCard.vue'
 import { clearCache, getCacheStats } from '@/api/settings'
+import { getCachePoolConfig, updateCachePoolConfig, type CachePoolConfig } from '@/api/cache-pool'
 import {
   getPoolConfig,
   updatePoolConfig,
@@ -391,6 +493,49 @@ const handleSaveConfig = async () => {
   }
 }
 
+// ========== 数据池配置 ==========
+const cachePoolLoading = ref(false)
+const cachePoolSaveLoading = ref(false)
+const cachePoolForm = reactive<CachePoolConfig>({
+  titles_size: 5000,
+  contents_size: 5000,
+  threshold: 1000,
+  refill_interval_ms: 1000,
+  keywords_size: 50000,
+  images_size: 50000,
+  refresh_interval_ms: 300000
+})
+
+const loadCachePoolConfig = async () => {
+  cachePoolLoading.value = true
+  try {
+    const config = await getCachePoolConfig()
+    cachePoolForm.titles_size = config.titles_size
+    cachePoolForm.contents_size = config.contents_size
+    cachePoolForm.threshold = config.threshold
+    cachePoolForm.refill_interval_ms = config.refill_interval_ms
+    cachePoolForm.keywords_size = config.keywords_size
+    cachePoolForm.images_size = config.images_size
+    cachePoolForm.refresh_interval_ms = config.refresh_interval_ms
+  } catch (e) {
+    console.error('Failed to load cache pool config:', e)
+  } finally {
+    cachePoolLoading.value = false
+  }
+}
+
+const handleSaveCachePool = async () => {
+  cachePoolSaveLoading.value = true
+  try {
+    await updateCachePoolConfig(cachePoolForm)
+    ElMessage.success('数据池配置已保存')
+  } catch (e) {
+    ElMessage.error((e as Error).message || '保存失败')
+  } finally {
+    cachePoolSaveLoading.value = false
+  }
+}
+
 // ========== 池运行状态 ==========
 const objectPoolStats = ref<PoolStats[]>([])
 const dataPoolStats = ref<PoolStats[]>([])
@@ -519,6 +664,7 @@ const handleRefreshData = async () => {
 onMounted(() => {
   loadCacheStats()
   loadConfig()
+  loadCachePoolConfig()
   // 初始 tab 是 status，建立 WebSocket 连接
   if (mainTab.value === 'status') {
     connectPoolStatusWs()
@@ -700,6 +846,36 @@ onUnmounted(() => {
       display: flex;
       flex-wrap: wrap;
       gap: 8px;
+    }
+  }
+
+  // 数据池配置
+  .data-pool-content {
+    .el-col {
+      margin-bottom: 16px;
+
+      @media (min-width: 1200px) {
+        margin-bottom: 0;
+      }
+    }
+
+    .form-tip {
+      margin-left: 12px;
+      color: #909399;
+      font-size: 12px;
+    }
+
+    .form-actions {
+      margin-top: 24px;
+      text-align: center;
+    }
+
+    :deep(.el-form-item) {
+      margin-bottom: 18px;
+    }
+
+    :deep(.el-input-number) {
+      width: 180px;
     }
   }
 

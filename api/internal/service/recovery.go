@@ -46,43 +46,6 @@ func Recovery() gin.HandlerFunc {
 	}
 }
 
-// RecoveryWithWriter returns a recovery middleware that writes panic info to custom writer
-func RecoveryWithWriter(customRecovery func(c *gin.Context, err interface{})) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		defer func() {
-			if err := recover(); err != nil {
-				requestID := getRequestIDFromContext(c)
-				stack := getStackTrace(3)
-
-				// Log the panic
-				log.Error().
-					Str("request_id", requestID).
-					Str("method", c.Request.Method).
-					Str("path", c.Request.URL.Path).
-					Interface("error", err).
-					Str("stack", stack).
-					Msg("Panic recovered")
-
-				// Call custom recovery handler if provided
-				if customRecovery != nil {
-					customRecovery(c, err)
-					return
-				}
-
-				// Default response
-				c.AbortWithStatusJSON(http.StatusInternalServerError, Response{
-					Code:      int(ErrInternalServer),
-					Message:   GetErrorMessage(ErrInternalServer),
-					Timestamp: time.Now().Unix(),
-					RequestID: requestID,
-				})
-			}
-		}()
-
-		c.Next()
-	}
-}
-
 // getStackTrace returns a formatted stack trace string
 func getStackTrace(skip int) string {
 	var builder strings.Builder
@@ -124,13 +87,3 @@ func getRequestIDFromContext(c *gin.Context) string {
 	return ""
 }
 
-// PanicError represents a panic error with stack trace
-type PanicError struct {
-	Error interface{}
-	Stack string
-}
-
-// String returns a string representation of the panic error
-func (p *PanicError) String() string {
-	return fmt.Sprintf("Panic: %v\nStack:\n%s", p.Error, p.Stack)
-}
