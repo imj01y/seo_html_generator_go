@@ -254,6 +254,7 @@ func main() {
 		htmlCache,
 		dataManager,
 		funcsManager,
+		poolConsumer,
 	)
 
 	// === 异步模板预热 ===

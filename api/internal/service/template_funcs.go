@@ -374,6 +374,20 @@ func BuildArticleContent(titles []string, content string) string {
 	return sb.String()
 }
 
+// BuildArticleContentFromSingle builds article content from single title and content
+func BuildArticleContentFromSingle(title, content string) string {
+	if title == "" && content == "" {
+		return ""
+	}
+	if title == "" {
+		return content
+	}
+	if content == "" {
+		return title
+	}
+	return fmt.Sprintf("<h2>%s</h2>\n%s", title, content)
+}
+
 // ========== 池管理方法 ==========
 
 // ResizePools 根据配置调整所有池大小

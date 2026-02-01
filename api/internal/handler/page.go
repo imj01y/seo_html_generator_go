@@ -29,6 +29,7 @@ type PageHandler struct {
 	dataManager      *core.DataManager
 	templateRenderer *core.TemplateRenderer
 	funcsManager     *core.TemplateFuncsManager
+	poolConsumer     *core.PoolConsumer
 }
 
 // NewPageHandler creates a new page handler
@@ -40,6 +41,7 @@ func NewPageHandler(
 	htmlCache *core.HTMLCache,
 	dataManager *core.DataManager,
 	funcsManager *core.TemplateFuncsManager,
+	poolConsumer *core.PoolConsumer,
 ) *PageHandler {
 	return &PageHandler{
 		db:               db,
@@ -51,6 +53,7 @@ func NewPageHandler(
 		dataManager:      dataManager,
 		templateRenderer: core.NewTemplateRenderer(funcsManager),
 		funcsManager:     funcsManager,
+		poolConsumer:     poolConsumer,
 	}
 }
 
@@ -134,15 +137,37 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 		articleGroupID = int(site.ArticleGroupID.Int64)
 	}
 
-	// Get random titles and content
-	titles := h.dataManager.GetRandomTitles(articleGroupID, 4)
-	content := h.dataManager.GetRandomContent(articleGroupID)
+	// Get title and content from pool (or fallback)
+	var title, content string
+	if h.poolConsumer != nil {
+		var err error
+		title, err = h.poolConsumer.PopWithFallback(ctx, "titles", articleGroupID)
+		if err != nil {
+			log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get title from pool")
+			titles := h.dataManager.GetRandomTitles(articleGroupID, 1)
+			if len(titles) > 0 {
+				title = titles[0]
+			}
+		}
+		content, err = h.poolConsumer.PopWithFallback(ctx, "contents", articleGroupID)
+		if err != nil {
+			log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get content from pool")
+			content = h.dataManager.GetRandomContent(articleGroupID)
+		}
+	} else {
+		// Fallback to dataManager when poolConsumer is not available
+		titles := h.dataManager.GetRandomTitles(articleGroupID, 1)
+		if len(titles) > 0 {
+			title = titles[0]
+		}
+		content = h.dataManager.GetRandomContent(articleGroupID)
+	}
 	// 获取关键词用于标题生成（使用关键词分组）
 	titleKeywords := h.dataManager.GetRandomKeywords(keywordGroupID, 3)
 	fetchTime := time.Since(t4)
 
-	// Build article content
-	articleContent := core.BuildArticleContent(titles, content)
+	// Build article content using fetched title and content
+	articleContent := core.BuildArticleContentFromSingle(title, content)
 
 	// Pre-load content for template's content() function
 	preloadContent := h.dataManager.GetRandomContent(articleGroupID)
