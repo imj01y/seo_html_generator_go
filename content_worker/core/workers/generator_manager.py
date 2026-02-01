@@ -91,6 +91,8 @@ class GeneratorManager:
         self._last_stats_time = None
         # 日志发布器
         self.log: Optional[ProcessorLogger] = None
+        # 最后错误信息
+        self._last_error: Optional[str] = None
 
     async def load_config(self) -> Dict:
         """从数据库加载配置"""
@@ -181,7 +183,8 @@ class GeneratorManager:
                 batch_size=self.config.get('batch_size', 50),
                 min_paragraph_length=self.config.get('min_paragraph_length', 20),
                 retry_max=self.config.get('retry_max', 3),
-                log=self.log,  # 传递日志发布器
+                log=self.log,
+                on_complete=self._publish_realtime_status,
             )
             self.worker_instances.append(worker)
 
@@ -204,6 +207,7 @@ class GeneratorManager:
             logger.info(f"Worker {index} 被取消")
         except Exception as e:
             logger.error(f"Worker {index} 异常: {e}")
+            self._last_error = str(e)
         finally:
             await worker.stop()
 
@@ -321,6 +325,58 @@ class GeneratorManager:
             await self.rdb.hset("processor:status", mapping=status)
         except Exception as e:
             logger.error(f"更新状态失败: {e}")
+
+    async def _publish_realtime_status(self):
+        """发布实时状态到 Redis 频道"""
+        if not self.rdb:
+            return
+
+        try:
+            # 查询队列长度
+            queue_pending = await self.rdb.llen("pending:articles")
+            queue_retry = await self.rdb.llen("pending:articles:retry")
+            queue_dead = await self.rdb.llen("pending:articles:dead")
+
+            # 汇总所有 Worker 统计
+            total_processed = 0
+            total_failed = 0
+            for worker in self.worker_instances:
+                stats = worker.get_stats()
+                total_processed += stats.get('processed', 0)
+                total_failed += stats.get('failed', 0)
+
+            # 计算处理速度
+            current_time = time.time()
+            time_elapsed = current_time - self._last_stats_time if self._last_stats_time else 1
+            processed_delta = total_processed - self._last_processed_count
+            speed = processed_delta / time_elapsed if time_elapsed > 0 else 0.0
+
+            # 获取今日处理量
+            today_key = f"processor:processed:{datetime.now().strftime('%Y%m%d')}"
+            today_count = await self.rdb.get(today_key)
+            processed_today = int(today_count) if today_count else 0
+
+            # 组装状态数据
+            status = {
+                "running": self.running,
+                "workers": len(self.workers),
+                "queue_pending": queue_pending,
+                "queue_retry": queue_retry,
+                "queue_dead": queue_dead,
+                "processed_total": total_processed,
+                "processed_today": processed_today,
+                "speed": round(speed, 2),
+                "last_error": self._last_error
+            }
+
+            # 发布到 Redis 频道
+            await self.rdb.publish(
+                "processor:status:realtime",
+                json.dumps(status, ensure_ascii=False)
+            )
+
+        except Exception as e:
+            logger.error(f"发布实时状态失败: {e}")
 
     async def _update_stats_loop(self):
         """定期更新统计信息到 Redis"""
