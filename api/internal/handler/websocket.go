@@ -370,3 +370,22 @@ func (h *WebSocketHandler) SpiderLogs(c *gin.Context) {
 	channel := "spider:logs:" + logType + "_" + projectID
 	subscribeAndForward(conn, redisClient, channel)
 }
+
+// ProcessorStatus 数据处理状态实时推送
+// GET /ws/processor-status
+func (h *WebSocketHandler) ProcessorStatus(c *gin.Context) {
+	rdb, exists := c.Get("redis")
+	if !exists {
+		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
+		return
+	}
+	redisClient := rdb.(*redis.Client)
+
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	subscribeAndForward(conn, redisClient, "processor:status:realtime")
+}

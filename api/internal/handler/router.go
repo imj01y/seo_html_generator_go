@@ -119,11 +119,9 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		keywordsGroup.POST("/add", keywordsHandler.Add)
 		keywordsGroup.POST("/upload", keywordsHandler.Upload)
 
-		// 统计和缓存
-		keywordsGroup.GET("/stats", keywordsHandler.Stats)
+		// 辅助功能
 		keywordsGroup.GET("/random", keywordsHandler.Random)
 		keywordsGroup.POST("/reload", keywordsHandler.Reload)
-		keywordsGroup.POST("/cache/clear", keywordsHandler.ClearCache)
 	}
 
 	// Images routes (require JWT)
@@ -151,11 +149,9 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		imagesGroup.PUT("/batch/status", imagesHandler.BatchUpdateStatus)
 		imagesGroup.PUT("/batch/move", imagesHandler.BatchMove)
 
-		// 统计和缓存
-		imagesGroup.GET("/urls/stats", imagesHandler.Stats)
+		// 辅助功能
 		imagesGroup.GET("/urls/random", imagesHandler.Random)
 		imagesGroup.POST("/urls/reload", imagesHandler.Reload)
-		imagesGroup.POST("/cache/clear", imagesHandler.ClearCache)
 	}
 
 	// Articles routes (require JWT)
@@ -297,18 +293,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		settingsRoutes.POST("/api-token/generate", settingsHandler.GenerateAPIToken)
 	}
 
-	// Generator Queue routes (require JWT)
-	genQueueHandler := &GeneratorQueueHandler{}
-	genQueueRoutes := r.Group("/api/generator")
-	genQueueRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
-	{
-		genQueueRoutes.GET("/queue/stats", genQueueHandler.GetQueueStats)
-		genQueueRoutes.POST("/queue/push", genQueueHandler.PushToQueue)
-		genQueueRoutes.POST("/queue/clear", genQueueHandler.ClearQueue)
-		genQueueRoutes.GET("/worker/status", genQueueHandler.GetWorkerStatus)
-		genQueueRoutes.GET("/stats", genQueueHandler.GetGeneratorStats)
-	}
-
 	// Spider Detector routes (require JWT)
 	spiderDetectorHandler := &SpiderDetectorHandler{}
 	spiderDetectorRoutes := r.Group("/api/spiders")
@@ -335,7 +319,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		processorRoutes.POST("/stop", processorHandler.Stop)
 		processorRoutes.POST("/retry-all", processorHandler.RetryAll)
 		processorRoutes.DELETE("/dead-queue", processorHandler.ClearDeadQueue)
-		processorRoutes.GET("/stats", processorHandler.GetStats)
 	}
 
 	// Content Worker Files routes (内容处理代码编辑器，require JWT)
@@ -371,6 +354,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	r.GET("/ws/worker-restart", wsHandler.WorkerRestart)
 	r.GET("/ws/worker-logs", wsHandler.WorkerLogs)
 	r.GET("/ws/processor-logs", wsHandler.ProcessorLogs)
+	r.GET("/ws/processor-status", wsHandler.ProcessorStatus)
 	r.GET("/api/logs/ws", wsHandler.SystemLogs)
 
 	// Admin API group (require JWT)
