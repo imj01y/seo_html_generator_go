@@ -98,15 +98,13 @@ func main() {
 	dataManager := core.NewDataManager(db, core.GetEncoder(), 5*time.Minute)
 	funcsManager := core.NewTemplateFuncsManager(core.GetEncoder())
 
-	// Initialize pool consumer for titles and contents
-	var poolConsumer *core.PoolConsumer
-	if redisClient != nil {
-		poolConsumer = core.NewPoolConsumer(redisClient, db)
-		poolConsumer.Start()
-		log.Info().Msg("PoolConsumer initialized")
-	} else {
-		log.Warn().Msg("PoolConsumer disabled: Redis not available")
+	// Initialize pool manager for titles and contents (in-memory cache)
+	poolManager := core.NewPoolManager(db)
+	poolCtx := context.Background()
+	if err := poolManager.Start(poolCtx); err != nil {
+		log.Fatal().Err(err).Msg("Failed to start PoolManager")
 	}
+	log.Info().Msg("PoolManager initialized")
 
 	// Load all sites into cache at startup
 	ctx := context.Background()
@@ -200,20 +198,10 @@ func main() {
 		}
 	}
 
-	// 加载所有文章分组（标题和内容）
-	// 如果 poolConsumer 可用，跳过加载（因为会从 Redis 消费）
-	if poolConsumer == nil {
-		for _, gid := range articleGroupIDs {
-			if _, err := dataManager.LoadTitles(ctx, gid, 10000); err != nil {
-				log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load titles for group")
-			}
-			if _, err := dataManager.LoadContents(ctx, gid, 5000); err != nil {
-				log.Warn().Err(err).Int("group_id", gid).Msg("Failed to load contents for group")
-			}
-		}
-	} else {
-		log.Info().Msg("Skipping DataManager titles/contents loading (PoolConsumer is enabled)")
-	}
+	// 跳过加载文章分组标题和内容（由 PoolManager 管理）
+	log.Info().
+		Int("article_groups", len(articleGroupIDs)).
+		Msg("Skipping DataManager titles/contents loading (managed by PoolManager)")
 
 	log.Info().
 		Int("keyword_groups", len(keywordGroupIDs)).
@@ -259,7 +247,7 @@ func main() {
 		htmlCache,
 		dataManager,
 		funcsManager,
-		poolConsumer,
+		poolManager,
 	)
 
 	// === 异步模板预热 ===
@@ -386,6 +374,7 @@ func main() {
 		Scheduler:        scheduler,
 		TemplateCache:    templateCache,
 		Monitor:          monitor,
+		PoolManager:      poolManager,
 	}
 	api.SetupRouter(r, deps)
 
@@ -467,11 +456,9 @@ func main() {
 	monitor.Stop()
 	log.Info().Msg("Monitor stopped")
 
-	// Stop pool consumer
-	if poolConsumer != nil {
-		poolConsumer.Stop()
-		log.Info().Msg("PoolConsumer stopped")
-	}
+	// Stop pool manager
+	poolManager.Stop()
+	log.Info().Msg("PoolManager stopped")
 
 	// Stop object pools
 	funcsManager.StopPools()

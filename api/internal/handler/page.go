@@ -29,7 +29,7 @@ type PageHandler struct {
 	dataManager      *core.DataManager
 	templateRenderer *core.TemplateRenderer
 	funcsManager     *core.TemplateFuncsManager
-	poolConsumer     *core.PoolConsumer
+	poolManager      *core.PoolManager
 }
 
 // NewPageHandler creates a new page handler
@@ -41,7 +41,7 @@ func NewPageHandler(
 	htmlCache *core.HTMLCache,
 	dataManager *core.DataManager,
 	funcsManager *core.TemplateFuncsManager,
-	poolConsumer *core.PoolConsumer,
+	poolManager *core.PoolManager,
 ) *PageHandler {
 	return &PageHandler{
 		db:               db,
@@ -53,7 +53,7 @@ func NewPageHandler(
 		dataManager:      dataManager,
 		templateRenderer: core.NewTemplateRenderer(funcsManager),
 		funcsManager:     funcsManager,
-		poolConsumer:     poolConsumer,
+		poolManager:      poolManager,
 	}
 }
 
@@ -139,9 +139,9 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 
 	// Get title and content from pool (or fallback)
 	var title, content string
-	if h.poolConsumer != nil {
+	if h.poolManager != nil {
 		var err error
-		title, err = h.poolConsumer.PopWithFallback(ctx, "titles", articleGroupID)
+		title, err = h.poolManager.Pop("titles", articleGroupID)
 		if err != nil {
 			log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get title from pool")
 			titles := h.dataManager.GetRandomTitles(articleGroupID, 1)
@@ -149,13 +149,13 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 				title = titles[0]
 			}
 		}
-		content, err = h.poolConsumer.PopWithFallback(ctx, "contents", articleGroupID)
+		content, err = h.poolManager.Pop("contents", articleGroupID)
 		if err != nil {
 			log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get content from pool")
 			content = h.dataManager.GetRandomContent(articleGroupID)
 		}
 	} else {
-		// Fallback to dataManager when poolConsumer is not available
+		// Fallback to dataManager when poolManager is not available
 		titles := h.dataManager.GetRandomTitles(articleGroupID, 1)
 		if len(titles) > 0 {
 			title = titles[0]
