@@ -236,11 +236,6 @@ func main() {
 			Msg("Async template warmup completed")
 	}()
 
-	// Create compile handler
-	cwd, _ := os.Getwd()
-	templatesDir := filepath.Join(cwd, "templates")
-	compileHandler := api.NewCompileHandler(pageHandler, templatesDir)
-
 	// Create cache handler
 	cacheHandler := api.NewCacheHandler(
 		htmlCache,
@@ -283,14 +278,9 @@ func main() {
 	r.GET("/health", pageHandler.Health)
 	r.GET("/stats", pageHandler.Stats)
 
-	// Routes - Template compilation API
+	// Routes - API
 	apiGroup := r.Group("/api")
 	{
-		apiGroup.POST("/template/compile", compileHandler.CompileTemplate)
-		apiGroup.POST("/template/validate", compileHandler.ValidateTemplate)
-		apiGroup.POST("/template/preview", compileHandler.PreviewTemplate)
-		apiGroup.GET("/template/compile/status", compileHandler.CompileStatus)
-
 		// Cache management routes
 		apiGroup.POST("/cache/clear", cacheHandler.ClearAllCache)
 		apiGroup.POST("/cache/clear/:domain", cacheHandler.ClearDomainCache)
