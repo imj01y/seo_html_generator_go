@@ -98,6 +98,16 @@ func main() {
 	dataManager := core.NewDataManager(db, core.GetEncoder(), 5*time.Minute)
 	funcsManager := core.NewTemplateFuncsManager(core.GetEncoder())
 
+	// Initialize pool consumer for titles and contents
+	var poolConsumer *core.PoolConsumer
+	if redisClient != nil {
+		poolConsumer = core.NewPoolConsumer(redisClient, db)
+		poolConsumer.Start()
+		log.Info().Msg("PoolConsumer initialized")
+	} else {
+		log.Warn().Msg("PoolConsumer disabled: Redis not available")
+	}
+
 	// Load all sites into cache at startup
 	ctx := context.Background()
 	log.Info().Msg("Loading all sites into cache...")
@@ -349,15 +359,9 @@ func main() {
 
 		// Cache stats routes
 		apiGroup.GET("/cache/stats", cacheHandler.GetCacheStats)
-		apiGroup.GET("/cache/pools/stats", cacheHandler.GetPoolsStats)
 
 		// Log routes (for Nginx Lua cache hit logging)
 		apiGroup.GET("/log/spider", logHandler.LogSpiderVisit)
-
-		// Alerts routes
-		alertsHandler := api.NewAlertsHandler()
-		apiGroup.GET("/alerts/content-pool", alertsHandler.GetContentPoolAlert)
-		apiGroup.POST("/alerts/content-pool/reset", alertsHandler.ResetContentPool)
 	}
 
 	// 初始化监控服务
@@ -456,6 +460,12 @@ func main() {
 	// 停止监控服务
 	monitor.Stop()
 	log.Info().Msg("Monitor stopped")
+
+	// Stop pool consumer
+	if poolConsumer != nil {
+		poolConsumer.Stop()
+		log.Info().Msg("PoolConsumer stopped")
+	}
 
 	// Stop object pools
 	funcsManager.StopPools()
