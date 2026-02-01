@@ -4,13 +4,10 @@
       <h2 class="title">系统设置</h2>
     </div>
 
-    <el-row :gutter="20">
-      <!-- 系统设置 -->
-      <el-col :xs="24" :lg="12">
-        <div class="card">
-          <div class="card-header">
-            <span class="title">系统配置</span>
-          </div>
+    <el-tabs v-model="activeTab" class="settings-tabs">
+      <!-- 系统配置 -->
+      <el-tab-pane label="系统配置" name="system">
+        <div class="tab-content">
           <el-form
             ref="settingsFormRef"
             :model="settingsForm"
@@ -45,14 +42,11 @@
             </el-form-item>
           </el-form>
         </div>
-      </el-col>
+      </el-tab-pane>
 
       <!-- 账号安全 -->
-      <el-col :xs="24" :lg="12">
-        <div class="card">
-          <div class="card-header">
-            <span class="title">账号安全</span>
-          </div>
+      <el-tab-pane label="账号安全" name="security">
+        <div class="tab-content">
           <el-form
             ref="passwordFormRef"
             :model="passwordForm"
@@ -90,40 +84,22 @@
             </el-form-item>
           </el-form>
         </div>
-      </el-col>
-    </el-row>
+      </el-tab-pane>
 
-    <!-- 更多设置 -->
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :xs="24" :lg="12">
-        <div class="card nav-card" @click="router.push('/settings/pool-config')">
-          <div class="card-header">
-            <span class="title">渲染并发配置</span>
-            <el-icon><ArrowRight /></el-icon>
-          </div>
-          <p class="description">配置页面渲染时的对象池和数据池大小，根据并发数自动计算最优配置</p>
-        </div>
-      </el-col>
-    </el-row>
-
-    <!-- API Token 设置 -->
-    <el-row :gutter="20" style="margin-top: 20px">
-      <el-col :xs="24" :lg="12">
-        <div class="card">
-          <div class="card-header">
-            <span class="title">API Token</span>
-            <div class="header-actions">
-              <el-button size="small" @click="showApiTokenGuide">
-                <el-icon><QuestionFilled /></el-icon>
-                指南
-              </el-button>
-              <el-switch
-                v-model="apiTokenForm.enabled"
-                active-text="启用"
-                inactive-text="禁用"
-                @change="handleSaveApiToken"
-              />
-            </div>
+      <!-- API Token -->
+      <el-tab-pane label="API Token" name="token">
+        <div class="tab-content">
+          <div class="token-header">
+            <el-button size="small" @click="showApiTokenGuide">
+              <el-icon><QuestionFilled /></el-icon>
+              指南
+            </el-button>
+            <el-switch
+              v-model="apiTokenForm.enabled"
+              active-text="启用"
+              inactive-text="禁用"
+              @change="handleSaveApiToken"
+            />
           </div>
           <el-form label-width="120px" v-loading="apiTokenLoading">
             <el-form-item label="Token">
@@ -154,21 +130,90 @@
           </el-form>
         </div>
         <ApiTokenGuide ref="apiTokenGuideRef" :token="apiTokenForm.token" />
-      </el-col>
-    </el-row>
+      </el-tab-pane>
+
+      <!-- 缓存池配置 -->
+      <el-tab-pane label="缓存池配置" name="cachePool">
+        <div class="tab-content cache-pool-content">
+          <el-form
+            ref="cachePoolFormRef"
+            :model="cachePoolForm"
+            label-width="140px"
+            v-loading="cachePoolLoading"
+          >
+            <el-form-item label="标题池大小">
+              <el-input-number
+                v-model="cachePoolForm.titles_size"
+                :min="100"
+                :max="100000"
+                :step="1000"
+              />
+              <span class="form-tip">条</span>
+            </el-form-item>
+            <el-form-item label="正文池大小">
+              <el-input-number
+                v-model="cachePoolForm.contents_size"
+                :min="100"
+                :max="100000"
+                :step="1000"
+              />
+              <span class="form-tip">条</span>
+            </el-form-item>
+            <el-form-item label="补充阈值">
+              <el-input-number
+                v-model="cachePoolForm.threshold"
+                :min="10"
+                :max="cachePoolForm.titles_size"
+                :step="100"
+              />
+              <span class="form-tip">低于此值时触发补充</span>
+            </el-form-item>
+            <el-form-item label="检查间隔">
+              <el-input-number
+                v-model="cachePoolForm.refill_interval_ms"
+                :min="100"
+                :max="60000"
+                :step="100"
+              />
+              <span class="form-tip">毫秒</span>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" :loading="cachePoolSaveLoading" @click="handleSaveCachePool">
+                保存配置
+              </el-button>
+            </el-form-item>
+          </el-form>
+
+          <!-- 池状态统计 -->
+          <el-divider content-position="left">运行状态</el-divider>
+          <el-descriptions :column="1" border v-if="cachePoolStats">
+            <el-descriptions-item label="标题池">
+              {{ formatPoolSummary(cachePoolStats.titles) }}
+            </el-descriptions-item>
+            <el-descriptions-item label="正文池">
+              {{ formatPoolSummary(cachePoolStats.contents) }}
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-button @click="loadCachePoolStats" :loading="cachePoolStatsLoading" style="margin-top: 10px">
+            刷新状态
+          </el-button>
+        </div>
+      </el-tab-pane>
+    </el-tabs>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue'
 import { ElMessage, FormInstance, FormRules } from 'element-plus'
-import { View, Hide, QuestionFilled, ArrowRight } from '@element-plus/icons-vue'
-import { useRouter } from 'vue-router'
+import { View, Hide, QuestionFilled } from '@element-plus/icons-vue'
 import { getSettings, updateSettings, getApiTokenSettings, updateApiTokenSettings, generateApiToken } from '@/api/settings'
 import ApiTokenGuide from '@/components/ApiTokenGuide.vue'
 import { changePassword } from '@/api/auth'
+import { getCachePoolConfig, updateCachePoolConfig, getCachePoolStats, formatPoolSummary, type CachePoolConfig, type CachePoolStats } from '@/api/cache-pool'
 
-const router = useRouter()
+const activeTab = ref('system')
+
 const settingsLoading = ref(false)
 const saveLoading = ref(false)
 const passwordLoading = ref(false)
@@ -194,6 +239,18 @@ const apiTokenGuideRef = ref()
 const apiTokenForm = reactive({
   token: '',
   enabled: true
+})
+
+// 缓存池配置相关
+const cachePoolLoading = ref(false)
+const cachePoolSaveLoading = ref(false)
+const cachePoolStatsLoading = ref(false)
+const cachePoolStats = ref<CachePoolStats | null>(null)
+const cachePoolForm = reactive<CachePoolConfig>({
+  titles_size: 5000,
+  contents_size: 5000,
+  threshold: 1000,
+  refill_interval_ms: 1000
 })
 
 function showApiTokenGuide() {
@@ -345,9 +402,51 @@ const handleCopyToken = async () => {
   }
 }
 
+// 缓存池配置相关函数
+const loadCachePoolConfig = async () => {
+  cachePoolLoading.value = true
+  try {
+    const config = await getCachePoolConfig()
+    cachePoolForm.titles_size = config.titles_size
+    cachePoolForm.contents_size = config.contents_size
+    cachePoolForm.threshold = config.threshold
+    cachePoolForm.refill_interval_ms = config.refill_interval_ms
+  } catch (e) {
+    console.error('Failed to load cache pool config:', e)
+  } finally {
+    cachePoolLoading.value = false
+  }
+}
+
+const loadCachePoolStats = async () => {
+  cachePoolStatsLoading.value = true
+  try {
+    cachePoolStats.value = await getCachePoolStats()
+  } catch (e) {
+    console.error('Failed to load cache pool stats:', e)
+  } finally {
+    cachePoolStatsLoading.value = false
+  }
+}
+
+const handleSaveCachePool = async () => {
+  cachePoolSaveLoading.value = true
+  try {
+    await updateCachePoolConfig(cachePoolForm)
+    ElMessage.success('缓存池配置已保存')
+    loadCachePoolStats()
+  } catch (e) {
+    ElMessage.error((e as Error).message || '保存失败')
+  } finally {
+    cachePoolSaveLoading.value = false
+  }
+}
+
 onMounted(() => {
   loadSettings()
   loadApiTokenSettings()
+  loadCachePoolConfig()
+  loadCachePoolStats()
 })
 </script>
 
@@ -363,24 +462,36 @@ onMounted(() => {
     }
   }
 
-  .card {
+  .settings-tabs {
     background-color: #fff;
     border-radius: 8px;
     padding: 20px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
 
-    .card-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
+    :deep(.el-tabs__header) {
       margin-bottom: 20px;
+    }
+  }
 
-      .title {
-        font-size: 16px;
-        font-weight: 600;
-        color: #303133;
+  .tab-content {
+    max-width: 500px;
+
+    .el-form {
+      .el-input,
+      .el-input-number {
+        width: 100%;
+        max-width: 300px;
       }
     }
+  }
+
+  .token-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #ebeef5;
   }
 
   .form-tip {
@@ -389,37 +500,11 @@ onMounted(() => {
     font-size: 12px;
   }
 
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
+  .cache-pool-content {
+    max-width: 600px;
 
-  .nav-card {
-    cursor: pointer;
-    transition: all 0.3s;
-
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-    }
-
-    .card-header {
-      .el-icon {
-        color: #909399;
-        transition: color 0.3s;
-      }
-    }
-
-    &:hover .card-header .el-icon {
-      color: #409eff;
-    }
-
-    .description {
-      color: #909399;
-      font-size: 13px;
-      margin: 0;
-      line-height: 1.5;
+    .el-descriptions {
+      margin-top: 20px;
     }
   }
 }
