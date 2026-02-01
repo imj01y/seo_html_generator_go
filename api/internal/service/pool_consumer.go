@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -88,4 +89,37 @@ func (c *PoolConsumer) processUpdate(task UpdateTask) {
 			Int64("id", task.ID).
 			Msg("Failed to update status")
 	}
+}
+
+// Pop retrieves and removes an item from the pool
+func (c *PoolConsumer) Pop(ctx context.Context, poolType string, groupID int) (string, error) {
+	if c.redis == nil {
+		return "", errors.New("redis client is nil")
+	}
+
+	key := fmt.Sprintf("%s:pool:%d", poolType, groupID)
+
+	// RPOP from Redis
+	data, err := c.redis.RPop(ctx, key).Result()
+	if err == redis.Nil {
+		return "", ErrPoolEmpty
+	}
+	if err != nil {
+		return "", fmt.Errorf("redis rpop failed: %w", err)
+	}
+
+	// Parse JSON
+	var item PoolItem
+	if err := json.Unmarshal([]byte(data), &item); err != nil {
+		return "", fmt.Errorf("json unmarshal failed: %w", err)
+	}
+
+	// Async update status
+	select {
+	case c.updateCh <- UpdateTask{Table: poolType, ID: item.ID}:
+	default:
+		log.Warn().Str("table", poolType).Int64("id", item.ID).Msg("Update channel full, dropping task")
+	}
+
+	return item.Text, nil
 }
