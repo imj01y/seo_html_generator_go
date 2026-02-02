@@ -19,8 +19,7 @@ type ObjectPool[T any] struct {
 	tail int64 // 生产位置
 
 	// 配置
-	lowWatermark  float64       // 低水位线比例
-	refillBatch   int           // 每次补充数量
+	threshold     float64       // 低于此比例触发补充（0-1）
 	numWorkers    int           // 生产者协程数
 	checkInterval time.Duration // 检查间隔
 
@@ -47,8 +46,7 @@ type ObjectPool[T any] struct {
 type PoolConfig struct {
 	Name          string
 	Size          int
-	LowWatermark  float64
-	RefillBatch   int
+	Threshold     float64       // 低于此比例触发补充（0-1）
 	NumWorkers    int
 	CheckInterval time.Duration
 }
@@ -59,8 +57,7 @@ func NewObjectPool[T any](cfg PoolConfig, generator func() T) *ObjectPool[T] {
 		name:          cfg.Name,
 		pool:          make([]T, cfg.Size),
 		size:          int64(cfg.Size),
-		lowWatermark:  cfg.LowWatermark,
-		refillBatch:   cfg.RefillBatch,
+		threshold:     cfg.Threshold,
 		numWorkers:    cfg.NumWorkers,
 		checkInterval: cfg.CheckInterval,
 		generator:     generator,
@@ -160,7 +157,6 @@ func (p *ObjectPool[T]) refillLoop() {
 
 // checkAndRefill 检查并补充
 func (p *ObjectPool[T]) checkAndRefill() {
-	// 如果暂停则跳过补充
 	if p.paused.Load() {
 		return
 	}
@@ -170,47 +166,49 @@ func (p *ObjectPool[T]) checkAndRefill() {
 	p.mu.RUnlock()
 
 	available := p.Available()
-	threshold := int64(float64(size) * p.lowWatermark)
+	thresholdCount := int64(float64(size) * p.threshold)
 
-	if available < threshold {
-		p.refillParallel()
+	if available < thresholdCount {
+		// 补充到满
+		need := size - available
+		p.refillToFull(int(need))
 		p.refillCount.Add(1)
 		p.lastRefresh.Store(time.Now().UnixNano())
 	}
 }
 
-// refillParallel 多协程并行补充
-func (p *ObjectPool[T]) refillParallel() {
+// refillToFull 多协程并行补充指定数量
+func (p *ObjectPool[T]) refillToFull(need int) {
+	if need <= 0 {
+		return
+	}
+
 	var wg sync.WaitGroup
-	batchPerWorker := p.refillBatch / p.numWorkers
-	remainder := p.refillBatch % p.numWorkers
+	batchPerWorker := need / p.numWorkers
+	remainder := need % p.numWorkers
 
 	for w := 0; w < p.numWorkers; w++ {
 		wg.Add(1)
 		workerBatch := batchPerWorker
-		// 最后一个 worker 处理剩余项
 		if w == p.numWorkers-1 {
 			workerBatch += remainder
 		}
 		go func(batch int) {
 			defer wg.Done()
 
-			// 先生成到本地数组
 			items := make([]T, batch)
 			for i := 0; i < batch; i++ {
 				items[i] = p.generator()
 			}
 
-			// 获取快照保护 Resize 期间的安全
 			p.mu.RLock()
 			pool := p.pool
-			size := p.size
+			currentSize := p.size
 			p.mu.RUnlock()
 
-			// 批量写入池子
 			for _, item := range items {
 				idx := atomic.AddInt64(&p.tail, 1) - 1
-				pool[idx%size] = item
+				pool[idx%currentSize] = item
 			}
 
 			atomic.AddInt64(&p.totalGenerated, int64(batch))
