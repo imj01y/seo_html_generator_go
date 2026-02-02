@@ -224,21 +224,60 @@
               label-width="140px"
             >
               <el-row :gutter="24">
+                <!-- 标题池配置（新增） -->
                 <el-col :xs="24" :lg="12">
                   <div class="config-card">
                     <div class="card-header">
-                      <span class="card-title">标题/正文池</span>
+                      <span class="card-title">标题池配置</span>
                     </div>
                     <div class="card-content">
                       <el-form-item label="标题池大小">
                         <el-input-number
-                          v-model="cachePoolForm.titles_size"
+                          v-model="cachePoolForm.title_pool_size"
                           :min="100"
                           :max="100000"
                           :step="1000"
                         />
-                        <span class="form-tip">条</span>
+                        <span class="form-tip">条（每个分组）</span>
                       </el-form-item>
+                      <el-form-item label="生成协程数">
+                        <el-input-number
+                          v-model="cachePoolForm.title_workers"
+                          :min="1"
+                          :max="10"
+                          :step="1"
+                        />
+                        <span class="form-tip">个（每个分组）</span>
+                      </el-form-item>
+                      <el-form-item label="生成间隔">
+                        <el-input-number
+                          v-model="cachePoolForm.title_refill_interval_ms"
+                          :min="100"
+                          :max="60000"
+                          :step="100"
+                        />
+                        <span class="form-tip">毫秒</span>
+                      </el-form-item>
+                      <el-form-item label="补充阈值">
+                        <el-input-number
+                          v-model="cachePoolForm.title_threshold"
+                          :min="10"
+                          :max="cachePoolForm.title_pool_size"
+                          :step="100"
+                        />
+                        <span class="form-tip">低于此值时触发补充</span>
+                      </el-form-item>
+                    </div>
+                  </div>
+                </el-col>
+
+                <!-- 正文池 -->
+                <el-col :xs="24" :lg="12">
+                  <div class="config-card">
+                    <div class="card-header">
+                      <span class="card-title">正文池</span>
+                    </div>
+                    <div class="card-content">
                       <el-form-item label="正文池大小">
                         <el-input-number
                           v-model="cachePoolForm.contents_size"
@@ -252,7 +291,7 @@
                         <el-input-number
                           v-model="cachePoolForm.threshold"
                           :min="10"
-                          :max="cachePoolForm.titles_size"
+                          :max="cachePoolForm.contents_size"
                           :step="100"
                         />
                         <span class="form-tip">低于此值时触发补充</span>
@@ -269,7 +308,9 @@
                     </div>
                   </div>
                 </el-col>
+              </el-row>
 
+              <el-row :gutter="24" style="margin-top: 16px;">
                 <el-col :xs="24" :lg="12">
                   <div class="config-card">
                     <div class="card-header">
@@ -531,7 +572,12 @@ const cachePoolForm = reactive<CachePoolConfig>({
   refill_interval_ms: 1000,
   keywords_size: 50000,
   images_size: 50000,
-  refresh_interval_ms: 300000
+  refresh_interval_ms: 300000,
+  // 标题生成配置（新增）
+  title_pool_size: 5000,
+  title_workers: 2,
+  title_refill_interval_ms: 500,
+  title_threshold: 1000
 })
 
 const loadCachePoolConfig = async () => {
@@ -545,6 +591,11 @@ const loadCachePoolConfig = async () => {
     cachePoolForm.keywords_size = config.keywords_size
     cachePoolForm.images_size = config.images_size
     cachePoolForm.refresh_interval_ms = config.refresh_interval_ms
+    // 标题生成配置
+    cachePoolForm.title_pool_size = config.title_pool_size || 5000
+    cachePoolForm.title_workers = config.title_workers || 2
+    cachePoolForm.title_refill_interval_ms = config.title_refill_interval_ms || 500
+    cachePoolForm.title_threshold = config.title_threshold || 1000
   } catch (e) {
     console.error('Failed to load cache pool config:', e)
   } finally {
