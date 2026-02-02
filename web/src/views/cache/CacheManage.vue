@@ -64,10 +64,19 @@
             <el-col :xs="24" :lg="8">
               <div class="status-card" v-loading="cacheLoading">
                 <div class="card-header">
-                  <span class="card-title">HTML缓存</span>
-                  <el-button size="small" type="danger" plain @click="handleClearHtmlCache" :loading="clearHtmlCacheLoading" :disabled="!cacheStats.html_cache_entries">
-                    清理
-                  </el-button>
+                  <span class="card-title">
+                    HTML缓存
+                    <el-tag v-if="cacheStats.scanning" size="small" type="warning" style="margin-left: 8px;">统计中...</el-tag>
+                    <el-tag v-else-if="!cacheStats.initialized" size="small" type="info" style="margin-left: 8px;">初始化中</el-tag>
+                  </span>
+                  <div class="card-actions">
+                    <el-button size="small" type="primary" plain @click="handleRecalculate" :loading="recalculateLoading" :disabled="cacheStats.scanning">
+                      重新计算
+                    </el-button>
+                    <el-button size="small" type="danger" plain @click="handleClearHtmlCache" :loading="clearHtmlCacheLoading" :disabled="!cacheStats.html_cache_entries">
+                      清理
+                    </el-button>
+                  </div>
                 </div>
                 <div class="card-content">
                   <div class="cache-info">
@@ -77,7 +86,7 @@
                     </div>
                     <div class="cache-stat">
                       <span class="stat-label">占用空间</span>
-                      <span class="stat-value">{{ formatMemory(cacheStats.html_cache_memory_mb || 0) }}</span>
+                      <span class="stat-value">{{ formatMemoryMB(cacheStats.html_cache_memory_mb || 0) }}</span>
                     </div>
                   </div>
                 </div>
@@ -316,7 +325,8 @@
 import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PoolStatusCard from '@/components/PoolStatusCard.vue'
-import { clearCache, getCacheStats } from '@/api/settings'
+import { clearCache, getCacheStats, recalculateCacheStats } from '@/api/settings'
+import { formatMemoryMB } from '@/utils/format'
 import { getCachePoolConfig, updateCachePoolConfig, type CachePoolConfig } from '@/api/cache-pool'
 import {
   getPoolConfig,
@@ -341,17 +351,17 @@ const refreshAllLoading = ref(false)
 // ========== 缓存状态 ==========
 const cacheLoading = ref(false)
 const clearHtmlCacheLoading = ref(false)
+const recalculateLoading = ref(false)
 
 const cacheStats = reactive({
   html_cache_entries: 0,
-  html_cache_memory_mb: 0
+  html_cache_memory_mb: 0,
+  initialized: false,
+  scanning: false,
+  last_scan_at: null as string | null
 })
 
-const formatMemory = (mb: number): string => {
-  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`
-  if (mb >= 1) return `${mb.toFixed(2)} MB`
-  return `${mb.toFixed(3)} MB`
-}
+// formatMemoryMB 从 @/utils/format 导入
 
 const loadCacheStats = async () => {
   cacheLoading.value = true
@@ -359,6 +369,9 @@ const loadCacheStats = async () => {
     const stats = await getCacheStats()
     cacheStats.html_cache_entries = stats.html_cache_entries || 0
     cacheStats.html_cache_memory_mb = stats.html_cache_memory_mb || 0
+    cacheStats.initialized = stats.initialized ?? false
+    cacheStats.scanning = stats.scanning ?? false
+    cacheStats.last_scan_at = stats.last_scan_at || null
   } finally {
     cacheLoading.value = false
   }
@@ -379,6 +392,22 @@ const handleClearHtmlCache = () => {
       clearHtmlCacheLoading.value = false
     }
   })
+}
+
+const handleRecalculate = async () => {
+  recalculateLoading.value = true
+  try {
+    const result = await recalculateCacheStats()
+    cacheStats.html_cache_entries = result.total_entries || 0
+    cacheStats.html_cache_memory_mb = result.total_size_mb || 0
+    cacheStats.initialized = true
+    cacheStats.scanning = false
+    ElMessage.success(`${result.message}，耗时 ${result.duration_ms}ms`)
+  } catch (e) {
+    ElMessage.error('重新计算失败')
+  } finally {
+    recalculateLoading.value = false
+  }
 }
 
 // ========== 并发配置 ==========
@@ -407,7 +436,6 @@ const poolSizes = reactive<PoolSizes>({
   ClsPoolSize: 0,
   URLPoolSize: 0,
   KeywordEmojiPoolSize: 0,
-  NumberPoolSize: 0,
   KeywordPoolSize: 0,
   ImagePoolSize: 0
 })

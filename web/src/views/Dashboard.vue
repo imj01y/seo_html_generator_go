@@ -21,7 +21,7 @@
           <div class="stat-info">
             <div class="stat-value">
               {{ formatNumber(stats.keywords_total) }}
-              <span class="stat-memory">{{ formatMemory(stats.keyword_group_stats?.memory_mb || 0) }}</span>
+              <span class="stat-memory">{{ formatMemoryMB(stats.keyword_group_stats?.memory_mb || 0) }}</span>
             </div>
             <div class="stat-label">关键词总数</div>
           </div>
@@ -35,7 +35,7 @@
           <div class="stat-info">
             <div class="stat-value">
               {{ formatNumber(stats.images_total) }}
-              <span class="stat-memory">{{ formatMemory(stats.image_group_stats?.memory_mb || 0) }}</span>
+              <span class="stat-memory">{{ formatMemoryMB(stats.image_group_stats?.memory_mb || 0) }}</span>
             </div>
             <div class="stat-label">图片总数</div>
           </div>
@@ -79,11 +79,9 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
-import {
-  getDashboardStats,
-  getDailySpiderStats,
-  getSpiderStats
-} from '@/api/dashboard'
+import { getDashboardStats, getSpiderStats } from '@/api/dashboard'
+import { getDailyStats } from '@/api/spiders'
+import { formatMemoryMB, formatNumber } from '@/utils/format'
 import type { DashboardStats } from '@/types'
 
 const stats = reactive<DashboardStats>({
@@ -100,19 +98,7 @@ const pieChartRef = ref<HTMLElement>()
 let trendChart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
 
-const formatNumber = (num: number): string => {
-  if (num >= 10000) {
-    return (num / 10000).toFixed(1) + '万'
-  }
-  return num.toLocaleString()
-}
-
-
-const formatMemory = (mb: number) => {
-  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`
-  if (mb >= 1) return `${mb.toFixed(2)} MB`
-  return `${mb.toFixed(3)} MB`
-}
+// formatNumber 和 formatMemoryMB 从 @/utils/format 导入
 
 const loadStats = async () => {
   try {
@@ -125,7 +111,7 @@ const loadStats = async () => {
 
 const loadTrendChart = async () => {
   try {
-    const dailyStats = await getDailySpiderStats(7)
+    const dailyStats = await getDailyStats(7)
     if (!trendChartRef.value) return
 
     trendChart = echarts.init(trendChartRef.value)

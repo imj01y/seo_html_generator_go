@@ -5,10 +5,8 @@ export type { SuccessResponse, CreateResponse, CountResponse } from './shared'
 // 认证
 export * from './auth'
 
-// Dashboard（排除与其他模块冲突的导出）
-export { getDashboardStats, getDailySpiderStats, getHourlySpiderStats, getKeywordGroupStats, getImageGroupStats } from './dashboard'
-export { getCacheStats as getDashboardCacheStats } from './dashboard'
-export { getSpiderStats as getDashboardSpiderStats } from './dashboard'
+// Dashboard
+export { getDashboardStats, getSpiderStats as getDashboardSpiderStats } from './dashboard'
 
 // 站点和站群
 export * from './sites'

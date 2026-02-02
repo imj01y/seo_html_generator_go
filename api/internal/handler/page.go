@@ -220,31 +220,6 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(html))
 }
 
-// getTemplate retrieves template content from database
-func (h *PageHandler) getTemplate(ctx context.Context, name string, siteGroupID int) (*models.Template, error) {
-	tmpl := &models.Template{}
-
-	// Try site group specific template first
-	query := `SELECT * FROM templates WHERE name = ? AND site_group_id = ? AND status = 1 LIMIT 1`
-	err := h.db.GetContext(ctx, tmpl, query, name, siteGroupID)
-	if err == nil {
-		return tmpl, nil
-	}
-
-	if err != sql.ErrNoRows {
-		return nil, err
-	}
-
-	// Fallback to default site group
-	query = `SELECT * FROM templates WHERE name = ? AND site_group_id = 1 AND status = 1 LIMIT 1`
-	err = h.db.GetContext(ctx, tmpl, query, name)
-	if err != nil {
-		return nil, err
-	}
-
-	return tmpl, nil
-}
-
 // generateTitle 生成 SEO 优化的页面标题
 // 格式: 关键词1 + Emoji1 + 关键词2 + Emoji2 + 关键词3
 func (h *PageHandler) generateTitle(keywords []string) string {

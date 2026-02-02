@@ -821,44 +821,6 @@ func (h *ImagesHandler) BatchMove(c *gin.Context) {
 	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
 }
 
-// Random 随机获取图片URL
-// GET /api/images/urls/random
-func (h *ImagesHandler) Random(c *gin.Context) {
-	count, _ := strconv.Atoi(c.DefaultQuery("count", "10"))
-	groupID := c.Query("group_id")
-
-	if count < 1 {
-		count = 10
-	}
-	if count > 100 {
-		count = 100
-	}
-
-	if h.db == nil {
-		core.Success(c, gin.H{"urls": []string{}, "count": 0})
-		return
-	}
-
-	where := "status = 1"
-	args := []interface{}{}
-
-	if groupID != "" {
-		where += " AND group_id = ?"
-		args = append(args, groupID)
-	}
-
-	args = append(args, count)
-	query := `SELECT url FROM images WHERE ` + where + ` ORDER BY RAND() LIMIT ?`
-
-	var urls []string
-	if err := h.db.Select(&urls, query, args...); err != nil {
-		log.Warn().Err(err).Msg("Failed to get random images")
-		urls = []string{}
-	}
-
-	core.Success(c, gin.H{"urls": urls, "count": len(urls)})
-}
-
 // Reload 重新加载
 // POST /api/images/urls/reload
 func (h *ImagesHandler) Reload(c *gin.Context) {

@@ -120,7 +120,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		keywordsGroup.POST("/upload", keywordsHandler.Upload)
 
 		// 辅助功能
-		keywordsGroup.GET("/random", keywordsHandler.Random)
 		keywordsGroup.POST("/reload", keywordsHandler.Reload)
 	}
 
@@ -150,7 +149,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		imagesGroup.PUT("/batch/move", imagesHandler.BatchMove)
 
 		// 辅助功能
-		imagesGroup.GET("/urls/random", imagesHandler.Random)
 		imagesGroup.POST("/urls/reload", imagesHandler.Reload)
 	}
 

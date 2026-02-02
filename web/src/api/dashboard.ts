@@ -1,5 +1,5 @@
 import request from '@/utils/request'
-import type { DashboardStats, DailyStats } from '@/types'
+import type { DashboardStats } from '@/types'
 
 // ============================================
 // 响应类型
@@ -80,28 +80,4 @@ export async function getSpiderStats(): Promise<{
     by_site: {},
     by_status: {}
   }
-}
-
-export async function getDailySpiderStats(_days?: number): Promise<DailyStats[]> {
-  return []
-}
-
-export async function getHourlySpiderStats(_date?: string): Promise<{ hour: number; total: number }[]> {
-  return []
-}
-
-// ============================================
-// 分组统计 API
-// ============================================
-
-export function getKeywordGroupStats(): Promise<GroupStatsResponse> {
-  return request.get('/keywords/stats')
-}
-
-export function getImageGroupStats(): Promise<GroupStatsResponse> {
-  return request.get('/images/urls/stats')
-}
-
-export function getCacheStats(): Promise<unknown> {
-  return request.get('/cache/stats')
 }

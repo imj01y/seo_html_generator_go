@@ -806,44 +806,6 @@ func (h *KeywordsHandler) Upload(c *gin.Context) {
 	})
 }
 
-// Random 随机获取关键词
-// GET /api/keywords/random
-func (h *KeywordsHandler) Random(c *gin.Context) {
-	count, _ := strconv.Atoi(c.DefaultQuery("count", "10"))
-	groupID := c.Query("group_id")
-
-	if count < 1 {
-		count = 10
-	}
-	if count > 100 {
-		count = 100
-	}
-
-	if h.db == nil {
-		core.Success(c, gin.H{"keywords": []string{}, "count": 0})
-		return
-	}
-
-	where := "status = 1"
-	args := []interface{}{}
-
-	if groupID != "" {
-		where += " AND group_id = ?"
-		args = append(args, groupID)
-	}
-
-	args = append(args, count)
-	query := `SELECT keyword FROM keywords WHERE ` + where + ` ORDER BY RAND() LIMIT ?`
-
-	var keywords []string
-	if err := h.db.Select(&keywords, query, args...); err != nil {
-		log.Warn().Err(err).Msg("Failed to get random keywords")
-		keywords = []string{}
-	}
-
-	core.Success(c, gin.H{"keywords": keywords, "count": len(keywords)})
-}
-
 // Reload 重新加载（占位，Go 中暂不需要）
 // POST /api/keywords/reload
 func (h *KeywordsHandler) Reload(c *gin.Context) {

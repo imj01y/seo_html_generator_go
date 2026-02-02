@@ -31,7 +31,6 @@ export interface PoolSizes {
   ClsPoolSize: number
   URLPoolSize: number
   KeywordEmojiPoolSize: number
-  NumberPoolSize: number
   KeywordPoolSize: number
   ImagePoolSize: number
 }
@@ -76,16 +75,6 @@ export interface PoolStats {
   refill_count?: number
 }
 
-export interface ObjectPoolStatsResponse {
-  cls: PoolStats
-  url: PoolStats
-  keyword_emoji?: PoolStats
-}
-
-export interface DataPoolStatsResponse {
-  pools: PoolStats[]
-}
-
 // ============================================
 // 预设配置
 // ============================================
@@ -116,14 +105,6 @@ export function updatePoolConfig(config: UpdateConfigRequest): Promise<UpdateCon
 // ============================================
 // 池状态监控 API
 // ============================================
-
-export function getObjectPoolStats(): Promise<ObjectPoolStatsResponse> {
-  return request.get('/admin/pool/stats')
-}
-
-export function getDataPoolStats(): Promise<DataPoolStatsResponse> {
-  return request.get('/admin/data/stats')
-}
 
 export function warmupPool(percent?: number): Promise<void> {
   return request.post('/admin/pool/warmup', { percent: percent || 0.5 })

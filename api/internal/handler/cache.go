@@ -284,6 +284,20 @@ func (h *CacheHandler) GetCacheStats(c *gin.Context) {
 	c.JSON(http.StatusOK, stats)
 }
 
+// RecalculateCacheStats 重新计算缓存统计
+// POST /api/cache/stats/recalculate
+func (h *CacheHandler) RecalculateCacheStats(c *gin.Context) {
+	result, err := h.htmlCache.Recalculate()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 // ReloadCacheConfig 重载缓存配置
 // POST /api/cache/config/reload
 func (h *CacheHandler) ReloadCacheConfig(c *gin.Context) {

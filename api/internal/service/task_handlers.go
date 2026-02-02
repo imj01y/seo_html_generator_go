@@ -133,127 +133,8 @@ func (h *RefreshTemplateHandler) Handle(task *ScheduledTask) TaskResult {
 	}
 }
 
-// ClearCacheHandler 清理缓存处理器
-type ClearCacheHandler struct {
-	htmlCache *HTMLCache
-	siteCache *SiteCache
-}
-
-// NewClearCacheHandler 创建清理缓存处理器
-func NewClearCacheHandler(htmlCache *HTMLCache, siteCache *SiteCache) *ClearCacheHandler {
-	return &ClearCacheHandler{
-		htmlCache: htmlCache,
-		siteCache: siteCache,
-	}
-}
-
-// TaskType 返回任务类型
-func (h *ClearCacheHandler) TaskType() TaskType {
-	return TaskTypeClearCache
-}
-
-// Handle 执行清理缓存任务
-func (h *ClearCacheHandler) Handle(task *ScheduledTask) TaskResult {
-	startTime := time.Now()
-
-	params, err := ParseClearCacheParams(task.Params)
-	if err != nil {
-		return TaskResult{
-			Success:  false,
-			Message:  fmt.Sprintf("parse params failed: %v", err),
-			Duration: time.Since(startTime).Milliseconds(),
-		}
-	}
-
-	log.Info().
-		Str("cache_type", params.CacheType).
-		Int64("max_age", params.MaxAge).
-		Str("domain", params.Domain).
-		Msg("Clearing cache")
-
-	// TODO: 实现具体的缓存清理逻辑
-	// 当前为占位实现
-	var cleared int
-
-	switch params.CacheType {
-	case "html":
-		if h.htmlCache != nil {
-			// TODO: 实现 HTML 缓存清理
-			log.Warn().Msg("HTML cache clear not implemented yet")
-		}
-	case "site":
-		if h.siteCache != nil {
-			// TODO: 实现站点缓存清理
-			log.Warn().Msg("Site cache clear not implemented yet")
-		}
-	case "all":
-		// TODO: 清理所有缓存
-		log.Warn().Msg("All cache clear not implemented yet")
-	default:
-		return TaskResult{
-			Success:  false,
-			Message:  fmt.Sprintf("unknown cache type: %s", params.CacheType),
-			Duration: time.Since(startTime).Milliseconds(),
-		}
-	}
-
-	return TaskResult{
-		Success:  true,
-		Message:  fmt.Sprintf("cache cleared, type=%s, count=%d", params.CacheType, cleared),
-		Duration: time.Since(startTime).Milliseconds(),
-	}
-}
-
-// PushURLsHandler 推送URL处理器
-type PushURLsHandler struct {
-	// TODO: 添加需要的依赖
-}
-
-// NewPushURLsHandler 创建推送URL处理器
-func NewPushURLsHandler() *PushURLsHandler {
-	return &PushURLsHandler{}
-}
-
-// TaskType 返回任务类型
-func (h *PushURLsHandler) TaskType() TaskType {
-	return TaskTypePushURLs
-}
-
-// Handle 执行推送URL任务
-func (h *PushURLsHandler) Handle(task *ScheduledTask) TaskResult {
-	startTime := time.Now()
-
-	params, err := ParsePushURLsParams(task.Params)
-	if err != nil {
-		return TaskResult{
-			Success:  false,
-			Message:  fmt.Sprintf("parse params failed: %v", err),
-			Duration: time.Since(startTime).Milliseconds(),
-		}
-	}
-
-	log.Info().
-		Int("site_id", params.SiteID).
-		Int("url_count", params.URLCount).
-		Str("search_engine", params.SearchEngine).
-		Msg("Pushing URLs")
-
-	// TODO: 实现 URL 推送逻辑
-	// 1. 从数据库获取待推送的 URL
-	// 2. 根据搜索引擎调用对应的 API
-	// 3. 记录推送结果
-
-	log.Warn().Msg("URL push not implemented yet")
-
-	return TaskResult{
-		Success:  true,
-		Message:  fmt.Sprintf("URL push scheduled, engine=%s, count=%d (not implemented)", params.SearchEngine, params.URLCount),
-		Duration: time.Since(startTime).Milliseconds(),
-	}
-}
-
 // RegisterAllHandlers 注册所有任务处理器
-func RegisterAllHandlers(scheduler *Scheduler, poolManager *PoolManager, templateCache *TemplateCache, htmlCache *HTMLCache, siteCache *SiteCache) {
+func RegisterAllHandlers(scheduler *Scheduler, poolManager *PoolManager, templateCache *TemplateCache) {
 	// 注册刷新数据池处理器
 	if poolManager != nil {
 		scheduler.RegisterHandler(NewRefreshDataHandler(poolManager))
@@ -263,12 +144,6 @@ func RegisterAllHandlers(scheduler *Scheduler, poolManager *PoolManager, templat
 	if templateCache != nil {
 		scheduler.RegisterHandler(NewRefreshTemplateHandler(templateCache))
 	}
-
-	// 注册清理缓存处理器
-	scheduler.RegisterHandler(NewClearCacheHandler(htmlCache, siteCache))
-
-	// 注册推送URL处理器
-	scheduler.RegisterHandler(NewPushURLsHandler())
 
 	log.Info().Msg("All task handlers registered")
 }

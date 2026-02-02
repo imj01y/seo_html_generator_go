@@ -14,10 +14,6 @@ const (
 	TaskTypeRefreshData TaskType = "refresh_data"
 	// TaskTypeRefreshTemplate 刷新模板缓存
 	TaskTypeRefreshTemplate TaskType = "refresh_template"
-	// TaskTypeClearCache 清理缓存
-	TaskTypeClearCache TaskType = "clear_cache"
-	// TaskTypePushURLs 推送URL到搜索引擎
-	TaskTypePushURLs TaskType = "push_urls"
 )
 
 // TaskStatus 任务状态
@@ -95,28 +91,6 @@ type RefreshTemplateParams struct {
 	SiteGroupID int `json:"site_group_id,omitempty"`
 }
 
-// ClearCacheParams 清理缓存参数
-type ClearCacheParams struct {
-	// CacheType 缓存类型
-	// 可选值: html, site, all
-	CacheType string `json:"cache_type"`
-	// MaxAge 最大缓存时间（秒），超过此时间的缓存将被清理
-	MaxAge int64 `json:"max_age,omitempty"`
-	// Domain 指定域名，空表示全部
-	Domain string `json:"domain,omitempty"`
-}
-
-// PushURLsParams 推送URL参数
-type PushURLsParams struct {
-	// SiteID 站点ID
-	SiteID int `json:"site_id"`
-	// URLCount 每次推送的URL数量
-	URLCount int `json:"url_count"`
-	// SearchEngine 搜索引擎
-	// 可选值: baidu, bing, google
-	SearchEngine string `json:"search_engine"`
-}
-
 // ParseRefreshDataParams 解析刷新数据池参数
 func ParseRefreshDataParams(data json.RawMessage) (*RefreshDataParams, error) {
 	if len(data) == 0 {
@@ -140,39 +114,6 @@ func ParseRefreshTemplateParams(data json.RawMessage) (*RefreshTemplateParams, e
 	var params RefreshTemplateParams
 	if err := json.Unmarshal(data, &params); err != nil {
 		return nil, err
-	}
-	return &params, nil
-}
-
-// ParseClearCacheParams 解析清理缓存参数
-func ParseClearCacheParams(data json.RawMessage) (*ClearCacheParams, error) {
-	if len(data) == 0 {
-		return &ClearCacheParams{CacheType: "all"}, nil
-	}
-	var params ClearCacheParams
-	if err := json.Unmarshal(data, &params); err != nil {
-		return nil, err
-	}
-	if params.CacheType == "" {
-		params.CacheType = "all"
-	}
-	return &params, nil
-}
-
-// ParsePushURLsParams 解析推送URL参数
-func ParsePushURLsParams(data json.RawMessage) (*PushURLsParams, error) {
-	if len(data) == 0 {
-		return &PushURLsParams{URLCount: 100, SearchEngine: "baidu"}, nil
-	}
-	var params PushURLsParams
-	if err := json.Unmarshal(data, &params); err != nil {
-		return nil, err
-	}
-	if params.URLCount == 0 {
-		params.URLCount = 100
-	}
-	if params.SearchEngine == "" {
-		params.SearchEngine = "baidu"
 	}
 	return &params, nil
 }

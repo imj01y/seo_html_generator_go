@@ -150,7 +150,7 @@ func main() {
 	scheduler := core.NewScheduler(db)
 
 	// Register task handlers
-	core.RegisterAllHandlers(scheduler, poolManager, templateCache, htmlCache, siteCache)
+	core.RegisterAllHandlers(scheduler, poolManager, templateCache)
 
 	// Start scheduler
 	schedCtx := context.Background()
@@ -297,6 +297,7 @@ func main() {
 
 		// Cache stats routes
 		apiGroup.GET("/cache/stats", cacheHandler.GetCacheStats)
+		apiGroup.POST("/cache/stats/recalculate", cacheHandler.RecalculateCacheStats)
 
 		// Log routes (for Nginx Lua cache hit logging)
 		apiGroup.GET("/log/spider", logHandler.LogSpiderVisit)

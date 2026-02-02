@@ -27,6 +27,16 @@ interface BackendSettings {
 interface CacheStats {
   html_cache_entries: number
   html_cache_memory_mb: number
+  initialized: boolean
+  scanning: boolean
+  last_scan_at: string | null
+}
+
+interface RecalculateResponse {
+  total_entries: number
+  total_size_mb: number
+  duration_ms: number
+  message: string
 }
 
 // ============================================
@@ -60,7 +70,13 @@ export async function clearCache(): Promise<{ message: string }> {
 }
 
 export async function getCacheStats(): Promise<CacheStats> {
-  let htmlCacheStats = { total_entries: 0, total_size_mb: 0 }
+  let htmlCacheStats = {
+    total_entries: 0,
+    total_size_mb: 0,
+    initialized: false,
+    scanning: false,
+    last_scan_at: null as string | null
+  }
 
   try {
     htmlCacheStats = await request.get('/cache/stats')
@@ -70,8 +86,15 @@ export async function getCacheStats(): Promise<CacheStats> {
 
   return {
     html_cache_entries: htmlCacheStats.total_entries || 0,
-    html_cache_memory_mb: htmlCacheStats.total_size_mb || 0
+    html_cache_memory_mb: htmlCacheStats.total_size_mb || 0,
+    initialized: htmlCacheStats.initialized ?? false,
+    scanning: htmlCacheStats.scanning ?? false,
+    last_scan_at: htmlCacheStats.last_scan_at || null
   }
+}
+
+export async function recalculateCacheStats(): Promise<RecalculateResponse> {
+  return request.post('/cache/stats/recalculate')
 }
 
 export function clearDomainCache(domain: string): Promise<{ success: boolean; cleared: number }> {
