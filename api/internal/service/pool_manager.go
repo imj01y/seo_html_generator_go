@@ -23,6 +23,9 @@ type PoolManager struct {
 	titles   map[int]*MemoryPool // groupID -> pool
 	contents map[int]*MemoryPool // groupID -> pool
 
+	// 标题生成器（新增）
+	titleGenerator *TitleGenerator
+
 	// 复用型数据（随机获取，可重复）
 	keywords    map[int][]string // groupID -> encoded keywords
 	rawKeywords map[int][]string // groupID -> raw keywords
@@ -119,6 +122,15 @@ func (m *PoolManager) Start(ctx context.Context) error {
 		}
 	}
 
+	// 初始化并启动 TitleGenerator（必须在关键词加载完成后）
+	m.titleGenerator = NewTitleGenerator(m, m.config)
+	m.titleGenerator.Start(keywordGroupIDs)
+
+	// Set initial lastRefresh time
+	m.mu.Lock()
+	m.lastRefresh = time.Now()
+	m.mu.Unlock()
+
 	// Start background workers
 	m.wg.Add(3)
 	go m.refillLoop()
@@ -129,7 +141,7 @@ func (m *PoolManager) Start(ctx context.Context) error {
 		Int("article_groups", len(groupIDs)).
 		Int("keyword_groups", len(keywordGroupIDs)).
 		Int("image_groups", len(imageGroupIDs)).
-		Int("titles_size", m.config.TitlesSize).
+		Int("title_pool_size", m.config.TitlePoolSize).
 		Int("contents_size", m.config.ContentsSize).
 		Int("keywords_size", m.config.KeywordsSize).
 		Int("images_size", m.config.ImagesSize).
@@ -143,6 +155,9 @@ func (m *PoolManager) Stop() {
 	m.stopped.Store(true)
 	m.cancel()
 	close(m.updateCh)
+	if m.titleGenerator != nil {
+		m.titleGenerator.Stop()
+	}
 	m.wg.Wait()
 	log.Info().Msg("PoolManager stopped")
 }
@@ -195,6 +210,14 @@ func (m *PoolManager) getOrCreatePool(poolType string, groupID int) *MemoryPool 
 
 // Pop retrieves an item from the pool
 func (m *PoolManager) Pop(poolType string, groupID int) (string, error) {
+	// titles 使用 TitleGenerator
+	if poolType == "titles" {
+		if m.titleGenerator == nil {
+			return "", ErrCachePoolEmpty
+		}
+		return m.titleGenerator.Pop(groupID)
+	}
+
 	if err := validatePoolType(poolType); err != nil {
 		return "", err
 	}
@@ -345,11 +368,6 @@ func (m *PoolManager) Reload(ctx context.Context) error {
 	m.config = config
 
 	// Resize pools if needed
-	if config.TitlesSize != oldConfig.TitlesSize {
-		for _, pool := range m.titles {
-			pool.Resize(config.TitlesSize)
-		}
-	}
 	if config.ContentsSize != oldConfig.ContentsSize {
 		for _, pool := range m.contents {
 			pool.Resize(config.ContentsSize)
@@ -357,8 +375,14 @@ func (m *PoolManager) Reload(ctx context.Context) error {
 	}
 	m.mu.Unlock()
 
+	// Reload TitleGenerator config
+	if m.titleGenerator != nil {
+		m.titleGenerator.Reload(config)
+	}
+
 	log.Info().
-		Int("titles_size", config.TitlesSize).
+		Int("title_pool_size", config.TitlePoolSize).
+		Int("title_workers", config.TitleWorkers).
 		Int("contents_size", config.ContentsSize).
 		Int("threshold", config.Threshold).
 		Int("interval_ms", config.RefillIntervalMs).
@@ -675,19 +699,15 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 
 	pools := []PoolStatusStats{}
 
-	// 1. 标题池（消费型，汇总所有分组）
-	m.mu.RLock()
-	var titlesMax, titlesCurrent int
-	for _, pool := range m.titles {
-		titlesMax += pool.GetMaxSize()
-		titlesCurrent += pool.Len()
+	// 1. 标题池（改用 TitleGenerator 统计）
+	var titlesCurrent, titlesMax int
+	if m.titleGenerator != nil {
+		titlesCurrent, titlesMax = m.titleGenerator.GetTotalStats()
 	}
-	m.mu.RUnlock()
-
 	titlesUsed := titlesMax - titlesCurrent
 	titlesUtil := 0.0
 	if titlesMax > 0 {
-		titlesUtil = float64(titlesUsed) / float64(titlesMax) * 100
+		titlesUtil = float64(titlesCurrent) / float64(titlesMax) * 100
 	}
 	pools = append(pools, PoolStatusStats{
 		Name:        "标题池",
@@ -696,7 +716,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Used:        titlesUsed,
 		Utilization: titlesUtil,
 		Status:      status,
-		NumWorkers:  1,
+		NumWorkers:  m.config.TitleWorkers,
 		LastRefresh: lastRefreshPtr,
 	})
 
@@ -712,7 +732,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 	contentsUsed := contentsMax - contentsCurrent
 	contentsUtil := 0.0
 	if contentsMax > 0 {
-		contentsUtil = float64(contentsUsed) / float64(contentsMax) * 100
+		contentsUtil = float64(contentsCurrent) / float64(contentsMax) * 100
 	}
 	pools = append(pools, PoolStatusStats{
 		Name:        "正文池",
@@ -737,7 +757,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Size:        totalKeywords,
 		Available:   totalKeywords,
 		Used:        0,
-		Utilization: 0,
+		Utilization: 100,
 		Status:      status,
 		NumWorkers:  1,
 		LastRefresh: lastRefreshPtr,
@@ -755,7 +775,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Size:        totalImages,
 		Available:   totalImages,
 		Used:        0,
-		Utilization: 0,
+		Utilization: 100,
 		Status:      status,
 		NumWorkers:  1,
 		LastRefresh: lastRefreshPtr,
@@ -768,7 +788,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Size:        emojiCount,
 		Available:   emojiCount,
 		Used:        0,
-		Utilization: 0,
+		Utilization: 100,
 		Status:      status,
 		NumWorkers:  0,
 		LastRefresh: nil,
