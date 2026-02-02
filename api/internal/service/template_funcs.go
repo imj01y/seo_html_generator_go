@@ -49,26 +49,24 @@ func (m *TemplateFuncsManager) SetEmojiManager(em *EmojiManager) {
 	m.emojiManager = em
 }
 
-// InitPools 初始化所有池子（支持500并发）
-func (m *TemplateFuncsManager) InitPools() {
-	// cls池：800K容量，支持500并发
+// InitPools 初始化所有池子（从配置读取）
+func (m *TemplateFuncsManager) InitPools(config *CachePoolConfig) {
+	// cls池
 	m.clsPool = NewObjectPool[string](PoolConfig{
 		Name:          "cls",
-		Size:          800000,
-		LowWatermark:  0.4,
-		RefillBatch:   150000,
-		NumWorkers:    20,
-		CheckInterval: 30 * time.Millisecond,
+		Size:          config.ClsPoolSize,
+		Threshold:     config.ClsThreshold,
+		NumWorkers:    config.ClsWorkers,
+		CheckInterval: config.ClsRefillInterval(),
 	}, generateRandomCls)
 
-	// url池：500K容量
+	// url池
 	m.urlPool = NewObjectPool[string](PoolConfig{
 		Name:          "url",
-		Size:          500000,
-		LowWatermark:  0.4,
-		RefillBatch:   100000,
-		NumWorkers:    16,
-		CheckInterval: 30 * time.Millisecond,
+		Size:          config.UrlPoolSize,
+		Threshold:     config.UrlThreshold,
+		NumWorkers:    config.UrlWorkers,
+		CheckInterval: config.UrlRefillInterval(),
 	}, generateRandomURL)
 
 	// number池
@@ -80,20 +78,18 @@ func (m *TemplateFuncsManager) InitPools() {
 	m.numberPool.Start()
 }
 
-// InitKeywordEmojiPool 初始化带 emoji 的关键词池
-func (m *TemplateFuncsManager) InitKeywordEmojiPool() {
+// InitKeywordEmojiPool 初始化带 emoji 的关键词池（从配置读取）
+func (m *TemplateFuncsManager) InitKeywordEmojiPool(config *CachePoolConfig) {
 	if m.emojiManager == nil || atomic.LoadInt64(&m.rawKeywordLen) == 0 {
 		return
 	}
 
-	// 800K 容量，支持 500 并发
 	m.keywordEmojiPool = NewObjectPool[string](PoolConfig{
 		Name:          "keyword_emoji",
-		Size:          800000,
-		LowWatermark:  0.4,
-		RefillBatch:   150000,
-		NumWorkers:    20,
-		CheckInterval: 30 * time.Millisecond,
+		Size:          config.KeywordEmojiPoolSize,
+		Threshold:     config.KeywordEmojiThreshold,
+		NumWorkers:    config.KeywordEmojiWorkers,
+		CheckInterval: config.KeywordEmojiRefillInterval(),
 	}, m.generateKeywordWithEmoji)
 
 	m.keywordEmojiPool.Start()
