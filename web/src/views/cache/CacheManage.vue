@@ -26,6 +26,8 @@
                     v-for="pool in dataPoolStats"
                     :key="pool.name"
                     :pool="pool"
+                    @reload="handlePoolReload(pool.name)"
+                    @reload-group="(groupId: number) => handlePoolReloadGroup(pool.name, groupId)"
                   />
                   <el-empty v-if="dataPoolStats.length === 0" description="连接中..." />
                 </div>
@@ -379,7 +381,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import PoolStatusCard from '@/components/PoolStatusCard.vue'
 import { clearCache, getCacheStats, recalculateCacheStats } from '@/api/settings'
 import { formatMemoryMB } from '@/utils/format'
-import { getCachePoolConfig, updateCachePoolConfig, type CachePoolConfig } from '@/api/cache-pool'
+import { getCachePoolConfig, updateCachePoolConfig, refreshDataPool, type CachePoolConfig } from '@/api/cache-pool'
 import {
   getPoolConfig,
   updatePoolConfig,
@@ -388,7 +390,6 @@ import {
   warmupPool,
   pausePool,
   resumePool,
-  refreshDataPool,
   type PoolPreset,
   type PoolSizes,
   type TemplateStats,
@@ -809,6 +810,44 @@ const handleRefreshData = async () => {
     ElMessage.error((e as Error).message || '刷新失败')
   } finally {
     poolOperationLoading.value = false
+  }
+}
+
+const handlePoolReload = async (poolName: string) => {
+  poolOperationLoading.value = true
+  try {
+    const poolMap: Record<string, string> = {
+      '关键词池': 'keywords',
+      '图片池': 'images',
+      '表情库': 'emojis'
+    }
+    const pool = poolMap[poolName]
+    if (pool) {
+      await refreshDataPool(pool)
+      ElMessage.success(`${poolName}重载成功`)
+      // WebSocket 会自动推送池状态更新
+    }
+  } catch (e) {
+    ElMessage.error((e as Error).message || '重载失败')
+  } finally {
+    poolOperationLoading.value = false
+  }
+}
+
+const handlePoolReloadGroup = async (poolName: string, groupId: number) => {
+  try {
+    const poolMap: Record<string, string> = {
+      '关键词池': 'keywords',
+      '图片池': 'images'
+    }
+    const pool = poolMap[poolName]
+    if (pool) {
+      await refreshDataPool(pool, groupId)
+      ElMessage.success(`${poolName}分组${groupId}重载成功`)
+      // WebSocket 会自动推送池状态更新
+    }
+  } catch (e) {
+    ElMessage.error((e as Error).message || '重载失败')
   }
 }
 
