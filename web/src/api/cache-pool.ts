@@ -9,6 +9,29 @@ import request from '@/utils/request'
 // 类型定义
 // ============================================
 
+/** 池分组信息 */
+export interface PoolGroupInfo {
+  id: number
+  name: string
+  count: number
+}
+
+/** 池状态 */
+export interface PoolStats {
+  name: string
+  size: number
+  available: number
+  used: number
+  utilization: number
+  status: string
+  num_workers: number
+  last_refresh: string | null
+  // 新增字段（复用型池使用）
+  pool_type?: 'consumable' | 'reusable' | 'static'
+  groups?: PoolGroupInfo[]
+  source?: string
+}
+
 /** 缓存池配置 */
 export interface CachePoolConfig {
   id?: number
@@ -54,4 +77,12 @@ export function getCachePoolConfig(): Promise<CachePoolConfig> {
 /** 更新缓存池配置 */
 export function updateCachePoolConfig(config: CachePoolConfig): Promise<{ success: boolean; config: CachePoolConfig }> {
   return request.put('/cache-pool/config', config)
+}
+
+/** 刷新数据池 */
+export function refreshDataPool(pool: string, groupId?: number): Promise<{ success: boolean }> {
+  return request.post('/admin/data/refresh', {
+    pool,
+    group_id: groupId
+  })
 }
