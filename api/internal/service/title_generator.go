@@ -144,8 +144,9 @@ func (g *TitleGenerator) refillWorker(groupID int, pool *TitlePool) {
 			if g.stopped.Load() {
 				return
 			}
-			// 检查是否需要补充
-			if len(pool.ch) < g.config.TitleThreshold {
+			// 检查是否需要补充（低于阈值比例时触发）
+			thresholdCount := int(float64(g.config.TitlePoolSize) * g.config.TitleThreshold)
+			if len(pool.ch) < thresholdCount {
 				g.fillPool(groupID, pool)
 			}
 		}
@@ -209,10 +210,11 @@ func (g *TitleGenerator) GetStats() map[int]map[string]int {
 
 	stats := make(map[int]map[string]int)
 	for groupID, pool := range g.pools {
+		thresholdCount := int(float64(g.config.TitlePoolSize) * g.config.TitleThreshold)
 		stats[groupID] = map[string]int{
 			"current":   len(pool.ch),
 			"max_size":  g.config.TitlePoolSize,
-			"threshold": g.config.TitleThreshold,
+			"threshold": thresholdCount,
 		}
 	}
 	return stats

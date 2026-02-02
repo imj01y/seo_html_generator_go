@@ -40,8 +40,7 @@ func NewNumberPool() *NumberPool {
 		cfg := PoolConfig{
 			Name:          "number_" + key,
 			Size:          200000,
-			LowWatermark:  0.4,
-			RefillBatch:   50000,
+			Threshold:     0.4,
 			NumWorkers:    8,
 			CheckInterval: 30 * time.Millisecond,
 		}
