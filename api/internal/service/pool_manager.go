@@ -143,10 +143,10 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	m.mu.Unlock()
 
 	// Start background workers
-	m.wg.Add(3)
+	m.wg.Add(2)
 	go m.refillLoop()
 	go m.updateWorker()
-	go m.refreshLoop(keywordGroupIDs, imageGroupIDs)
+	// refreshLoop 已移除，复用型池不需要定时刷新
 
 	log.Info().
 		Int("article_groups", len(groupIDs)).
@@ -468,10 +468,10 @@ func (m *PoolManager) GetConfig() *CachePoolConfig {
 
 // LoadKeywords loads keywords for a group from the database
 func (m *PoolManager) LoadKeywords(ctx context.Context, groupID int) (int, error) {
-	query := `SELECT keyword FROM keywords WHERE group_id = ? AND status = 1 ORDER BY RAND() LIMIT ?`
+	query := `SELECT keyword FROM keywords WHERE group_id = ? AND status = 1`
 
 	var keywords []string
-	if err := m.db.SelectContext(ctx, &keywords, query, groupID, m.config.KeywordsSize); err != nil {
+	if err := m.db.SelectContext(ctx, &keywords, query, groupID); err != nil {
 		return 0, err
 	}
 
@@ -554,10 +554,10 @@ func getRandomItems(items []string, count int) []string {
 
 // LoadImages loads image URLs for a group from the database
 func (m *PoolManager) LoadImages(ctx context.Context, groupID int) (int, error) {
-	query := `SELECT url FROM images WHERE group_id = ? AND status = 1 ORDER BY RAND() LIMIT ?`
+	query := `SELECT url FROM images WHERE group_id = ? AND status = 1`
 
 	var urls []string
-	if err := m.db.SelectContext(ctx, &urls, query, groupID, m.config.ImagesSize); err != nil {
+	if err := m.db.SelectContext(ctx, &urls, query, groupID); err != nil {
 		return 0, err
 	}
 
@@ -653,37 +653,6 @@ func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
 		return []int{1}, nil
 	}
 	return ids, nil
-}
-
-// refreshLoop periodically refreshes keywords and images
-func (m *PoolManager) refreshLoop(keywordGroupIDs, imageGroupIDs []int) {
-	defer m.wg.Done()
-
-	ticker := time.NewTicker(m.config.RefreshInterval())
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			ctx := context.Background()
-			for _, gid := range keywordGroupIDs {
-				if _, err := m.LoadKeywords(ctx, gid); err != nil {
-					log.Warn().Err(err).Int("group", gid).Msg("Failed to refresh keywords")
-				}
-			}
-			for _, gid := range imageGroupIDs {
-				if _, err := m.LoadImages(ctx, gid); err != nil {
-					log.Warn().Err(err).Int("group", gid).Msg("Failed to refresh images")
-				}
-			}
-			m.mu.Lock()
-			m.lastRefresh = time.Now()
-			m.mu.Unlock()
-			log.Debug().Msg("Keywords and images refreshed")
-		case <-m.ctx.Done():
-			return
-		}
-	}
 }
 
 // ============================================================
