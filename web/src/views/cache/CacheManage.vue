@@ -224,48 +224,59 @@
               label-width="140px"
             >
               <el-row :gutter="24">
-                <!-- 标题池配置（新增） -->
+                <!-- 对象池配置 -->
                 <el-col :xs="24" :lg="12">
                   <div class="config-card">
                     <div class="card-header">
-                      <span class="card-title">标题池配置</span>
+                      <span class="card-title">对象池配置</span>
                     </div>
                     <div class="card-content">
-                      <el-form-item label="标题池大小">
+                      <el-form-item label="选择池">
+                        <el-select v-model="selectedPool" style="width: 100%">
+                          <el-option
+                            v-for="opt in poolOptions"
+                            :key="opt.value"
+                            :label="opt.label"
+                            :value="opt.value"
+                          />
+                        </el-select>
+                      </el-form-item>
+                      <el-form-item label="池大小">
                         <el-input-number
-                          v-model="cachePoolForm.title_pool_size"
-                          :min="100"
-                          :max="100000"
-                          :step="1000"
+                          v-model="currentPoolConfig.pool_size"
+                          :min="100000"
+                          :max="2000000"
+                          :step="100000"
                         />
-                        <span class="form-tip">条（每个分组）</span>
+                        <span class="form-tip">条</span>
                       </el-form-item>
                       <el-form-item label="生成协程数">
                         <el-input-number
-                          v-model="cachePoolForm.title_workers"
+                          v-model="currentPoolConfig.workers"
                           :min="1"
-                          :max="10"
+                          :max="50"
                           :step="1"
                         />
-                        <span class="form-tip">个（每个分组）</span>
+                        <span class="form-tip">个</span>
                       </el-form-item>
                       <el-form-item label="生成间隔">
                         <el-input-number
-                          v-model="cachePoolForm.title_refill_interval_ms"
-                          :min="100"
-                          :max="60000"
-                          :step="100"
+                          v-model="currentPoolConfig.refill_interval_ms"
+                          :min="10"
+                          :max="1000"
+                          :step="10"
                         />
                         <span class="form-tip">毫秒</span>
                       </el-form-item>
                       <el-form-item label="补充阈值">
                         <el-input-number
-                          v-model="cachePoolForm.title_threshold"
-                          :min="10"
-                          :max="cachePoolForm.title_pool_size"
-                          :step="100"
+                          v-model="currentPoolConfig.threshold"
+                          :min="0.1"
+                          :max="0.9"
+                          :step="0.1"
+                          :precision="2"
                         />
-                        <span class="form-tip">低于此值时触发补充</span>
+                        <span class="form-tip">(0.1-0.9)</span>
                       </el-form-item>
                     </div>
                   </div>
@@ -363,7 +374,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, watch } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import PoolStatusCard from '@/components/PoolStatusCard.vue'
 import { clearCache, getCacheStats, recalculateCacheStats } from '@/api/settings'
@@ -565,6 +576,16 @@ const handleSaveConfig = async () => {
 // ========== 数据池配置 ==========
 const cachePoolLoading = ref(false)
 const cachePoolSaveLoading = ref(false)
+
+// 对象池选择
+const poolOptions = [
+  { label: '标题池', value: 'title' },
+  { label: 'cls类名池', value: 'cls' },
+  { label: 'url池', value: 'url' },
+  { label: '关键词表情池', value: 'keyword_emoji' }
+]
+const selectedPool = ref('title')
+
 const cachePoolForm = reactive<CachePoolConfig>({
   titles_size: 5000,
   contents_size: 5000,
@@ -573,11 +594,48 @@ const cachePoolForm = reactive<CachePoolConfig>({
   keywords_size: 50000,
   images_size: 50000,
   refresh_interval_ms: 300000,
-  // 标题生成配置（新增）
-  title_pool_size: 5000,
-  title_workers: 2,
-  title_refill_interval_ms: 500,
-  title_threshold: 1000
+  // 标题池
+  title_pool_size: 800000,
+  title_workers: 20,
+  title_refill_interval_ms: 30,
+  title_threshold: 0.4,
+  // cls类名池
+  cls_pool_size: 800000,
+  cls_workers: 20,
+  cls_refill_interval_ms: 30,
+  cls_threshold: 0.4,
+  // url池
+  url_pool_size: 500000,
+  url_workers: 16,
+  url_refill_interval_ms: 30,
+  url_threshold: 0.4,
+  // 关键词表情池
+  keyword_emoji_pool_size: 800000,
+  keyword_emoji_workers: 20,
+  keyword_emoji_refill_interval_ms: 30,
+  keyword_emoji_threshold: 0.4
+})
+
+// 当前选中池的配置（计算属性）
+const currentPoolConfig = computed({
+  get: () => {
+    const prefix = selectedPool.value
+    const key = (field: string) => `${prefix}_${field}` as keyof CachePoolConfig
+    return {
+      pool_size: cachePoolForm[key('pool_size')] as number,
+      workers: cachePoolForm[key('workers')] as number,
+      refill_interval_ms: cachePoolForm[key('refill_interval_ms')] as number,
+      threshold: cachePoolForm[key('threshold')] as number
+    }
+  },
+  set: (val: { pool_size: number; workers: number; refill_interval_ms: number; threshold: number }) => {
+    const prefix = selectedPool.value
+    const key = (field: string) => `${prefix}_${field}` as keyof CachePoolConfig
+    ;(cachePoolForm[key('pool_size')] as number) = val.pool_size
+    ;(cachePoolForm[key('workers')] as number) = val.workers
+    ;(cachePoolForm[key('refill_interval_ms')] as number) = val.refill_interval_ms
+    ;(cachePoolForm[key('threshold')] as number) = val.threshold
+  }
 })
 
 const loadCachePoolConfig = async () => {
@@ -591,11 +649,26 @@ const loadCachePoolConfig = async () => {
     cachePoolForm.keywords_size = config.keywords_size
     cachePoolForm.images_size = config.images_size
     cachePoolForm.refresh_interval_ms = config.refresh_interval_ms
-    // 标题生成配置
-    cachePoolForm.title_pool_size = config.title_pool_size || 5000
-    cachePoolForm.title_workers = config.title_workers || 2
-    cachePoolForm.title_refill_interval_ms = config.title_refill_interval_ms || 500
-    cachePoolForm.title_threshold = config.title_threshold || 1000
+    // 标题池
+    cachePoolForm.title_pool_size = config.title_pool_size || 800000
+    cachePoolForm.title_workers = config.title_workers || 20
+    cachePoolForm.title_refill_interval_ms = config.title_refill_interval_ms || 30
+    cachePoolForm.title_threshold = config.title_threshold || 0.4
+    // cls类名池
+    cachePoolForm.cls_pool_size = config.cls_pool_size || 800000
+    cachePoolForm.cls_workers = config.cls_workers || 20
+    cachePoolForm.cls_refill_interval_ms = config.cls_refill_interval_ms || 30
+    cachePoolForm.cls_threshold = config.cls_threshold || 0.4
+    // url池
+    cachePoolForm.url_pool_size = config.url_pool_size || 500000
+    cachePoolForm.url_workers = config.url_workers || 16
+    cachePoolForm.url_refill_interval_ms = config.url_refill_interval_ms || 30
+    cachePoolForm.url_threshold = config.url_threshold || 0.4
+    // 关键词表情池
+    cachePoolForm.keyword_emoji_pool_size = config.keyword_emoji_pool_size || 800000
+    cachePoolForm.keyword_emoji_workers = config.keyword_emoji_workers || 20
+    cachePoolForm.keyword_emoji_refill_interval_ms = config.keyword_emoji_refill_interval_ms || 30
+    cachePoolForm.keyword_emoji_threshold = config.keyword_emoji_threshold || 0.4
   } catch (e) {
     console.error('Failed to load cache pool config:', e)
   } finally {
