@@ -518,6 +518,40 @@ func (m *PoolManager) GetRawKeywords(groupID int, count int) []string {
 	return getRandomItems(items, count)
 }
 
+// AppendKeywords 追加关键词到内存（新增时调用）
+func (m *PoolManager) AppendKeywords(groupID int, keywords []string) {
+	if len(keywords) == 0 {
+		return
+	}
+
+	m.keywordsMu.Lock()
+	defer m.keywordsMu.Unlock()
+
+	if m.keywords[groupID] == nil {
+		m.keywords[groupID] = []string{}
+		m.rawKeywords[groupID] = []string{}
+	}
+
+	// 追加原始关键词
+	m.rawKeywords[groupID] = append(m.rawKeywords[groupID], keywords...)
+
+	// 追加编码后的关键词
+	for _, kw := range keywords {
+		m.keywords[groupID] = append(m.keywords[groupID], m.encoder.EncodeText(kw))
+	}
+
+	log.Debug().Int("group_id", groupID).Int("added", len(keywords)).Msg("Keywords appended to cache")
+}
+
+// ReloadKeywordGroup 重载指定分组的关键词缓存（删除时调用）
+func (m *PoolManager) ReloadKeywordGroup(ctx context.Context, groupID int) error {
+	_, err := m.LoadKeywords(ctx, groupID)
+	if err != nil {
+		log.Error().Err(err).Int("group_id", groupID).Msg("Failed to reload keyword group")
+	}
+	return err
+}
+
 // getRandomItems 从切片中随机选取指定数量的元素（Fisher-Yates 部分洗牌）
 func getRandomItems(items []string, count int) []string {
 	n := len(items)
@@ -599,6 +633,32 @@ func (m *PoolManager) GetImages(groupID int) []string {
 	return result
 }
 
+// AppendImages 追加图片到内存（新增时调用）
+func (m *PoolManager) AppendImages(groupID int, urls []string) {
+	if len(urls) == 0 {
+		return
+	}
+
+	m.imagesMu.Lock()
+	defer m.imagesMu.Unlock()
+
+	if m.images[groupID] == nil {
+		m.images[groupID] = []string{}
+	}
+	m.images[groupID] = append(m.images[groupID], urls...)
+
+	log.Debug().Int("group_id", groupID).Int("added", len(urls)).Msg("Images appended to cache")
+}
+
+// ReloadImageGroup 重载指定分组的图片缓存（删除时调用）
+func (m *PoolManager) ReloadImageGroup(ctx context.Context, groupID int) error {
+	_, err := m.LoadImages(ctx, groupID)
+	if err != nil {
+		log.Error().Err(err).Int("group_id", groupID).Msg("Failed to reload image group")
+	}
+	return err
+}
+
 // ============================================================
 // Emoji 方法
 // ============================================================
@@ -621,6 +681,11 @@ func (m *PoolManager) GetRandomEmojiExclude(exclude map[string]bool) string {
 // GetEmojiCount returns the number of loaded emojis
 func (m *PoolManager) GetEmojiCount() int {
 	return m.emojiManager.Count()
+}
+
+// ReloadEmojis 重载表情库
+func (m *PoolManager) ReloadEmojis(path string) error {
+	return m.emojiManager.LoadFromFile(path)
 }
 
 // ============================================================
