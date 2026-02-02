@@ -12,7 +12,6 @@ var ErrPoolEmpty = errors.New("pool is empty")
 
 // validTables is a whitelist of allowed table names for SQL queries
 var validTables = map[string]bool{
-	"titles":   true,
 	"contents": true,
 }
 
