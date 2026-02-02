@@ -20,7 +20,12 @@ type CachePoolConfig struct {
 	KeywordsSize      int `db:"keywords_size" json:"keywords_size"`
 	ImagesSize        int `db:"images_size" json:"images_size"`
 	RefreshIntervalMs int `db:"refresh_interval_ms" json:"refresh_interval_ms"`
-	UpdatedAt        time.Time `db:"updated_at" json:"updated_at"`
+	// 标题生成配置（新增）
+	TitlePoolSize         int `db:"title_pool_size" json:"title_pool_size"`
+	TitleWorkers          int `db:"title_workers" json:"title_workers"`
+	TitleRefillIntervalMs int `db:"title_refill_interval_ms" json:"title_refill_interval_ms"`
+	TitleThreshold        int `db:"title_threshold" json:"title_threshold"`
+	UpdatedAt             time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // RefillInterval returns the refill interval as time.Duration
@@ -33,17 +38,26 @@ func (c *CachePoolConfig) RefreshInterval() time.Duration {
 	return time.Duration(c.RefreshIntervalMs) * time.Millisecond
 }
 
+// TitleRefillInterval returns the title refill interval as time.Duration
+func (c *CachePoolConfig) TitleRefillInterval() time.Duration {
+	return time.Duration(c.TitleRefillIntervalMs) * time.Millisecond
+}
+
 // DefaultCachePoolConfig returns default configuration
 func DefaultCachePoolConfig() *CachePoolConfig {
 	return &CachePoolConfig{
-		ID:                1,
-		TitlesSize:        5000,
-		ContentsSize:      5000,
-		Threshold:         1000,
-		RefillIntervalMs:  1000,
-		KeywordsSize:      50000,
-		ImagesSize:        50000,
-		RefreshIntervalMs: 300000, // 5 minutes
+		ID:                    1,
+		TitlesSize:            5000,
+		ContentsSize:          5000,
+		Threshold:             1000,
+		RefillIntervalMs:      1000,
+		KeywordsSize:          50000,
+		ImagesSize:            50000,
+		RefreshIntervalMs:     300000, // 5 minutes
+		TitlePoolSize:         5000,
+		TitleWorkers:          2,
+		TitleRefillIntervalMs: 500,
+		TitleThreshold:        1000,
 	}
 }
 
@@ -61,8 +75,8 @@ func LoadCachePoolConfig(ctx context.Context, db *sqlx.DB) (*CachePoolConfig, er
 // SaveCachePoolConfig saves configuration to database
 func SaveCachePoolConfig(ctx context.Context, db *sqlx.DB, config *CachePoolConfig) error {
 	query := `
-		INSERT INTO pool_config (id, titles_size, contents_size, threshold, refill_interval_ms, keywords_size, images_size, refresh_interval_ms)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO pool_config (id, titles_size, contents_size, threshold, refill_interval_ms, keywords_size, images_size, refresh_interval_ms, title_pool_size, title_workers, title_refill_interval_ms, title_threshold)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
 			titles_size = VALUES(titles_size),
 			contents_size = VALUES(contents_size),
@@ -70,7 +84,11 @@ func SaveCachePoolConfig(ctx context.Context, db *sqlx.DB, config *CachePoolConf
 			refill_interval_ms = VALUES(refill_interval_ms),
 			keywords_size = VALUES(keywords_size),
 			images_size = VALUES(images_size),
-			refresh_interval_ms = VALUES(refresh_interval_ms)
+			refresh_interval_ms = VALUES(refresh_interval_ms),
+			title_pool_size = VALUES(title_pool_size),
+			title_workers = VALUES(title_workers),
+			title_refill_interval_ms = VALUES(title_refill_interval_ms),
+			title_threshold = VALUES(title_threshold)
 	`
 	_, err := db.ExecContext(ctx, query,
 		config.TitlesSize,
@@ -80,6 +98,10 @@ func SaveCachePoolConfig(ctx context.Context, db *sqlx.DB, config *CachePoolConf
 		config.KeywordsSize,
 		config.ImagesSize,
 		config.RefreshIntervalMs,
+		config.TitlePoolSize,
+		config.TitleWorkers,
+		config.TitleRefillIntervalMs,
+		config.TitleThreshold,
 	)
 	return err
 }
