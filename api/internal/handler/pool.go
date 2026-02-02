@@ -37,10 +37,17 @@ func (h *PoolHandler) GetConfig(c *gin.Context) {
 // UpdateConfig updates pool configuration
 func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	var req struct {
-		TitlesSize       int `json:"titles_size"`
-		ContentsSize     int `json:"contents_size"`
-		Threshold        int `json:"threshold"`
-		RefillIntervalMs int `json:"refill_interval_ms"`
+		TitlesSize            int `json:"titles_size"`
+		ContentsSize          int `json:"contents_size"`
+		Threshold             int `json:"threshold"`
+		RefillIntervalMs      int `json:"refill_interval_ms"`
+		KeywordsSize          int `json:"keywords_size"`
+		ImagesSize            int `json:"images_size"`
+		RefreshIntervalMs     int `json:"refresh_interval_ms"`
+		TitlePoolSize         int `json:"title_pool_size"`
+		TitleWorkers          int `json:"title_workers"`
+		TitleRefillIntervalMs int `json:"title_refill_interval_ms"`
+		TitleThreshold        int `json:"title_threshold"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -66,11 +73,36 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
+	// Validate title config
+	if req.TitlePoolSize < 100 || req.TitlePoolSize > 100000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title_pool_size must be between 100 and 100000"})
+		return
+	}
+	if req.TitleWorkers < 1 || req.TitleWorkers > 10 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title_workers must be between 1 and 10"})
+		return
+	}
+	if req.TitleRefillIntervalMs < 100 || req.TitleRefillIntervalMs > 60000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title_refill_interval_ms must be between 100 and 60000"})
+		return
+	}
+	if req.TitleThreshold < 10 || req.TitleThreshold > req.TitlePoolSize {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title_threshold must be between 10 and title_pool_size"})
+		return
+	}
+
 	config := &core.CachePoolConfig{
-		TitlesSize:       req.TitlesSize,
-		ContentsSize:     req.ContentsSize,
-		Threshold:        req.Threshold,
-		RefillIntervalMs: req.RefillIntervalMs,
+		TitlesSize:            req.TitlesSize,
+		ContentsSize:          req.ContentsSize,
+		Threshold:             req.Threshold,
+		RefillIntervalMs:      req.RefillIntervalMs,
+		KeywordsSize:          req.KeywordsSize,
+		ImagesSize:            req.ImagesSize,
+		RefreshIntervalMs:     req.RefreshIntervalMs,
+		TitlePoolSize:         req.TitlePoolSize,
+		TitleWorkers:          req.TitleWorkers,
+		TitleRefillIntervalMs: req.TitleRefillIntervalMs,
+		TitleThreshold:        req.TitleThreshold,
 	}
 
 	// Save to DB
