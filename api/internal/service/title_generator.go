@@ -1,0 +1,231 @@
+// api/internal/service/title_generator.go
+package core
+
+import (
+	"context"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/rs/zerolog/log"
+)
+
+// TitlePool 标题池（基于 channel）
+type TitlePool struct {
+	ch      chan string
+	groupID int
+}
+
+// TitleGenerator 动态标题生成器
+type TitleGenerator struct {
+	pools       map[int]*TitlePool // groupID -> 标题池
+	poolManager *PoolManager       // 引用，获取关键词和emoji
+	config      *CachePoolConfig
+	mu          sync.RWMutex
+
+	ctx     context.Context
+	cancel  context.CancelFunc
+	wg      sync.WaitGroup
+	stopped atomic.Bool
+}
+
+// NewTitleGenerator 创建标题生成器
+func NewTitleGenerator(pm *PoolManager, config *CachePoolConfig) *TitleGenerator {
+	ctx, cancel := context.WithCancel(context.Background())
+	return &TitleGenerator{
+		pools:       make(map[int]*TitlePool),
+		poolManager: pm,
+		config:      config,
+		ctx:         ctx,
+		cancel:      cancel,
+	}
+}
+
+// generateTitle 生成单个标题
+// 格式：关键词1 + emoji1 + 关键词2 + emoji2 + 关键词3
+func (g *TitleGenerator) generateTitle(groupID int) string {
+	// 获取 3 个随机编码关键词
+	keywords := g.poolManager.GetRandomKeywords(groupID, 3)
+	if len(keywords) < 3 {
+		// 关键词不足，返回空或部分拼接
+		if len(keywords) == 0 {
+			return ""
+		}
+		// 尽可能拼接
+		result := keywords[0]
+		if len(keywords) > 1 {
+			result += g.poolManager.GetRandomEmoji() + keywords[1]
+		}
+		return result
+	}
+
+	// 获取 2 个不重复的 emoji
+	emoji1 := g.poolManager.GetRandomEmoji()
+	emoji2 := g.poolManager.GetRandomEmojiExclude(map[string]bool{emoji1: true})
+
+	// 拼接：关键词1 + emoji1 + 关键词2 + emoji2 + 关键词3
+	return keywords[0] + emoji1 + keywords[1] + emoji2 + keywords[2]
+}
+
+// getOrCreatePool 获取或创建指定 groupID 的标题池
+func (g *TitleGenerator) getOrCreatePool(groupID int) *TitlePool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if pool, exists := g.pools[groupID]; exists {
+		return pool
+	}
+
+	pool := &TitlePool{
+		ch:      make(chan string, g.config.TitlePoolSize),
+		groupID: groupID,
+	}
+	g.pools[groupID] = pool
+	log.Debug().Int("group_id", groupID).Int("size", g.config.TitlePoolSize).Msg("Created title pool")
+	return pool
+}
+
+// Pop 从标题池获取一个标题
+func (g *TitleGenerator) Pop(groupID int) (string, error) {
+	pool := g.getOrCreatePool(groupID)
+
+	select {
+	case title := <-pool.ch:
+		return title, nil
+	default:
+		// 池空，同步生成一个返回
+		return g.generateTitle(groupID), nil
+	}
+}
+
+// fillPool 填充标题池
+func (g *TitleGenerator) fillPool(groupID int, pool *TitlePool) {
+	need := g.config.TitlePoolSize - len(pool.ch)
+	if need <= 0 {
+		return
+	}
+
+	filled := 0
+	for i := 0; i < need; i++ {
+		title := g.generateTitle(groupID)
+		if title == "" {
+			continue
+		}
+		select {
+		case pool.ch <- title:
+			filled++
+		default:
+			// 池满，停止
+			break
+		}
+	}
+
+	if filled > 0 {
+		log.Debug().
+			Int("group_id", groupID).
+			Int("filled", filled).
+			Int("total", len(pool.ch)).
+			Msg("Title pool filled")
+	}
+}
+
+// refillWorker 后台填充协程
+func (g *TitleGenerator) refillWorker(groupID int, pool *TitlePool) {
+	defer g.wg.Done()
+
+	ticker := time.NewTicker(g.config.TitleRefillInterval())
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-g.ctx.Done():
+			return
+		case <-ticker.C:
+			if g.stopped.Load() {
+				return
+			}
+			// 检查是否需要补充
+			if len(pool.ch) < g.config.TitleThreshold {
+				g.fillPool(groupID, pool)
+			}
+		}
+	}
+}
+
+// Start 启动标题生成器
+func (g *TitleGenerator) Start(groupIDs []int) {
+	log.Info().
+		Ints("group_ids", groupIDs).
+		Int("pool_size", g.config.TitlePoolSize).
+		Int("workers", g.config.TitleWorkers).
+		Msg("Starting TitleGenerator")
+
+	for _, groupID := range groupIDs {
+		pool := g.getOrCreatePool(groupID)
+
+		// 初始填充
+		g.fillPool(groupID, pool)
+
+		// 启动 N 个填充协程
+		for i := 0; i < g.config.TitleWorkers; i++ {
+			g.wg.Add(1)
+			go g.refillWorker(groupID, pool)
+		}
+	}
+}
+
+// Stop 停止标题生成器
+func (g *TitleGenerator) Stop() {
+	g.stopped.Store(true)
+	g.cancel()
+	g.wg.Wait()
+	log.Info().Msg("TitleGenerator stopped")
+}
+
+// Reload 重载配置
+func (g *TitleGenerator) Reload(config *CachePoolConfig) {
+	g.mu.Lock()
+	oldConfig := g.config
+	g.config = config
+	g.mu.Unlock()
+
+	// 如果池大小变化，需要重建池
+	if config.TitlePoolSize != oldConfig.TitlePoolSize {
+		log.Info().
+			Int("old_size", oldConfig.TitlePoolSize).
+			Int("new_size", config.TitlePoolSize).
+			Msg("Title pool size changed, pools will be recreated on next access")
+		// 清空旧池，下次访问时会创建新大小的池
+		g.mu.Lock()
+		g.pools = make(map[int]*TitlePool)
+		g.mu.Unlock()
+	}
+}
+
+// GetStats 获取标题池统计
+func (g *TitleGenerator) GetStats() map[int]map[string]int {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	stats := make(map[int]map[string]int)
+	for groupID, pool := range g.pools {
+		stats[groupID] = map[string]int{
+			"current":   len(pool.ch),
+			"max_size":  g.config.TitlePoolSize,
+			"threshold": g.config.TitleThreshold,
+		}
+	}
+	return stats
+}
+
+// GetTotalStats 获取汇总统计
+func (g *TitleGenerator) GetTotalStats() (current, maxSize int) {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	for _, pool := range g.pools {
+		current += len(pool.ch)
+		maxSize += g.config.TitlePoolSize
+	}
+	return
+}
