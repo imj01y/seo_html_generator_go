@@ -19,6 +19,11 @@ export interface CachePoolConfig {
   keywords_size: number
   images_size: number
   refresh_interval_ms: number
+  // 标题生成配置（新增）
+  title_pool_size: number
+  title_workers: number
+  title_refill_interval_ms: number
+  title_threshold: number
   updated_at?: string
 }
 
