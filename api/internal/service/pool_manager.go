@@ -763,6 +763,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  m.config.TitleWorkers,
 		LastRefresh: lastRefreshPtr,
+		PoolType:    "consumable",
 	})
 
 	// 2. 正文池（消费型，汇总所有分组）
@@ -788,13 +789,21 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  1,
 		LastRefresh: lastRefreshPtr,
+		PoolType:    "consumable",
 	})
 
-	// 3. 关键词池（复用型，utilization = 0）
+	// 3. 关键词池（复用型，增加分组详情）
 	m.keywordsMu.RLock()
 	var totalKeywords int
-	for _, items := range m.keywords {
-		totalKeywords += len(items)
+	keywordGroups := []PoolGroupInfo{}
+	for gid, items := range m.keywords {
+		count := len(items)
+		totalKeywords += count
+		keywordGroups = append(keywordGroups, PoolGroupInfo{
+			ID:    gid,
+			Name:  fmt.Sprintf("分组%d", gid),
+			Count: count,
+		})
 	}
 	m.keywordsMu.RUnlock()
 	pools = append(pools, PoolStatusStats{
@@ -804,15 +813,24 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Used:        0,
 		Utilization: 100,
 		Status:      status,
-		NumWorkers:  1,
+		NumWorkers:  0,
 		LastRefresh: lastRefreshPtr,
+		PoolType:    "reusable",
+		Groups:      keywordGroups,
 	})
 
-	// 4. 图片池（复用型，utilization = 0）
+	// 4. 图片池（复用型，增加分组详情）
 	m.imagesMu.RLock()
 	var totalImages int
-	for _, items := range m.images {
-		totalImages += len(items)
+	imageGroups := []PoolGroupInfo{}
+	for gid, items := range m.images {
+		count := len(items)
+		totalImages += count
+		imageGroups = append(imageGroups, PoolGroupInfo{
+			ID:    gid,
+			Name:  fmt.Sprintf("分组%d", gid),
+			Count: count,
+		})
 	}
 	m.imagesMu.RUnlock()
 	pools = append(pools, PoolStatusStats{
@@ -822,8 +840,10 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Used:        0,
 		Utilization: 100,
 		Status:      status,
-		NumWorkers:  1,
+		NumWorkers:  0,
 		LastRefresh: lastRefreshPtr,
+		PoolType:    "reusable",
+		Groups:      imageGroups,
 	})
 
 	// 5. 表情库（静态数据）
@@ -837,6 +857,8 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  0,
 		LastRefresh: nil,
+		PoolType:    "static",
+		Source:      "emojis.json",
 	})
 
 	return pools
