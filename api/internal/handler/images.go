@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -294,6 +295,10 @@ func (h *ImagesHandler) DeleteGroup(c *gin.Context) {
 		return
 	}
 
+	if h.poolManager != nil {
+		go h.poolManager.ReloadImageGroup(context.Background(), id)
+	}
+
 	core.Success(c, gin.H{"success": true})
 }
 
@@ -374,6 +379,11 @@ func (h *ImagesHandler) AddURL(c *gin.Context) {
 	if affected == 0 {
 		core.Success(c, gin.H{"success": false, "message": "图片URL已存在"})
 		return
+	}
+
+	// 成功后追加到缓存
+	if h.poolManager != nil {
+		h.poolManager.AppendImages(groupID, []string{req.URL})
 	}
 
 	id, _ := result.LastInsertId()
@@ -467,6 +477,11 @@ func (h *ImagesHandler) BatchAddURLs(c *gin.Context) {
 	if err := tx.Commit(); err != nil {
 		core.FailWithMessage(c, core.ErrInternalServer, "提交事务失败")
 		return
+	}
+
+	// 成功后重载分组缓存
+	if added > 0 && h.poolManager != nil {
+		h.poolManager.ReloadImageGroup(c.Request.Context(), groupID)
 	}
 
 	core.Success(c, gin.H{
@@ -578,6 +593,11 @@ func (h *ImagesHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	// 成功后重载分组缓存
+	if added > 0 && h.poolManager != nil {
+		h.poolManager.ReloadImageGroup(c.Request.Context(), groupID)
+	}
+
 	core.Success(c, gin.H{
 		"success": true,
 		"message": fmt.Sprintf("成功添加 %d 个图片URL，跳过 %d 个重复", added, skipped),
@@ -663,10 +683,19 @@ func (h *ImagesHandler) DeleteURL(c *gin.Context) {
 		return
 	}
 
+	// 先查询要删除的图片所属分组
+	var groupID int
+	h.db.Get(&groupID, "SELECT group_id FROM images WHERE id = ?", id)
+
 	// 物理删除
 	if _, err := h.db.Exec("DELETE FROM images WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
+	}
+
+	// 删除后重载分组缓存
+	if groupID > 0 && h.poolManager != nil {
+		go h.poolManager.ReloadImageGroup(context.Background(), groupID)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -699,11 +728,24 @@ func (h *ImagesHandler) BatchDelete(c *gin.Context) {
 		args[i] = id
 	}
 
+	// 查询涉及的分组
+	var groupIDs []int
+	if len(req.IDs) > 0 {
+		h.db.Select(&groupIDs, fmt.Sprintf("SELECT DISTINCT group_id FROM images WHERE id IN (%s)", placeholders), args...)
+	}
+
 	// 物理删除
 	query := fmt.Sprintf("DELETE FROM images WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
 		return
+	}
+
+	// 重载涉及的分组缓存
+	if h.poolManager != nil {
+		for _, gid := range groupIDs {
+			go h.poolManager.ReloadImageGroup(context.Background(), gid)
+		}
 	}
 
 	core.Success(c, gin.H{"success": true, "deleted": len(req.IDs)})
@@ -744,6 +786,15 @@ func (h *ImagesHandler) DeleteAll(c *gin.Context) {
 	}
 
 	deleted, _ := result.RowsAffected()
+
+	if h.poolManager != nil {
+		if req.GroupID != nil {
+			go h.poolManager.ReloadImageGroup(context.Background(), *req.GroupID)
+		} else {
+			go h.poolManager.RefreshData(context.Background(), "images")
+		}
+	}
+
 	core.Success(c, gin.H{"success": true, "deleted": deleted})
 }
 
@@ -825,16 +876,26 @@ func (h *ImagesHandler) BatchMove(c *gin.Context) {
 	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
 }
 
-// Reload 重新加载
+// Reload 重新加载图片缓存
 // POST /api/images/urls/reload
 func (h *ImagesHandler) Reload(c *gin.Context) {
-	if h.db == nil {
-		core.Success(c, gin.H{"success": true, "total": 0})
-		return
+	groupIDStr := c.Query("group_id")
+
+	if h.poolManager != nil {
+		if groupIDStr != "" {
+			groupID, _ := strconv.Atoi(groupIDStr)
+			if groupID > 0 {
+				h.poolManager.ReloadImageGroup(c.Request.Context(), groupID)
+			}
+		} else {
+			h.poolManager.RefreshData(c.Request.Context(), "images")
+		}
 	}
 
 	var total int64
-	h.db.Get(&total, "SELECT COUNT(*) FROM images WHERE status = 1")
+	if h.db != nil {
+		h.db.Get(&total, "SELECT COUNT(*) FROM images WHERE status = 1")
+	}
 
 	core.Success(c, gin.H{"success": true, "total": total})
 }
