@@ -130,7 +130,7 @@ func main() {
 	// Initialize high-concurrency object pools (target: 500 QPS)
 	log.Info().Msg("Initializing high-concurrency object pools (target: 500 QPS)...")
 	startTime := time.Now()
-	funcsManager.InitPools()
+	funcsManager.InitPools(poolManager.GetConfig())
 	log.Info().Dur("duration", time.Since(startTime)).Msg("Object pools initialized")
 
 	// Set up template analyzer callback for pool size recommendations
@@ -182,7 +182,7 @@ func main() {
 
 		// Initialize keyword+emoji pool (requires keywords and emojiManager)
 		log.Info().Msg("Initializing keyword emoji pool...")
-		funcsManager.InitKeywordEmojiPool()
+		funcsManager.InitKeywordEmojiPool(poolManager.GetConfig())
 		log.Info().Msg("Keyword emoji pool initialized")
 	}
 
