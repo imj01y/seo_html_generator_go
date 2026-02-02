@@ -2,53 +2,104 @@
   <div class="pool-status-card">
     <div class="card-header">
       <span class="pool-name">{{ pool.name }}</span>
-      <span :class="['status-badge', `status-${pool.status}`]">
-        <span class="status-icon">{{ statusIcon }}</span>
-        {{ statusText }}
-      </span>
+      <template v-if="pool.pool_type === 'reusable' || pool.pool_type === 'static'">
+        <el-button size="small" @click="handleReload">
+          重载
+        </el-button>
+      </template>
+      <template v-else>
+        <span :class="['status-badge', `status-${pool.status}`]">
+          <span class="status-icon">{{ statusIcon }}</span>
+          {{ statusText }}
+        </span>
+      </template>
     </div>
 
-    <div class="progress-section">
-      <el-progress
-        :percentage="utilizationPercent"
-        :color="progressColor"
-        :stroke-width="12"
-        :show-text="false"
-      />
-      <span class="progress-text">{{ utilizationPercent.toFixed(0) }}%</span>
-    </div>
+    <!-- 消费型池：显示利用率 -->
+    <template v-if="!pool.pool_type || pool.pool_type === 'consumable'">
+      <!-- 保持原有的消费型池显示逻辑 -->
+      <div class="progress-section">
+        <el-progress
+          :percentage="utilizationPercent"
+          :color="progressColor"
+          :stroke-width="12"
+          :show-text="false"
+        />
+        <span class="progress-text">{{ utilizationPercent.toFixed(0) }}%</span>
+      </div>
 
-    <div class="stats-grid">
-      <div class="stat-item">
-        <span class="stat-label">容量</span>
-        <span class="stat-value">{{ formatNumber(pool.size) }}</span>
+      <div class="stats-grid">
+        <div class="stat-item">
+          <span class="stat-label">容量</span>
+          <span class="stat-value">{{ formatNumber(pool.size) }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">可用</span>
+          <span class="stat-value">{{ formatNumber(pool.available) }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">已用</span>
+          <span class="stat-value">{{ formatNumber(pool.used) }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">线程</span>
+          <span class="stat-value">{{ pool.num_workers }}</span>
+        </div>
       </div>
-      <div class="stat-item">
-        <span class="stat-label">可用</span>
-        <span class="stat-value">{{ formatNumber(pool.available) }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">已用</span>
-        <span class="stat-value">{{ formatNumber(pool.used) }}</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-label">线程</span>
-        <span class="stat-value">{{ pool.num_workers }}</span>
-      </div>
-    </div>
+    </template>
 
-    <div class="last-refresh">
-      最后刷新: {{ formatTime(pool.last_refresh) }}
+    <!-- 复用型池：显示总数和分组 -->
+    <template v-else-if="pool.pool_type === 'reusable'">
+      <div class="reusable-stats">
+        <span class="total">总计: {{ formatNumber(pool.size) }} 条</span>
+        <span class="groups-count" v-if="pool.groups">({{ pool.groups.length }} 个分组)</span>
+      </div>
+      <el-collapse v-if="pool.groups && pool.groups.length > 0" class="groups-collapse">
+        <el-collapse-item title="分组详情">
+          <div class="groups-list">
+            <div v-for="group in pool.groups" :key="group.id" class="group-item">
+              <span class="group-name">{{ group.name }}</span>
+              <span class="group-count">{{ formatNumber(group.count) }}</span>
+              <el-button size="small" link @click="handleReloadGroup(group.id)">
+                重载
+              </el-button>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+    </template>
+
+    <!-- 静态池：显示总数和来源 -->
+    <template v-else-if="pool.pool_type === 'static'">
+      <div class="static-stats">
+        <div class="stat-row">
+          <span class="stat-label">总计</span>
+          <span class="stat-value">{{ formatNumber(pool.size) }} 个</span>
+        </div>
+        <div class="stat-row" v-if="pool.source">
+          <span class="stat-label">来源</span>
+          <span class="stat-value">{{ pool.source }}</span>
+        </div>
+      </div>
+    </template>
+
+    <div class="last-refresh" v-if="pool.last_refresh">
+      最后加载: {{ formatTime(pool.last_refresh) }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { PoolStats } from '@/api/pool-config'
+import type { PoolStats } from '@/api/cache-pool'
 
 const props = defineProps<{
   pool: PoolStats
+}>()
+
+const emit = defineEmits<{
+  (e: 'reload'): void
+  (e: 'reload-group', groupId: number): void
 }>()
 
 const STATUS_CONFIG: Record<string, { icon: string; text: string }> = {
@@ -71,6 +122,14 @@ const progressColor = computed(() => {
   if (util < 90) return '#E6A23C'      // 橙色 - 偏高
   return '#F56C6C'                     // 红色 - 紧张
 })
+
+const handleReload = () => {
+  emit('reload')
+}
+
+const handleReloadGroup = (groupId: number) => {
+  emit('reload-group', groupId)
+}
 
 const formatNumber = (num: number): string => {
   if (num >= 1000000) {
@@ -188,6 +247,88 @@ const formatTime = (time: string | null): string => {
     font-size: 12px;
     color: #909399;
     text-align: right;
+  }
+
+  .reusable-stats {
+    padding: 12px;
+    background: var(--el-fill-color-light);
+    border-radius: 6px;
+    margin-bottom: 8px;
+
+    .total {
+      font-size: 16px;
+      font-weight: 600;
+      color: var(--el-text-color-primary);
+    }
+
+    .groups-count {
+      margin-left: 8px;
+      font-size: 14px;
+      color: var(--el-text-color-secondary);
+    }
+  }
+
+  .groups-collapse {
+    margin-bottom: 8px;
+
+    :deep(.el-collapse-item__header) {
+      font-size: 13px;
+      color: var(--el-text-color-regular);
+    }
+  }
+
+  .groups-list {
+    .group-item {
+      display: flex;
+      align-items: center;
+      padding: 8px 12px;
+      background: var(--el-bg-color);
+      border-radius: 4px;
+      margin-bottom: 4px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .group-name {
+        flex: 1;
+        font-size: 13px;
+        color: var(--el-text-color-regular);
+      }
+
+      .group-count {
+        margin-right: 12px;
+        font-size: 13px;
+        font-weight: 500;
+        color: var(--el-text-color-primary);
+      }
+    }
+  }
+
+  .static-stats {
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--el-fill-color-light);
+      border-radius: 4px;
+      margin-bottom: 4px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .stat-label {
+        font-size: 13px;
+        color: var(--el-text-color-secondary);
+      }
+
+      .stat-value {
+        font-size: 14px;
+        font-weight: 500;
+        color: var(--el-text-color-primary);
+      }
+    }
   }
 }
 </style>
