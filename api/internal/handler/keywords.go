@@ -18,12 +18,16 @@ import (
 
 // KeywordsHandler 关键词管理 handler
 type KeywordsHandler struct {
-	db *sqlx.DB
+	db          *sqlx.DB
+	poolManager *core.PoolManager
 }
 
 // NewKeywordsHandler 创建 KeywordsHandler
-func NewKeywordsHandler(db *sqlx.DB) *KeywordsHandler {
-	return &KeywordsHandler{db: db}
+func NewKeywordsHandler(db *sqlx.DB, poolManager *core.PoolManager) *KeywordsHandler {
+	return &KeywordsHandler{
+		db:          db,
+		poolManager: poolManager,
+	}
 }
 
 // KeywordGroup 关键词分组

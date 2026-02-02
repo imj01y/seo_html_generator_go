@@ -17,12 +17,16 @@ import (
 
 // ImagesHandler 图片管理 handler
 type ImagesHandler struct {
-	db *sqlx.DB
+	db          *sqlx.DB
+	poolManager *core.PoolManager
 }
 
 // NewImagesHandler 创建 ImagesHandler
-func NewImagesHandler(db *sqlx.DB) *ImagesHandler {
-	return &ImagesHandler{db: db}
+func NewImagesHandler(db *sqlx.DB, poolManager *core.PoolManager) *ImagesHandler {
+	return &ImagesHandler{
+		db:          db,
+		poolManager: poolManager,
+	}
 }
 
 // ImageGroup 图片分组

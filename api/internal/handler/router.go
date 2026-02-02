@@ -93,7 +93,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Keywords routes (require JWT)
-	keywordsHandler := NewKeywordsHandler(deps.DB)
+	keywordsHandler := NewKeywordsHandler(deps.DB, deps.PoolManager)
 	keywordsGroup := r.Group("/api/keywords")
 	keywordsGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{
@@ -124,7 +124,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Images routes (require JWT)
-	imagesHandler := NewImagesHandler(deps.DB)
+	imagesHandler := NewImagesHandler(deps.DB, deps.PoolManager)
 	imagesGroup := r.Group("/api/images")
 	imagesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{
@@ -758,7 +758,8 @@ func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 
 // dataRefreshRequest 数据刷新请求
 type dataRefreshRequest struct {
-	Pool string `json:"pool" binding:"required,oneof=all keywords images titles contents"`
+	Pool    string `json:"pool" binding:"required,oneof=all keywords images titles contents emojis"`
+	GroupID *int   `json:"group_id"`
 }
 
 // dataRefreshHandler POST /refresh - 刷新数据池
@@ -778,10 +779,26 @@ func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 		defer cancel()
 
-		// 刷新指定的数据池
-		if err := deps.PoolManager.RefreshData(ctx, req.Pool); err != nil {
-			core.FailWithMessage(c, core.ErrInternalServer, err.Error())
-			return
+		switch req.Pool {
+		case "keywords":
+			if req.GroupID != nil {
+				deps.PoolManager.ReloadKeywordGroup(ctx, *req.GroupID)
+			} else {
+				deps.PoolManager.RefreshData(ctx, "keywords")
+			}
+		case "images":
+			if req.GroupID != nil {
+				deps.PoolManager.ReloadImageGroup(ctx, *req.GroupID)
+			} else {
+				deps.PoolManager.RefreshData(ctx, "images")
+			}
+		case "emojis":
+			deps.PoolManager.ReloadEmojis("data/emojis.json")
+		default:
+			if err := deps.PoolManager.RefreshData(ctx, req.Pool); err != nil {
+				core.FailWithMessage(c, core.ErrInternalServer, err.Error())
+				return
+			}
 		}
 
 		stats := deps.PoolManager.GetPoolStatsSimple()
