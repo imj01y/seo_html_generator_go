@@ -53,6 +53,13 @@ type PoolManager struct {
 	lastRefresh time.Time
 }
 
+// PoolGroupInfo 分组详情
+type PoolGroupInfo struct {
+	ID    int    `json:"id"`
+	Name  string `json:"name"`
+	Count int    `json:"count"`
+}
+
 // PoolStatusStats 数据池运行状态统计（用于前端显示）
 type PoolStatusStats struct {
 	Name        string     `json:"name"`
@@ -63,6 +70,10 @@ type PoolStatusStats struct {
 	Status      string     `json:"status"`
 	NumWorkers  int        `json:"num_workers"`
 	LastRefresh *time.Time `json:"last_refresh"`
+	// 新增字段（复用型池使用）
+	PoolType string          `json:"pool_type"`        // "consumable" | "reusable" | "static"
+	Groups   []PoolGroupInfo `json:"groups,omitempty"` // 分组详情（复用型池）
+	Source   string          `json:"source,omitempty"` // 数据来源（表情库）
 }
 
 // NewPoolManager creates a new pool manager
