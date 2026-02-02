@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"io"
@@ -308,6 +309,11 @@ func (h *KeywordsHandler) DeleteGroup(c *gin.Context) {
 		return
 	}
 
+	// 删除后重载缓存（分组已删除，清除该分组的缓存）
+	if h.poolManager != nil {
+		go h.poolManager.ReloadKeywordGroup(context.Background(), id)
+	}
+
 	core.Success(c, gin.H{"success": true})
 }
 
@@ -435,10 +441,19 @@ func (h *KeywordsHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// 先查询要删除的关键词所属分组
+	var groupID int
+	h.db.Get(&groupID, "SELECT group_id FROM keywords WHERE id = ?", id)
+
 	// 物理删除
 	if _, err := h.db.Exec("DELETE FROM keywords WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
+	}
+
+	// 删除后重载分组缓存
+	if groupID > 0 && h.poolManager != nil {
+		go h.poolManager.ReloadKeywordGroup(context.Background(), groupID)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -471,11 +486,24 @@ func (h *KeywordsHandler) BatchDelete(c *gin.Context) {
 		args[i] = id
 	}
 
+	// 查询涉及的分组
+	var groupIDs []int
+	if len(req.IDs) > 0 {
+		h.db.Select(&groupIDs, fmt.Sprintf("SELECT DISTINCT group_id FROM keywords WHERE id IN (%s)", placeholders), args...)
+	}
+
 	// 物理删除
 	query := fmt.Sprintf("DELETE FROM keywords WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
 		return
+	}
+
+	// 重载涉及的分组缓存
+	if h.poolManager != nil {
+		for _, gid := range groupIDs {
+			go h.poolManager.ReloadKeywordGroup(context.Background(), gid)
+		}
 	}
 
 	core.Success(c, gin.H{"success": true, "deleted": len(req.IDs)})
@@ -516,6 +544,17 @@ func (h *KeywordsHandler) DeleteAll(c *gin.Context) {
 	}
 
 	deleted, _ := result.RowsAffected()
+
+	// 删除后重载缓存
+	if h.poolManager != nil {
+		if req.GroupID != nil {
+			go h.poolManager.ReloadKeywordGroup(context.Background(), *req.GroupID)
+		} else {
+			// 全部删除，需要重载所有分组
+			go h.poolManager.RefreshData(context.Background(), "keywords")
+		}
+	}
+
 	core.Success(c, gin.H{"success": true, "deleted": deleted})
 }
 
@@ -630,6 +669,7 @@ func (h *KeywordsHandler) BatchAdd(c *gin.Context) {
 	// 使用 INSERT IGNORE 批量插入
 	added := 0
 	skipped := 0
+	addedKeywords := []string{}
 
 	for _, kw := range req.Keywords {
 		kw = strings.TrimSpace(kw)
@@ -649,9 +689,15 @@ func (h *KeywordsHandler) BatchAdd(c *gin.Context) {
 		affected, _ := result.RowsAffected()
 		if affected > 0 {
 			added++
+			addedKeywords = append(addedKeywords, kw)
 		} else {
 			skipped++
 		}
+	}
+
+	// 成功后追加到缓存
+	if len(addedKeywords) > 0 && h.poolManager != nil {
+		h.poolManager.AppendKeywords(groupID, addedKeywords)
 	}
 
 	core.Success(c, gin.H{
@@ -697,6 +743,12 @@ func (h *KeywordsHandler) Add(c *gin.Context) {
 	}
 
 	id, _ := result.LastInsertId()
+
+	// 成功后追加到缓存
+	if h.poolManager != nil {
+		h.poolManager.AppendKeywords(groupID, []string{req.Keyword})
+	}
+
 	core.Success(c, gin.H{"success": true, "id": id})
 }
 
@@ -801,6 +853,11 @@ func (h *KeywordsHandler) Upload(c *gin.Context) {
 		return
 	}
 
+	// 成功后重载该分组缓存（批量上传难以追踪具体成功的）
+	if added > 0 && h.poolManager != nil {
+		h.poolManager.ReloadKeywordGroup(c.Request.Context(), groupID)
+	}
+
 	core.Success(c, gin.H{
 		"success": true,
 		"message": fmt.Sprintf("成功添加 %d 个关键词，跳过 %d 个重复", added, skipped),
@@ -810,16 +867,26 @@ func (h *KeywordsHandler) Upload(c *gin.Context) {
 	})
 }
 
-// Reload 重新加载（占位，Go 中暂不需要）
+// Reload 重新加载关键词缓存
 // POST /api/keywords/reload
 func (h *KeywordsHandler) Reload(c *gin.Context) {
-	if h.db == nil {
-		core.Success(c, gin.H{"success": true, "total": 0})
-		return
+	groupIDStr := c.Query("group_id")
+
+	if h.poolManager != nil {
+		if groupIDStr != "" {
+			groupID, _ := strconv.Atoi(groupIDStr)
+			if groupID > 0 {
+				h.poolManager.ReloadKeywordGroup(c.Request.Context(), groupID)
+			}
+		} else {
+			h.poolManager.RefreshData(c.Request.Context(), "keywords")
+		}
 	}
 
 	var total int64
-	h.db.Get(&total, "SELECT COUNT(*) FROM keywords WHERE status = 1")
+	if h.db != nil {
+		h.db.Get(&total, "SELECT COUNT(*) FROM keywords WHERE status = 1")
+	}
 
 	core.Success(c, gin.H{"success": true, "total": total})
 }
