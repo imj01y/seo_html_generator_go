@@ -15,7 +15,6 @@ from database.db import init_database, init_db_pool, get_db_pool
 from core.redis_client import init_redis_client, get_redis_client
 from core.spider_detector import init_spider_detector
 from core.auth import ensure_default_admin
-from core.title_manager import init_title_manager, get_title_manager
 from core.content_manager import init_content_manager, get_content_manager
 
 
@@ -122,22 +121,15 @@ async def init_pool_components():
 
 
 async def init_content_components():
-    """初始化内容相关组件（标题、正文管理器）"""
+    """初始化内容相关组件（正文管理器）
+
+    注意：标题管理器已迁移到 Go API (api/internal/service/title_generator.go)
+    """
     redis_client = get_redis_client()
     db_pool = get_db_pool()
 
     if not (redis_client and db_pool):
         return
-
-    # 标题管理器
-    try:
-        await init_title_manager(redis_client, db_pool, group_id=1, max_size=500000)
-        title_manager = get_title_manager(group_id=1)
-        if title_manager:
-            stats = title_manager.get_stats()
-            logger.info(f"Title manager (group 1) initialized: {stats['total_loaded']} titles loaded")
-    except Exception as e:
-        logger.warning(f"Title manager initialization failed: {e}")
 
     # 正文管理器
     try:
