@@ -182,8 +182,8 @@ function formatDiskSize(bytes: number): string {
     }
 
     .stat-progress {
-      flex: 1;
-      min-width: 0;
+      width: 220px;
+      flex-shrink: 0;
     }
 
     .stat-extra {
