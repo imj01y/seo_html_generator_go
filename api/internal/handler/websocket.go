@@ -25,13 +25,15 @@ var upgrader = websocket.Upgrader{
 type WebSocketHandler struct {
 	templateFuncs *core.TemplateFuncsManager
 	poolManager   *core.PoolManager
+	systemStats   *core.SystemStatsCollector
 }
 
 // NewWebSocketHandler 创建 WebSocket 处理器
-func NewWebSocketHandler(templateFuncs *core.TemplateFuncsManager, poolManager *core.PoolManager) *WebSocketHandler {
+func NewWebSocketHandler(templateFuncs *core.TemplateFuncsManager, poolManager *core.PoolManager, systemStats *core.SystemStatsCollector) *WebSocketHandler {
 	return &WebSocketHandler{
 		templateFuncs: templateFuncs,
 		poolManager:   poolManager,
+		systemStats:   systemStats,
 	}
 }
 
@@ -469,6 +471,76 @@ func (h *WebSocketHandler) sendPoolStatus(conn *websocket.Conn) error {
 	}
 
 	// 序列化并发送
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	return conn.WriteMessage(websocket.TextMessage, data)
+}
+
+// SystemStats 系统资源实时推送
+// GET /ws/system-stats
+func (h *WebSocketHandler) SystemStats(c *gin.Context) {
+	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 监听客户端断开
+	go func() {
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// 立即发送一次初始状态
+	h.sendSystemStats(conn)
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := h.sendSystemStats(conn); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// sendSystemStats 发送系统统计消息
+func (h *WebSocketHandler) sendSystemStats(conn *websocket.Conn) error {
+	if h.systemStats == nil {
+		return nil
+	}
+
+	stats, err := h.systemStats.Collect()
+	if err != nil {
+		return err
+	}
+
+	msg := map[string]interface{}{
+		"type":      "system_stats",
+		"timestamp": time.Now().Format(time.RFC3339Nano),
+		"cpu":       stats.CPU,
+		"memory":    stats.Memory,
+		"load":      stats.Load,
+		"network":   stats.Network,
+		"disks":     stats.Disks,
+	}
+
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err

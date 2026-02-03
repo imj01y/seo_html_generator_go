@@ -30,6 +30,7 @@ type Dependencies struct {
 	TemplateCache    *core.TemplateCache
 	Monitor          *core.Monitor
 	PoolManager      *core.PoolManager
+	SystemStats      *core.SystemStatsCollector
 }
 
 // SetupRouter configures all API routes
@@ -278,7 +279,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 
 	// Cache Pool routes (require JWT) - 标题和正文缓存池配置
 	if deps.PoolManager != nil {
-		cachePoolHandler := NewPoolHandler(deps.DB, deps.PoolManager)
+		cachePoolHandler := NewPoolHandler(deps.DB, deps.PoolManager, deps.TemplateFuncs)
 		cachePoolGroup := r.Group("/api/cache-pool")
 		cachePoolGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 		{
@@ -359,7 +360,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// WebSocket routes (不需要认证)
-	wsHandler := NewWebSocketHandler(deps.TemplateFuncs, deps.PoolManager)
+	wsHandler := NewWebSocketHandler(deps.TemplateFuncs, deps.PoolManager, deps.SystemStats)
 	r.GET("/ws/spider-logs/:id", wsHandler.SpiderLogs)
 	r.GET("/ws/spider-stats/:id", wsHandler.SpiderStats)
 	r.GET("/ws/worker-restart", wsHandler.WorkerRestart)
@@ -368,6 +369,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	r.GET("/ws/processor-status", wsHandler.ProcessorStatus)
 	r.GET("/ws/pool-status", wsHandler.PoolStatus)
 	r.GET("/api/logs/ws", wsHandler.SystemLogs)
+	r.GET("/ws/system-stats", wsHandler.SystemStats)
 
 	// Admin API group (require JWT)
 	admin := r.Group("/api/admin")
@@ -381,10 +383,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		pool.GET("/preset/:name", poolPresetByNameHandler(deps))
 		pool.POST("/preset/:name", poolPresetByNameHandler(deps))
 		pool.POST("/resize", poolResizeHandler(deps))
-		pool.POST("/warmup", poolWarmupHandler(deps))
 		pool.POST("/clear", poolClearHandler(deps))
-		pool.POST("/pause", poolPauseHandler(deps))
-		pool.POST("/resume", poolResumeHandler(deps))
 	}
 
 	// Template analysis routes
@@ -515,7 +514,6 @@ func poolPresetByNameHandler(deps *Dependencies) gin.HandlerFunc {
 		}
 
 		deps.TemplateFuncs.ResizePools(poolSizes)
-		deps.TemplateFuncs.WarmupPools(0.5)
 
 		core.Success(c, gin.H{
 			"message":         "预设已应用",
@@ -563,39 +561,6 @@ func poolResizeHandler(deps *Dependencies) gin.HandlerFunc {
 	}
 }
 
-// poolWarmupRequest 池预热请求
-type poolWarmupRequest struct {
-	Percent float64 `json:"percent"`
-}
-
-// poolWarmupHandler POST /warmup - 预热池
-func poolWarmupHandler(deps *Dependencies) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req poolWarmupRequest
-		if err := c.ShouldBindJSON(&req); err != nil {
-			// 使用默认值 0.5
-			req.Percent = 0.5
-		}
-
-		// 验证百分比范围
-		if req.Percent <= 0 || req.Percent > 1 {
-			req.Percent = 0.5
-		}
-
-		if deps.TemplateFuncs == nil {
-			core.FailWithCode(c, core.ErrPoolInvalid)
-			return
-		}
-
-		deps.TemplateFuncs.WarmupPools(req.Percent)
-
-		core.Success(c, gin.H{
-			"message": "池预热已启动",
-			"percent": req.Percent,
-		})
-	}
-}
-
 // poolClearHandler POST /clear - 清空池
 func poolClearHandler(deps *Dependencies) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -608,38 +573,6 @@ func poolClearHandler(deps *Dependencies) gin.HandlerFunc {
 
 		core.Success(c, gin.H{
 			"message": "池已清空",
-		})
-	}
-}
-
-// poolPauseHandler POST /pause - 暂停池补充
-func poolPauseHandler(deps *Dependencies) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if deps.TemplateFuncs == nil {
-			core.FailWithCode(c, core.ErrPoolInvalid)
-			return
-		}
-
-		deps.TemplateFuncs.PausePools()
-
-		core.Success(c, gin.H{
-			"message": "池补充已暂停",
-		})
-	}
-}
-
-// poolResumeHandler POST /resume - 恢复池补充
-func poolResumeHandler(deps *Dependencies) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if deps.TemplateFuncs == nil {
-			core.FailWithCode(c, core.ErrPoolInvalid)
-			return
-		}
-
-		deps.TemplateFuncs.ResumePools()
-
-		core.Success(c, gin.H{
-			"message": "池补充已恢复",
 		})
 	}
 }
