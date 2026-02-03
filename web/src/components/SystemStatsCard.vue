@@ -50,7 +50,6 @@
       </div>
       <!-- 右侧：磁盘 -->
       <div class="right-panel">
-        <div class="panel-title">磁盘</div>
         <div class="disk-list">
           <div
             class="disk-item"
@@ -155,13 +154,6 @@ function formatDiskSize(bytes: number): string {
     min-width: 0;
     border-left: 1px solid #ebeef5;
     padding-left: 24px;
-
-    .panel-title {
-      font-size: 14px;
-      font-weight: 500;
-      color: #606266;
-      margin-bottom: 12px;
-    }
   }
 
   .stat-row {

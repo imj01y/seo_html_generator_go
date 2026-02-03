@@ -226,18 +226,18 @@ onUnmounted(() => {
     }
 
     .stats-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px 16px;
 
       .stats-item {
         display: flex;
         align-items: center;
-        gap: 12px;
+        gap: 10px;
 
         .item-icon {
-          width: 36px;
-          height: 36px;
+          width: 32px;
+          height: 32px;
           border-radius: 6px;
           display: flex;
           align-items: center;
@@ -247,23 +247,22 @@ onUnmounted(() => {
         }
 
         .item-label {
-          font-size: 14px;
+          font-size: 13px;
           color: #606266;
-          width: 80px;
           flex-shrink: 0;
         }
 
         .item-value {
-          font-size: 18px;
+          font-size: 16px;
           font-weight: 600;
           color: #303133;
           margin-left: auto;
 
           .item-memory {
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 400;
             color: #909399;
-            margin-left: 4px;
+            margin-left: 2px;
           }
         }
       }
