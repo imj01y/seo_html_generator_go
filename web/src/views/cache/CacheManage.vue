@@ -12,33 +12,33 @@
         <!-- 运行状态 -->
         <el-tab-pane label="运行状态" name="status">
           <el-row :gutter="16" class="status-cards">
-            <!-- 数据卡片 -->
+            <!-- 复用型缓存卡片 -->
             <el-col :xs="24" :lg="8">
               <div class="status-card">
                 <div class="card-header">
-                  <span class="card-title">数据池</span>
+                  <span class="card-title">复用型缓存</span>
                   <el-button size="small" @click="handleRefreshData" :loading="poolOperationLoading">
                     刷新
                   </el-button>
                 </div>
                 <div class="card-content">
                   <PoolStatusCard
-                    v-for="pool in dataPoolStats"
+                    v-for="pool in reusablePoolStats"
                     :key="pool.name"
                     :pool="pool"
                     @reload="handlePoolReload(pool.name)"
                     @reload-group="(groupId: number) => handlePoolReloadGroup(pool.name, groupId)"
                   />
-                  <el-empty v-if="dataPoolStats.length === 0" description="连接中..." />
+                  <el-empty v-if="reusablePoolStats.length === 0" description="连接中..." />
                 </div>
               </div>
             </el-col>
 
-            <!-- 对象卡片 -->
+            <!-- 消费型缓存卡片 -->
             <el-col :xs="24" :lg="8">
               <div class="status-card">
                 <div class="card-header">
-                  <span class="card-title">对象</span>
+                  <span class="card-title">消费型缓存</span>
                   <div class="card-actions">
                     <el-button size="small" @click="handleWarmup" :loading="poolOperationLoading">
                       预热
@@ -53,11 +53,11 @@
                 </div>
                 <div class="card-content">
                   <PoolStatusCard
-                    v-for="pool in objectPoolStats"
+                    v-for="pool in consumablePoolStats"
                     :key="pool.name"
                     :pool="pool"
                   />
-                  <el-empty v-if="objectPoolStats.length === 0" description="连接中..." />
+                  <el-empty v-if="consumablePoolStats.length === 0" description="连接中..." />
                 </div>
               </div>
             </el-col>
@@ -97,8 +97,8 @@
           </el-row>
         </el-tab-pane>
 
-        <!-- 对象池配置 -->
-        <el-tab-pane label="对象池配置" name="config">
+        <!-- 消费型缓存配置 -->
+        <el-tab-pane label="消费型缓存配置" name="config">
           <el-row :gutter="16" class="config-cards">
             <!-- 配置卡片 -->
             <el-col :xs="24" :lg="12">
@@ -693,6 +693,17 @@ const handleSaveCachePool = async () => {
 const objectPoolStats = ref<PoolStats[]>([])
 const dataPoolStats = ref<PoolStats[]>([])
 const poolOperationLoading = ref(false)
+
+// 复用型缓存：reusable + static 类型的池
+const reusablePoolStats = computed(() =>
+  dataPoolStats.value.filter(p => p.pool_type === 'reusable' || p.pool_type === 'static')
+)
+
+// 消费型缓存：consumable 类型的池 + 对象池
+const consumablePoolStats = computed(() => [
+  ...dataPoolStats.value.filter(p => p.pool_type === 'consumable'),
+  ...objectPoolStats.value
+])
 
 // ========== WebSocket 连接管理 ==========
 let poolStatusWs: WebSocket | null = null
