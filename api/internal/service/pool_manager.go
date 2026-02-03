@@ -154,8 +154,6 @@ func (m *PoolManager) Start(ctx context.Context) error {
 		Int("image_groups", len(imageGroupIDs)).
 		Int("title_pool_size", m.config.TitlePoolSize).
 		Int("contents_size", m.config.ContentsSize).
-		Int("keywords_size", m.config.KeywordsSize).
-		Int("images_size", m.config.ImagesSize).
 		Msg("PoolManager started")
 
 	return nil
@@ -444,13 +442,10 @@ func (m *PoolManager) GetStats() map[string]interface{} {
 		"images":   imagesStats,
 		"emojis":   m.emojiManager.Count(),
 		"config": map[string]interface{}{
-			"titles_size":         m.config.TitlesSize,
-			"contents_size":       m.config.ContentsSize,
-			"threshold":           m.config.Threshold,
-			"refill_interval_ms":  m.config.RefillIntervalMs,
-			"keywords_size":       m.config.KeywordsSize,
-			"images_size":         m.config.ImagesSize,
-			"refresh_interval_ms": m.config.RefreshIntervalMs,
+			"titles_size":        m.config.TitlesSize,
+			"contents_size":      m.config.ContentsSize,
+			"threshold":          m.config.Threshold,
+			"refill_interval_ms": m.config.RefillIntervalMs,
 		},
 	}
 }
