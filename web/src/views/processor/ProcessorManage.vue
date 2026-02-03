@@ -46,10 +46,6 @@
             清空死信 ({{ status.queue_dead }})
           </el-button>
         </div>
-        <el-button size="small" @click="loadAll" :loading="loading">
-          <el-icon><Refresh /></el-icon>
-          刷新
-        </el-button>
       </div>
 
       <!-- 监控数据内容 -->
@@ -106,9 +102,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Refresh, VideoPlay, VideoPause, RefreshRight, Delete } from '@element-plus/icons-vue'
+import { VideoPlay, VideoPause, RefreshRight, Delete } from '@element-plus/icons-vue'
 import {
-  getProcessorStatus,
   startProcessor,
   stopProcessor,
   retryAllFailed,
@@ -118,7 +113,6 @@ import {
 import { buildWsUrl } from '@/api/shared'
 
 // 加载状态
-const loading = ref(false)
 const startLoading = ref(false)
 const stopLoading = ref(false)
 const retryLoading = ref(false)
@@ -142,26 +136,6 @@ let ws: WebSocket | null = null
 let reconnectTimer: number | null = null
 let reconnectDelay = 1000
 
-// 加载状态
-const loadStatus = async () => {
-  try {
-    const data = await getProcessorStatus()
-    Object.assign(status, data)
-  } catch (e) {
-    console.error('加载状态失败:', e)
-  }
-}
-
-// 加载全部
-const loadAll = async () => {
-  loading.value = true
-  try {
-    await loadStatus()
-  } finally {
-    loading.value = false
-  }
-}
-
 // WebSocket 连接
 const connectWebSocket = () => {
   ws = new WebSocket(buildWsUrl('/ws/processor-status'))
@@ -169,7 +143,6 @@ const connectWebSocket = () => {
   ws.onopen = () => {
     console.log('WebSocket connected')
     reconnectDelay = 1000  // 重置重连延迟
-    loadStatus()  // 获取初始状态
   }
 
   ws.onmessage = (event) => {
@@ -202,7 +175,6 @@ const handleStart = async () => {
   try {
     await startProcessor()
     ElMessage.success('启动命令已发送')
-    setTimeout(loadStatus, 1000)
   } catch (e) {
     ElMessage.error((e as Error).message || '启动失败')
   } finally {
@@ -216,7 +188,6 @@ const handleStop = async () => {
   try {
     await stopProcessor()
     ElMessage.success('停止命令已发送')
-    setTimeout(loadStatus, 1000)
   } catch (e) {
     ElMessage.error((e as Error).message || '停止失败')
   } finally {
@@ -235,7 +206,6 @@ const handleRetryAll = async () => {
     retryLoading.value = true
     const result = await retryAllFailed()
     ElMessage.success(`已将 ${result.count} 个任务移回待处理队列`)
-    loadStatus()
   } catch (e) {
     if (e !== 'cancel') {
       ElMessage.error((e as Error).message || '重试失败')
@@ -256,7 +226,6 @@ const handleClearDead = async () => {
     clearDeadLoading.value = true
     const result = await clearDeadQueue()
     ElMessage.success(`已清空 ${result.count} 个死信任务`)
-    loadStatus()
   } catch (e) {
     if (e !== 'cancel') {
       ElMessage.error((e as Error).message || '清空失败')

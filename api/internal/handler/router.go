@@ -326,7 +326,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	{
 		processorRoutes.GET("/config", processorHandler.GetConfig)
 		processorRoutes.PUT("/config", processorHandler.UpdateConfig)
-		processorRoutes.GET("/status", processorHandler.GetStatus)
 		processorRoutes.POST("/start", processorHandler.Start)
 		processorRoutes.POST("/stop", processorHandler.Stop)
 		processorRoutes.POST("/retry-all", processorHandler.RetryAll)

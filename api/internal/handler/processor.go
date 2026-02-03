@@ -142,53 +142,6 @@ func (h *ProcessorHandler) UpdateConfig(c *gin.Context) {
 	c.JSON(200, gin.H{"success": true, "message": "配置已更新", "data": config})
 }
 
-// GetStatus 获取运行状态
-func (h *ProcessorHandler) GetStatus(c *gin.Context) {
-	rdb, exists := c.Get("redis")
-	if !exists {
-		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
-		return
-	}
-	redisClient := rdb.(*redis.Client)
-
-	ctx := context.Background()
-
-	// 获取队列长度
-	pendingLen, _ := redisClient.LLen(ctx, "pending:articles").Result()
-	retryLen, _ := redisClient.LLen(ctx, "pending:articles:retry").Result()
-	deadLen, _ := redisClient.LLen(ctx, "pending:articles:dead").Result()
-
-	// 获取运行状态
-	statusData, _ := redisClient.HGetAll(ctx, "processor:status").Result()
-
-	status := ProcessorStatus{
-		QueuePending: pendingLen,
-		QueueRetry:   retryLen,
-		QueueDead:    deadLen,
-	}
-
-	if running, ok := statusData["running"]; ok {
-		status.Running = running == "true" || running == "1"
-	}
-	if workers, ok := statusData["workers"]; ok {
-		status.Workers = strToInt(workers)
-	}
-	if total, ok := statusData["processed_total"]; ok {
-		status.ProcessedTotal = int64(strToInt(total))
-	}
-	if today, ok := statusData["processed_today"]; ok {
-		status.ProcessedToday = int64(strToInt(today))
-	}
-	if speed, ok := statusData["speed"]; ok {
-		status.Speed = strToFloat(speed)
-	}
-	if lastErr, ok := statusData["last_error"]; ok && lastErr != "" {
-		status.LastError = &lastErr
-	}
-
-	c.JSON(200, gin.H{"success": true, "data": status})
-}
-
 // Start 手动启动
 func (h *ProcessorHandler) Start(c *gin.Context) {
 	rdb, exists := c.Get("redis")

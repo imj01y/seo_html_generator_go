@@ -387,6 +387,7 @@ func (h *WebSocketHandler) SpiderLogs(c *gin.Context) {
 }
 
 // ProcessorStatus 数据处理状态实时推送
+// 每秒推送一次队列状态和处理统计
 // GET /ws/processor-status
 func (h *WebSocketHandler) ProcessorStatus(c *gin.Context) {
 	rdb, exists := c.Get("redis")
@@ -402,7 +403,76 @@ func (h *WebSocketHandler) ProcessorStatus(c *gin.Context) {
 	}
 	defer conn.Close()
 
-	subscribeAndForward(conn, redisClient, "processor:status:realtime")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 监听客户端断开
+	go func() {
+		for {
+			_, _, err := conn.ReadMessage()
+			if err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	// 每秒推送一次状态
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// 立即发送一次初始状态
+	h.sendProcessorStatus(conn, redisClient)
+
+	for {
+		select {
+		case <-ticker.C:
+			if err := h.sendProcessorStatus(conn, redisClient); err != nil {
+				return
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// sendProcessorStatus 发送处理器状态消息
+func (h *WebSocketHandler) sendProcessorStatus(conn *websocket.Conn, redisClient *redis.Client) error {
+	ctx := context.Background()
+
+	// 获取队列长度
+	pendingLen, _ := redisClient.LLen(ctx, "pending:articles").Result()
+	retryLen, _ := redisClient.LLen(ctx, "pending:articles:retry").Result()
+	deadLen, _ := redisClient.LLen(ctx, "pending:articles:dead").Result()
+
+	// 获取运行状态
+	statusData, _ := redisClient.HGetAll(ctx, "processor:status").Result()
+
+	// 构建状态消息
+	msg := map[string]interface{}{
+		"running":         statusData["running"] == "true" || statusData["running"] == "1",
+		"workers":         strToInt(statusData["workers"]),
+		"queue_pending":   pendingLen,
+		"queue_retry":     retryLen,
+		"queue_dead":      deadLen,
+		"processed_total": strToInt(statusData["processed_total"]),
+		"processed_today": strToInt(statusData["processed_today"]),
+		"speed":           strToFloat(statusData["speed"]),
+		"last_error":      nil,
+	}
+
+	// 处理 last_error
+	if lastErr, ok := statusData["last_error"]; ok && lastErr != "" {
+		msg["last_error"] = lastErr
+	}
+
+	// 序列化并发送
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	return conn.WriteMessage(websocket.TextMessage, data)
 }
 
 // PoolStatus 池状态实时推送

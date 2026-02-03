@@ -53,12 +53,6 @@ export async function updateProcessorConfig(config: ProcessorConfig): Promise<Pr
   return res.data
 }
 
-export async function getProcessorStatus(): Promise<ProcessorStatus> {
-  const res: DataResponse<ProcessorStatus> = await request.get('/processor/status')
-  assertSuccess(res, '获取状态失败')
-  return res.data
-}
-
 export async function startProcessor(): Promise<void> {
   const res: SuccessResponse = await request.post('/processor/start')
   assertSuccess(res, '启动失败')
