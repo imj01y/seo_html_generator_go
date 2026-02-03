@@ -42,8 +42,8 @@
           <span class="stat-value">{{ formatNumber(pool.used) }}</span>
         </div>
         <div class="stat-item">
-          <span class="stat-label">线程</span>
-          <span class="stat-value">{{ pool.num_workers }}</span>
+          <span class="stat-label">内存</span>
+          <span class="stat-value">{{ formatBytes(pool.memory_bytes) }}</span>
         </div>
       </div>
     </template>
@@ -53,6 +53,7 @@
       <div class="reusable-stats">
         <span class="total">总计: {{ formatNumber(pool.size) }} 条</span>
         <span class="groups-count" v-if="pool.groups">({{ pool.groups.length }} 个分组)</span>
+        <span class="memory-info">内存: {{ formatBytes(pool.memory_bytes) }}</span>
       </div>
       <el-collapse v-if="pool.groups && pool.groups.length > 0" class="groups-collapse">
         <el-collapse-item title="分组详情">
@@ -75,6 +76,10 @@
         <div class="stat-row">
           <span class="stat-label">总计</span>
           <span class="stat-value">{{ formatNumber(pool.size) }} 个</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">内存</span>
+          <span class="stat-value">{{ formatBytes(pool.memory_bytes) }}</span>
         </div>
         <div class="stat-row" v-if="pool.source">
           <span class="stat-label">来源</span>
@@ -117,9 +122,9 @@ const utilizationPercent = computed(() => {
 
 const progressColor = computed(() => {
   const util = utilizationPercent.value
-  if (util < 30) return '#67C23A'      // 绿色 - 充足
-  if (util < 70) return '#409EFF'      // 蓝色 - 正常
-  if (util < 90) return '#E6A23C'      // 橙色 - 偏高
+  if (util > 70) return '#67C23A'      // 绿色 - 充足
+  if (util > 30) return '#409EFF'      // 蓝色 - 正常
+  if (util > 10) return '#E6A23C'      // 橙色 - 偏低
   return '#F56C6C'                     // 红色 - 紧张
 })
 
@@ -132,13 +137,19 @@ const handleReloadGroup = (groupId: number) => {
 }
 
 const formatNumber = (num: number): string => {
-  if (num >= 1000000) {
-    return (num / 1000000).toFixed(1) + 'M'
+  return num.toLocaleString()
+}
+
+const formatBytes = (bytes?: number): string => {
+  if (!bytes || bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB']
+  let unitIndex = 0
+  let value = bytes
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024
+    unitIndex++
   }
-  if (num >= 1000) {
-    return (num / 1000).toFixed(1) + 'k'
-  }
-  return num.toString()
+  return value.toFixed(unitIndex > 0 ? 2 : 0) + ' ' + units[unitIndex]
 }
 
 const formatTime = (time: string | null): string => {
@@ -263,6 +274,12 @@ const formatTime = (time: string | null): string => {
 
     .groups-count {
       margin-left: 8px;
+      font-size: 14px;
+      color: var(--el-text-color-secondary);
+    }
+
+    .memory-info {
+      margin-left: 12px;
       font-size: 14px;
       color: var(--el-text-color-secondary);
     }

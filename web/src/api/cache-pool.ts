@@ -26,6 +26,7 @@ export interface PoolStats {
   status: string
   num_workers: number
   last_refresh: string | null
+  memory_bytes?: number // 内存占用（字节）
   // 新增字段（复用型池使用）
   pool_type?: 'consumable' | 'reusable' | 'static'
   groups?: PoolGroupInfo[]
@@ -35,18 +36,16 @@ export interface PoolStats {
 /** 缓存池配置 */
 export interface CachePoolConfig {
   id?: number
-  titles_size: number
-  contents_size: number
-  threshold: number
-  refill_interval_ms: number
-  keywords_size: number
-  images_size: number
-  refresh_interval_ms: number
   // 标题池
   title_pool_size: number
   title_workers: number
   title_refill_interval_ms: number
   title_threshold: number
+  // 正文池
+  content_pool_size: number
+  content_workers: number
+  content_refill_interval_ms: number
+  content_threshold: number
   // cls类名池
   cls_pool_size: number
   cls_workers: number

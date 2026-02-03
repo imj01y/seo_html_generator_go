@@ -49,6 +49,14 @@ func (m *TemplateFuncsManager) SetEmojiManager(em *EmojiManager) {
 	m.emojiManager = em
 }
 
+// stringMemorySizer 计算字符串内存占用的函数
+func stringMemorySizer(v any) int64 {
+	if s, ok := v.(string); ok {
+		return StringMemorySize(s)
+	}
+	return 0
+}
+
 // InitPools 初始化所有池子（从配置读取）
 func (m *TemplateFuncsManager) InitPools(config *CachePoolConfig) {
 	// cls池
@@ -58,6 +66,7 @@ func (m *TemplateFuncsManager) InitPools(config *CachePoolConfig) {
 		Threshold:     config.ClsThreshold,
 		NumWorkers:    config.ClsWorkers,
 		CheckInterval: config.ClsRefillInterval(),
+		MemorySizer:   stringMemorySizer,
 	}, generateRandomCls)
 
 	// url池
@@ -67,6 +76,7 @@ func (m *TemplateFuncsManager) InitPools(config *CachePoolConfig) {
 		Threshold:     config.UrlThreshold,
 		NumWorkers:    config.UrlWorkers,
 		CheckInterval: config.UrlRefillInterval(),
+		MemorySizer:   stringMemorySizer,
 	}, generateRandomURL)
 
 	// number池
@@ -90,6 +100,7 @@ func (m *TemplateFuncsManager) InitKeywordEmojiPool(config *CachePoolConfig) {
 		Threshold:     config.KeywordEmojiThreshold,
 		NumWorkers:    config.KeywordEmojiWorkers,
 		CheckInterval: config.KeywordEmojiRefillInterval(),
+		MemorySizer:   stringMemorySizer,
 	}, m.generateKeywordWithEmoji)
 
 	m.keywordEmojiPool.Start()
@@ -386,6 +397,42 @@ func BuildArticleContentFromSingle(title, content string) string {
 
 // ========== 池管理方法 ==========
 
+// ReloadPools 根据 CachePoolConfig 重载所有对象池配置（即时生效）
+func (m *TemplateFuncsManager) ReloadPools(config *CachePoolConfig) {
+	if m.clsPool != nil {
+		m.clsPool.UpdateConfig(
+			config.ClsPoolSize,
+			config.ClsThreshold,
+			config.ClsWorkers,
+			config.ClsRefillInterval(),
+		)
+	}
+
+	if m.urlPool != nil {
+		m.urlPool.UpdateConfig(
+			config.UrlPoolSize,
+			config.UrlThreshold,
+			config.UrlWorkers,
+			config.UrlRefillInterval(),
+		)
+	}
+
+	if m.keywordEmojiPool != nil {
+		m.keywordEmojiPool.UpdateConfig(
+			config.KeywordEmojiPoolSize,
+			config.KeywordEmojiThreshold,
+			config.KeywordEmojiWorkers,
+			config.KeywordEmojiRefillInterval(),
+		)
+	}
+
+	log.Info().
+		Int("cls_size", config.ClsPoolSize).
+		Int("url_size", config.UrlPoolSize).
+		Int("keyword_emoji_size", config.KeywordEmojiPoolSize).
+		Msg("TemplateFuncsManager pools reloaded")
+}
+
 // ResizePools 根据配置调整所有池大小
 func (m *TemplateFuncsManager) ResizePools(config *PoolSizeConfig) {
 	if config.ClsPoolSize > 0 && m.clsPool != nil {
@@ -405,20 +452,6 @@ func (m *TemplateFuncsManager) ResizePools(config *PoolSizeConfig) {
 		Msg("Pools resized")
 }
 
-// WarmupPools 预热所有池
-func (m *TemplateFuncsManager) WarmupPools(targetPercent float64) {
-	if m.clsPool != nil {
-		m.clsPool.Warmup(targetPercent)
-	}
-	if m.urlPool != nil {
-		m.urlPool.Warmup(targetPercent)
-	}
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Warmup(targetPercent)
-	}
-	log.Info().Float64("target_percent", targetPercent).Msg("All pools warmup started")
-}
-
 // ClearPools 清空所有池
 func (m *TemplateFuncsManager) ClearPools() {
 	if m.clsPool != nil {
@@ -431,34 +464,6 @@ func (m *TemplateFuncsManager) ClearPools() {
 		m.keywordEmojiPool.Clear()
 	}
 	log.Info().Msg("All pools cleared")
-}
-
-// PausePools 暂停所有池的补充
-func (m *TemplateFuncsManager) PausePools() {
-	if m.clsPool != nil {
-		m.clsPool.Pause()
-	}
-	if m.urlPool != nil {
-		m.urlPool.Pause()
-	}
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Pause()
-	}
-	log.Info().Msg("All pools paused")
-}
-
-// ResumePools 恢复所有池的补充
-func (m *TemplateFuncsManager) ResumePools() {
-	if m.clsPool != nil {
-		m.clsPool.Resume()
-	}
-	if m.urlPool != nil {
-		m.urlPool.Resume()
-	}
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Resume()
-	}
-	log.Info().Msg("All pools resumed")
 }
 
 // GetPoolStats 获取所有池的统计信息

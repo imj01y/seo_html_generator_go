@@ -80,6 +80,9 @@ services:
       - ./content_worker:/project/content_worker              # 内容处理代码目录
       - ./docker-compose.yml:/project/docker-compose.yml:ro   # Docker Compose 配置
       - /var/run/docker.sock:/var/run/docker.sock             # Docker socket (rebuild 需要)
+      - /proc:/host/proc:ro                                   # 宿主机 /proc (系统资源监控)
+      - /sys:/host/sys:ro                                     # 宿主机 /sys (系统资源监控)
+      - /:/hostfs:ro                                          # 宿主机根目录 (磁盘统计)
     depends_on:
       mysql:
         condition: service_healthy

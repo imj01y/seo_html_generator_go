@@ -17,7 +17,7 @@
             :format="(p: number) => p.toFixed(2) + '%'"
             class="stat-progress"
           />
-          <span class="stat-extra">{{ stats.cpu.cores }}核</span>
+          <span class="stat-extra">{{ stats.cpu.physical_cores }}核{{ stats.cpu.cores }}线程 {{ formatFrequency(stats.cpu.current_mhz) }}</span>
         </div>
         <!-- 内存 -->
         <div class="stat-row">
@@ -30,14 +30,21 @@
             :format="(p: number) => p.toFixed(2) + '%'"
             class="stat-progress"
           />
-          <span class="stat-extra">{{ formatMemoryGB(stats.memory.used_bytes) }}/{{ formatMemoryGB(stats.memory.total_bytes) }}G</span>
+          <span class="stat-extra">{{ formatMemoryGB(stats.memory.used_bytes) }} / {{ formatMemoryGB(stats.memory.total_bytes) }} G</span>
         </div>
         <!-- 负载 -->
         <div class="stat-row">
           <span class="stat-label">负载</span>
-          <span class="stat-load">
-            {{ stats.load.load1.toFixed(2) }} / {{ stats.load.load5.toFixed(2) }} / {{ stats.load.load15.toFixed(2) }}
-          </span>
+          <el-tooltip placement="top">
+            <template #content>
+              <div>1分钟平均: {{ stats.load.load1.toFixed(2) }}</div>
+              <div>5分钟平均: {{ stats.load.load5.toFixed(2) }}</div>
+              <div>15分钟平均: {{ stats.load.load15.toFixed(2) }}</div>
+            </template>
+            <span class="stat-load">
+              {{ stats.load.load1.toFixed(2) }} / {{ stats.load.load5.toFixed(2) }} / {{ stats.load.load15.toFixed(2) }}
+            </span>
+          </el-tooltip>
         </div>
         <!-- 网络 -->
         <div class="stat-row">
@@ -116,6 +123,14 @@ function formatDiskSize(bytes: number): string {
   }
   return Math.round(bytes / (1024 * 1024 * 1024)) + 'GB'
 }
+
+// 格式化 CPU 频率
+function formatFrequency(mhz: number): string {
+  if (mhz >= 1000) {
+    return (mhz / 1000).toFixed(2) + ' GHz'
+  }
+  return mhz.toFixed(0) + ' MHz'
+}
 </script>
 
 <style lang="scss" scoped>
@@ -176,10 +191,27 @@ function formatDiskSize(bytes: number): string {
     .stat-progress {
       width: 220px;
       flex-shrink: 0;
+
+      :deep(.el-progress-bar__outer) {
+        position: relative !important;
+      }
+
+      :deep(.el-progress-bar__inner) {
+        position: static !important;
+      }
+
+      :deep(.el-progress-bar__innerText) {
+        position: absolute !important;
+        left: 50% !important;
+        top: 50% !important;
+        transform: translate(-50%, -50%) !important;
+        color: #909399;
+        font-size: 13px;
+      }
     }
 
     .stat-extra {
-      width: 100px;
+      min-width: 140px;
       text-align: right;
       font-size: 13px;
       color: #909399;

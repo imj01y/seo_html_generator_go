@@ -60,6 +60,12 @@ export interface UpdateConfigResponse {
 
 export type PoolStatus = 'running' | 'paused' | 'stopped'
 
+export interface PoolGroupInfo {
+  id: number
+  name: string
+  count: number
+}
+
 export interface PoolStats {
   name: string
   size: number
@@ -69,10 +75,15 @@ export interface PoolStats {
   status: PoolStatus
   num_workers: number
   last_refresh: string | null
+  memory_bytes?: number // 内存占用（字节）
   total_generated?: number
   total_consumed?: number
   paused?: boolean
   refill_count?: number
+  // 池类型（复用型池使用）
+  pool_type?: 'consumable' | 'reusable' | 'static'
+  groups?: PoolGroupInfo[]
+  source?: string
 }
 
 // ============================================
@@ -105,18 +116,6 @@ export function updatePoolConfig(config: UpdateConfigRequest): Promise<UpdateCon
 // ============================================
 // 池状态监控 API
 // ============================================
-
-export function warmupPool(percent?: number): Promise<void> {
-  return request.post('/admin/pool/warmup', { percent: percent || 0.5 })
-}
-
-export function pausePool(): Promise<void> {
-  return request.post('/admin/pool/pause')
-}
-
-export function resumePool(): Promise<void> {
-  return request.post('/admin/pool/resume')
-}
 
 export function refreshDataPool(pool?: string): Promise<void> {
   return request.post('/admin/data/refresh', { pool: pool || 'all' })

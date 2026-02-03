@@ -5,6 +5,7 @@ import (
 	"math/rand/v2"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/rs/zerolog/log"
 )
@@ -16,8 +17,9 @@ type EmojiData struct {
 
 // EmojiManager 管理 Emoji 数据
 type EmojiManager struct {
-	emojis []string
-	mu     sync.RWMutex
+	emojis      []string
+	mu          sync.RWMutex
+	memoryBytes atomic.Int64 // 内存占用追踪
 }
 
 // NewEmojiManager 创建新的 Emoji 管理器
@@ -37,8 +39,15 @@ func (m *EmojiManager) LoadFromFile(path string) error {
 		return err
 	}
 
+	// 计算内存占用
+	var memSize int64
+	for _, emoji := range emojiData.Emojis {
+		memSize += StringMemorySize(emoji)
+	}
+
 	m.mu.Lock()
 	m.emojis = emojiData.Emojis
+	m.memoryBytes.Store(memSize)
 	m.mu.Unlock()
 
 	log.Info().Int("count", len(emojiData.Emojis)).Str("path", path).Msg("Emojis loaded")
@@ -107,4 +116,9 @@ func (m *EmojiManager) Count() int {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return len(m.emojis)
+}
+
+// MemoryBytes 返回内存占用字节数
+func (m *EmojiManager) MemoryBytes() int64 {
+	return m.memoryBytes.Load()
 }

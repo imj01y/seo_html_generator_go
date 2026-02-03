@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"sync/atomic"
 )
 
 // ErrPoolEmpty is returned when the pool is empty
@@ -37,11 +38,12 @@ type UpdateTask struct {
 
 // MemoryPool is a thread-safe FIFO queue for pool items
 type MemoryPool struct {
-	items    []PoolItem
-	mu       sync.RWMutex
-	groupID  int
-	poolType string // "titles" or "contents"
-	maxSize  int
+	items       []PoolItem
+	mu          sync.RWMutex
+	groupID     int
+	poolType    string // "titles" or "contents"
+	maxSize     int
+	memoryBytes atomic.Int64 // 内存占用追踪
 }
 
 // NewMemoryPool creates a new memory pool
@@ -65,6 +67,10 @@ func (p *MemoryPool) Pop() (PoolItem, bool) {
 
 	item := p.items[0]
 	p.items = p.items[1:]
+
+	// 减少内存计数
+	p.memoryBytes.Add(-StringMemorySize(item.Text))
+
 	return item, true
 }
 
@@ -86,6 +92,13 @@ func (p *MemoryPool) Push(items []PoolItem) {
 		items = items[:available]
 	}
 
+	// 增加内存计数
+	var addedMem int64
+	for _, item := range items {
+		addedMem += StringMemorySize(item.Text)
+	}
+	p.memoryBytes.Add(addedMem)
+
 	p.items = append(p.items, items...)
 }
 
@@ -101,6 +114,7 @@ func (p *MemoryPool) Clear() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.items = p.items[:0]
+	p.memoryBytes.Store(0)
 }
 
 // Resize changes the max size of the pool
@@ -112,6 +126,12 @@ func (p *MemoryPool) Resize(newMaxSize int) {
 
 	// Truncate if current items exceed new max size
 	if len(p.items) > newMaxSize {
+		// 计算被移除项的内存
+		var removedMem int64
+		for i := newMaxSize; i < len(p.items); i++ {
+			removedMem += StringMemorySize(p.items[i].Text)
+		}
+		p.memoryBytes.Add(-removedMem)
 		p.items = p.items[:newMaxSize]
 	}
 }
@@ -131,4 +151,9 @@ func (p *MemoryPool) GetMaxSize() int {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 	return p.maxSize
+}
+
+// MemoryBytes returns the memory usage in bytes
+func (p *MemoryPool) MemoryBytes() int64 {
+	return p.memoryBytes.Load()
 }

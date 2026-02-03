@@ -20,6 +20,8 @@ declare module 'vue' {
     ElCheckbox: typeof import('element-plus/es')['ElCheckbox']
     ElCheckboxGroup: typeof import('element-plus/es')['ElCheckboxGroup']
     ElCol: typeof import('element-plus/es')['ElCol']
+    ElCollapse: typeof import('element-plus/es')['ElCollapse']
+    ElCollapseItem: typeof import('element-plus/es')['ElCollapseItem']
     ElConfigProvider: typeof import('element-plus/es')['ElConfigProvider']
     ElContainer: typeof import('element-plus/es')['ElContainer']
     ElDatePicker: typeof import('element-plus/es')['ElDatePicker']
@@ -47,6 +49,7 @@ declare module 'vue' {
     ElRadioGroup: typeof import('element-plus/es')['ElRadioGroup']
     ElRow: typeof import('element-plus/es')['ElRow']
     ElSelect: typeof import('element-plus/es')['ElSelect']
+    ElSkeleton: typeof import('element-plus/es')['ElSkeleton']
     ElSwitch: typeof import('element-plus/es')['ElSwitch']
     ElTable: typeof import('element-plus/es')['ElTable']
     ElTableColumn: typeof import('element-plus/es')['ElTableColumn']
@@ -68,6 +71,7 @@ declare module 'vue' {
     RouterView: typeof import('vue-router')['RouterView']
     ScheduleBuilder: typeof import('./components/ScheduleBuilder.vue')['default']
     SpiderGuide: typeof import('./components/SpiderGuide.vue')['default']
+    SystemStatsCard: typeof import('./components/SystemStatsCard.vue')['default']
     TemplateGuide: typeof import('./components/TemplateGuide.vue')['default']
   }
   export interface ComponentCustomProperties {

@@ -12,15 +12,17 @@ import (
 
 // PoolHandler handles pool-related API requests
 type PoolHandler struct {
-	db          *sqlx.DB
-	poolManager *core.PoolManager
+	db            *sqlx.DB
+	poolManager   *core.PoolManager
+	templateFuncs *core.TemplateFuncsManager
 }
 
 // NewPoolHandler creates a new pool handler
-func NewPoolHandler(db *sqlx.DB, poolManager *core.PoolManager) *PoolHandler {
+func NewPoolHandler(db *sqlx.DB, poolManager *core.PoolManager, templateFuncs *core.TemplateFuncsManager) *PoolHandler {
 	return &PoolHandler{
-		db:          db,
-		poolManager: poolManager,
+		db:            db,
+		poolManager:   poolManager,
+		templateFuncs: templateFuncs,
 	}
 }
 
@@ -37,18 +39,16 @@ func (h *PoolHandler) GetConfig(c *gin.Context) {
 // UpdateConfig updates pool configuration
 func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	var req struct {
-		TitlesSize            int `json:"titles_size"`
-		ContentsSize          int `json:"contents_size"`
-		Threshold             int `json:"threshold"`
-		RefillIntervalMs      int `json:"refill_interval_ms"`
-		KeywordsSize          int `json:"keywords_size"`
-		ImagesSize            int `json:"images_size"`
-		RefreshIntervalMs     int `json:"refresh_interval_ms"`
 		// 标题池
 		TitlePoolSize         int     `json:"title_pool_size"`
 		TitleWorkers          int     `json:"title_workers"`
 		TitleRefillIntervalMs int     `json:"title_refill_interval_ms"`
 		TitleThreshold        float64 `json:"title_threshold"`
+		// 正文池
+		ContentPoolSize         int     `json:"content_pool_size"`
+		ContentWorkers          int     `json:"content_workers"`
+		ContentRefillIntervalMs int     `json:"content_refill_interval_ms"`
+		ContentThreshold        float64 `json:"content_threshold"`
 		// cls类名池
 		ClsPoolSize         int     `json:"cls_pool_size"`
 		ClsWorkers          int     `json:"cls_workers"`
@@ -71,24 +71,6 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	// Validate
-	if req.TitlesSize < 100 || req.TitlesSize > 100000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "titles_size must be between 100 and 100000"})
-		return
-	}
-	if req.ContentsSize < 100 || req.ContentsSize > 100000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "contents_size must be between 100 and 100000"})
-		return
-	}
-	if req.Threshold < 10 || req.Threshold > req.TitlesSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "threshold must be between 10 and titles_size"})
-		return
-	}
-	if req.RefillIntervalMs < 100 || req.RefillIntervalMs > 60000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "refill_interval_ms must be between 100 and 60000"})
-		return
-	}
-
 	// Validate title config
 	if req.TitlePoolSize < 100000 || req.TitlePoolSize > 2000000 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "title_pool_size must be between 100000 and 2000000"})
@@ -104,6 +86,24 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 	if req.TitleThreshold < 0.1 || req.TitleThreshold > 0.9 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "title_threshold must be between 0.1 and 0.9"})
+		return
+	}
+
+	// Validate content config
+	if req.ContentPoolSize < 100000 || req.ContentPoolSize > 2000000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "content_pool_size must be between 100000 and 2000000"})
+		return
+	}
+	if req.ContentWorkers < 1 || req.ContentWorkers > 50 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "content_workers must be between 1 and 50"})
+		return
+	}
+	if req.ContentRefillIntervalMs < 10 || req.ContentRefillIntervalMs > 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "content_refill_interval_ms must be between 10 and 1000"})
+		return
+	}
+	if req.ContentThreshold < 0.1 || req.ContentThreshold > 0.9 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "content_threshold must be between 0.1 and 0.9"})
 		return
 	}
 
@@ -162,18 +162,16 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	config := &core.CachePoolConfig{
-		TitlesSize:            req.TitlesSize,
-		ContentsSize:          req.ContentsSize,
-		Threshold:             req.Threshold,
-		RefillIntervalMs:      req.RefillIntervalMs,
-		KeywordsSize:          req.KeywordsSize,
-		ImagesSize:            req.ImagesSize,
-		RefreshIntervalMs:     req.RefreshIntervalMs,
 		// 标题池
 		TitlePoolSize:         req.TitlePoolSize,
 		TitleWorkers:          req.TitleWorkers,
 		TitleRefillIntervalMs: req.TitleRefillIntervalMs,
 		TitleThreshold:        req.TitleThreshold,
+		// 正文池
+		ContentPoolSize:         req.ContentPoolSize,
+		ContentWorkers:          req.ContentWorkers,
+		ContentRefillIntervalMs: req.ContentRefillIntervalMs,
+		ContentThreshold:        req.ContentThreshold,
 		// cls类名池
 		ClsPoolSize:         req.ClsPoolSize,
 		ClsWorkers:          req.ClsWorkers,
@@ -197,10 +195,15 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 		return
 	}
 
-	// Reload pool manager
+	// Reload pool manager (标题池、正文池)
 	if err := h.poolManager.Reload(c.Request.Context()); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Config saved but reload failed: " + err.Error()})
 		return
+	}
+
+	// Reload TemplateFuncsManager (CLS、URL、KeywordEmoji 池)
+	if h.templateFuncs != nil {
+		h.templateFuncs.ReloadPools(config)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

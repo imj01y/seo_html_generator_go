@@ -308,6 +308,10 @@ func main() {
 	monitor := core.NewMonitor(10*time.Second, 360) // 10秒采集一次，保留1小时历史
 	monitor.Start()
 
+	// 初始化系统统计采集器
+	log.Info().Msg("Initializing system stats collector...")
+	systemStats := core.NewSystemStatsCollector()
+
 	// Configure Admin API routes
 	deps := &api.Dependencies{
 		DB:               db,
@@ -319,6 +323,7 @@ func main() {
 		TemplateCache:    templateCache,
 		Monitor:          monitor,
 		PoolManager:      poolManager,
+		SystemStats:      systemStats,
 	}
 	api.SetupRouter(r, deps)
 

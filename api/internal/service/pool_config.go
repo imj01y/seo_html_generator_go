@@ -9,22 +9,19 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// CachePoolConfig holds cache pool configuration for titles, contents, keywords, and images
+// CachePoolConfig holds cache pool configuration for consumable pools
 type CachePoolConfig struct {
-	ID               int       `db:"id" json:"id"`
-	TitlesSize       int       `db:"titles_size" json:"titles_size"`
-	ContentsSize     int       `db:"contents_size" json:"contents_size"`
-	Threshold        int       `db:"threshold" json:"threshold"`
-	RefillIntervalMs int       `db:"refill_interval_ms" json:"refill_interval_ms"`
-	// keywords/images 配置
-	KeywordsSize      int `db:"keywords_size" json:"keywords_size"`
-	ImagesSize        int `db:"images_size" json:"images_size"`
-	RefreshIntervalMs int `db:"refresh_interval_ms" json:"refresh_interval_ms"`
-	// 标题生成配置（新增）
+	ID int `db:"id" json:"id"`
+	// 标题池配置
 	TitlePoolSize         int     `db:"title_pool_size" json:"title_pool_size"`
 	TitleWorkers          int     `db:"title_workers" json:"title_workers"`
 	TitleRefillIntervalMs int     `db:"title_refill_interval_ms" json:"title_refill_interval_ms"`
 	TitleThreshold        float64 `db:"title_threshold" json:"title_threshold"`
+	// 正文池配置
+	ContentPoolSize         int     `db:"content_pool_size" json:"content_pool_size"`
+	ContentWorkers          int     `db:"content_workers" json:"content_workers"`
+	ContentRefillIntervalMs int     `db:"content_refill_interval_ms" json:"content_refill_interval_ms"`
+	ContentThreshold        float64 `db:"content_threshold" json:"content_threshold"`
 	// cls类名池配置
 	ClsPoolSize         int     `db:"cls_pool_size" json:"cls_pool_size"`
 	ClsWorkers          int     `db:"cls_workers" json:"cls_workers"`
@@ -43,19 +40,14 @@ type CachePoolConfig struct {
 	UpdatedAt                    time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// RefillInterval returns the refill interval as time.Duration
-func (c *CachePoolConfig) RefillInterval() time.Duration {
-	return time.Duration(c.RefillIntervalMs) * time.Millisecond
-}
-
-// RefreshInterval returns the refresh interval for keywords/images as time.Duration
-func (c *CachePoolConfig) RefreshInterval() time.Duration {
-	return time.Duration(c.RefreshIntervalMs) * time.Millisecond
-}
-
 // TitleRefillInterval returns the title refill interval as time.Duration
 func (c *CachePoolConfig) TitleRefillInterval() time.Duration {
 	return time.Duration(c.TitleRefillIntervalMs) * time.Millisecond
+}
+
+// ContentRefillInterval returns the content refill interval as time.Duration
+func (c *CachePoolConfig) ContentRefillInterval() time.Duration {
+	return time.Duration(c.ContentRefillIntervalMs) * time.Millisecond
 }
 
 // ClsRefillInterval returns the cls refill interval as time.Duration
@@ -77,17 +69,14 @@ func (c *CachePoolConfig) KeywordEmojiRefillInterval() time.Duration {
 func DefaultCachePoolConfig() *CachePoolConfig {
 	return &CachePoolConfig{
 		ID:                           1,
-		TitlesSize:                   5000,
-		ContentsSize:                 5000,
-		Threshold:                    1000,
-		RefillIntervalMs:             1000,
-		KeywordsSize:                 50000,
-		ImagesSize:                   50000,
-		RefreshIntervalMs:            300000, // 5 minutes
 		TitlePoolSize:                800000,
 		TitleWorkers:                 20,
 		TitleRefillIntervalMs:        30,
 		TitleThreshold:               0.4,
+		ContentPoolSize:              500000,
+		ContentWorkers:               10,
+		ContentRefillIntervalMs:      50,
+		ContentThreshold:             0.4,
 		ClsPoolSize:                  800000,
 		ClsWorkers:                   20,
 		ClsRefillIntervalMs:          30,
@@ -117,20 +106,17 @@ func LoadCachePoolConfig(ctx context.Context, db *sqlx.DB) (*CachePoolConfig, er
 // SaveCachePoolConfig saves configuration to database
 func SaveCachePoolConfig(ctx context.Context, db *sqlx.DB, config *CachePoolConfig) error {
 	query := `
-		INSERT INTO pool_config (id, titles_size, contents_size, threshold, refill_interval_ms, keywords_size, images_size, refresh_interval_ms, title_pool_size, title_workers, title_refill_interval_ms, title_threshold, cls_pool_size, cls_workers, cls_refill_interval_ms, cls_threshold, url_pool_size, url_workers, url_refill_interval_ms, url_threshold, keyword_emoji_pool_size, keyword_emoji_workers, keyword_emoji_refill_interval_ms, keyword_emoji_threshold)
-		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO pool_config (id, title_pool_size, title_workers, title_refill_interval_ms, title_threshold, content_pool_size, content_workers, content_refill_interval_ms, content_threshold, cls_pool_size, cls_workers, cls_refill_interval_ms, cls_threshold, url_pool_size, url_workers, url_refill_interval_ms, url_threshold, keyword_emoji_pool_size, keyword_emoji_workers, keyword_emoji_refill_interval_ms, keyword_emoji_threshold)
+		VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON DUPLICATE KEY UPDATE
-			titles_size = VALUES(titles_size),
-			contents_size = VALUES(contents_size),
-			threshold = VALUES(threshold),
-			refill_interval_ms = VALUES(refill_interval_ms),
-			keywords_size = VALUES(keywords_size),
-			images_size = VALUES(images_size),
-			refresh_interval_ms = VALUES(refresh_interval_ms),
 			title_pool_size = VALUES(title_pool_size),
 			title_workers = VALUES(title_workers),
 			title_refill_interval_ms = VALUES(title_refill_interval_ms),
 			title_threshold = VALUES(title_threshold),
+			content_pool_size = VALUES(content_pool_size),
+			content_workers = VALUES(content_workers),
+			content_refill_interval_ms = VALUES(content_refill_interval_ms),
+			content_threshold = VALUES(content_threshold),
 			cls_pool_size = VALUES(cls_pool_size),
 			cls_workers = VALUES(cls_workers),
 			cls_refill_interval_ms = VALUES(cls_refill_interval_ms),
@@ -145,17 +131,14 @@ func SaveCachePoolConfig(ctx context.Context, db *sqlx.DB, config *CachePoolConf
 			keyword_emoji_threshold = VALUES(keyword_emoji_threshold)
 	`
 	_, err := db.ExecContext(ctx, query,
-		config.TitlesSize,
-		config.ContentsSize,
-		config.Threshold,
-		config.RefillIntervalMs,
-		config.KeywordsSize,
-		config.ImagesSize,
-		config.RefreshIntervalMs,
 		config.TitlePoolSize,
 		config.TitleWorkers,
 		config.TitleRefillIntervalMs,
 		config.TitleThreshold,
+		config.ContentPoolSize,
+		config.ContentWorkers,
+		config.ContentRefillIntervalMs,
+		config.ContentThreshold,
 		config.ClsPoolSize,
 		config.ClsWorkers,
 		config.ClsRefillIntervalMs,

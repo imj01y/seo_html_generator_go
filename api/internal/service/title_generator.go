@@ -12,8 +12,9 @@ import (
 
 // TitlePool 标题池（基于 channel）
 type TitlePool struct {
-	ch      chan string
-	groupID int
+	ch          chan string
+	groupID     int
+	memoryBytes atomic.Int64 // 内存占用追踪
 }
 
 // TitleGenerator 动态标题生成器
@@ -91,6 +92,8 @@ func (g *TitleGenerator) Pop(groupID int) (string, error) {
 
 	select {
 	case title := <-pool.ch:
+		// 减少内存计数
+		pool.memoryBytes.Add(-StringMemorySize(title))
 		return title, nil
 	default:
 		// 池空，同步生成一个返回
@@ -106,6 +109,7 @@ func (g *TitleGenerator) fillPool(groupID int, pool *TitlePool) {
 	}
 
 	filled := 0
+	var addedMem int64
 	for i := 0; i < need; i++ {
 		title := g.generateTitle(groupID)
 		if title == "" {
@@ -114,10 +118,16 @@ func (g *TitleGenerator) fillPool(groupID int, pool *TitlePool) {
 		select {
 		case pool.ch <- title:
 			filled++
+			addedMem += StringMemorySize(title)
 		default:
 			// 池满，停止
 			break
 		}
+	}
+
+	// 增加内存计数
+	if addedMem > 0 {
+		pool.memoryBytes.Add(addedMem)
 	}
 
 	if filled > 0 {
@@ -188,18 +198,41 @@ func (g *TitleGenerator) Reload(config *CachePoolConfig) {
 	g.mu.Lock()
 	oldConfig := g.config
 	g.config = config
+	needRestart := config.TitlePoolSize != oldConfig.TitlePoolSize
+
+	// 获取当前所有 groupID（在持有锁时）
+	var groupIDs []int
+	if needRestart {
+		groupIDs = make([]int, 0, len(g.pools))
+		for gid := range g.pools {
+			groupIDs = append(groupIDs, gid)
+		}
+	}
 	g.mu.Unlock()
 
-	// 如果池大小变化，需要重建池
-	if config.TitlePoolSize != oldConfig.TitlePoolSize {
+	if needRestart && len(groupIDs) > 0 {
 		log.Info().
 			Int("old_size", oldConfig.TitlePoolSize).
 			Int("new_size", config.TitlePoolSize).
-			Msg("Title pool size changed, pools will be recreated on next access")
-		// 清空旧池，下次访问时会创建新大小的池
+			Ints("group_ids", groupIDs).
+			Msg("Title pool size changed, restarting workers")
+
+		// 1. 停止旧 worker
+		g.stopped.Store(true)
+		g.cancel()
+		g.wg.Wait()
+
+		// 2. 重置状态
+		g.stopped.Store(false)
+		g.ctx, g.cancel = context.WithCancel(context.Background())
+
+		// 3. 清空旧池
 		g.mu.Lock()
 		g.pools = make(map[int]*TitlePool)
 		g.mu.Unlock()
+
+		// 4. 重新启动（会创建新池并启动 worker）
+		g.Start(groupIDs)
 	}
 }
 
@@ -221,13 +254,14 @@ func (g *TitleGenerator) GetStats() map[int]map[string]int {
 }
 
 // GetTotalStats 获取汇总统计
-func (g *TitleGenerator) GetTotalStats() (current, maxSize int) {
+func (g *TitleGenerator) GetTotalStats() (current, maxSize int, memoryBytes int64) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
 	for _, pool := range g.pools {
 		current += len(pool.ch)
 		maxSize += g.config.TitlePoolSize
+		memoryBytes += pool.memoryBytes.Load()
 	}
 	return
 }

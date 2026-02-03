@@ -4,7 +4,10 @@
 
 export interface CPUStats {
   usage_percent: number
-  cores: number
+  cores: number            // 逻辑处理器数（线程数）
+  physical_cores: number   // 物理核心数
+  base_mhz: number         // 基础主频 (MHz)
+  current_mhz: number      // 当前频率 (MHz)
 }
 
 export interface MemoryStats {

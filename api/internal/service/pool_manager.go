@@ -33,6 +33,10 @@ type PoolManager struct {
 	keywordsMu  sync.RWMutex
 	imagesMu    sync.RWMutex
 
+	// 内存追踪
+	keywordsMemory MemoryTracker
+	imagesMemory   MemoryTracker
+
 	// 辅助组件
 	encoder      *HTMLEntityEncoder
 	emojiManager *EmojiManager
@@ -70,6 +74,7 @@ type PoolStatusStats struct {
 	Status      string     `json:"status"`
 	NumWorkers  int        `json:"num_workers"`
 	LastRefresh *time.Time `json:"last_refresh"`
+	MemoryBytes int64      `json:"memory_bytes"` // 内存占用（字节）
 	// 新增字段（复用型池使用）
 	PoolType string          `json:"pool_type"`        // "consumable" | "reusable" | "static"
 	Groups   []PoolGroupInfo `json:"groups,omitempty"` // 分组详情（复用型池）
@@ -153,7 +158,7 @@ func (m *PoolManager) Start(ctx context.Context) error {
 		Int("keyword_groups", len(keywordGroupIDs)).
 		Int("image_groups", len(imageGroupIDs)).
 		Int("title_pool_size", m.config.TitlePoolSize).
-		Int("contents_size", m.config.ContentsSize).
+		Int("content_pool_size", m.config.ContentPoolSize).
 		Msg("PoolManager started")
 
 	return nil
@@ -196,16 +201,9 @@ func (m *PoolManager) getOrCreatePool(poolType string, groupID int) *MemoryPool 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	var pools map[int]*MemoryPool
-	var maxSize int
-
-	if poolType == "titles" {
-		pools = m.titles
-		maxSize = m.config.TitlesSize
-	} else {
-		pools = m.contents
-		maxSize = m.config.ContentsSize
-	}
+	// 只处理 contents 类型，titles 已改用 TitleGenerator
+	pools := m.contents
+	maxSize := m.config.ContentPoolSize
 
 	pool, exists := pools[groupID]
 	if !exists {
@@ -258,7 +256,7 @@ func (m *PoolManager) Pop(poolType string, groupID int) (string, error) {
 func (m *PoolManager) refillLoop() {
 	defer m.wg.Done()
 
-	ticker := time.NewTicker(m.config.RefillInterval())
+	ticker := time.NewTicker(m.config.ContentRefillInterval())
 	defer ticker.Stop()
 
 	for {
@@ -271,25 +269,20 @@ func (m *PoolManager) refillLoop() {
 	}
 }
 
-// checkAndRefillAll checks and refills all pools
+// checkAndRefillAll checks and refills all content pools
 func (m *PoolManager) checkAndRefillAll() {
 	m.mu.RLock()
-	titlePools := make([]*MemoryPool, 0, len(m.titles))
 	contentPools := make([]*MemoryPool, 0, len(m.contents))
-	for _, p := range m.titles {
-		titlePools = append(titlePools, p)
-	}
 	for _, p := range m.contents {
 		contentPools = append(contentPools, p)
 	}
-	threshold := m.config.Threshold
+	poolSize := m.config.ContentPoolSize
+	thresholdRatio := m.config.ContentThreshold
 	m.mu.RUnlock()
 
-	for _, pool := range titlePools {
-		if pool.Len() < threshold {
-			m.refillPool(pool)
-		}
-	}
+	// 计算阈值：池大小 * 阈值比例
+	threshold := int(float64(poolSize) * thresholdRatio)
+
 	for _, pool := range contentPools {
 		if pool.Len() < threshold {
 			m.refillPool(pool)
@@ -376,10 +369,10 @@ func (m *PoolManager) Reload(ctx context.Context) error {
 	oldConfig := m.config
 	m.config = config
 
-	// Resize pools if needed
-	if config.ContentsSize != oldConfig.ContentsSize {
+	// Resize content pools if needed
+	if config.ContentPoolSize != oldConfig.ContentPoolSize {
 		for _, pool := range m.contents {
-			pool.Resize(config.ContentsSize)
+			pool.Resize(config.ContentPoolSize)
 		}
 	}
 	m.mu.Unlock()
@@ -392,9 +385,8 @@ func (m *PoolManager) Reload(ctx context.Context) error {
 	log.Info().
 		Int("title_pool_size", config.TitlePoolSize).
 		Int("title_workers", config.TitleWorkers).
-		Int("contents_size", config.ContentsSize).
-		Int("threshold", config.Threshold).
-		Int("interval_ms", config.RefillIntervalMs).
+		Int("content_pool_size", config.ContentPoolSize).
+		Int("content_workers", config.ContentWorkers).
 		Msg("PoolManager config reloaded")
 
 	return nil
@@ -403,20 +395,20 @@ func (m *PoolManager) Reload(ctx context.Context) error {
 // GetStats returns pool statistics
 func (m *PoolManager) GetStats() map[string]interface{} {
 	m.mu.RLock()
-	titlesStats := make(map[int]map[string]int)
-	contentsStats := make(map[int]map[string]int)
+	titlesStats := make(map[int]map[string]interface{})
+	contentsStats := make(map[int]map[string]interface{})
 	for gid, pool := range m.titles {
-		titlesStats[gid] = map[string]int{
+		titlesStats[gid] = map[string]interface{}{
 			"current":   pool.Len(),
 			"max_size":  pool.GetMaxSize(),
-			"threshold": m.config.Threshold,
+			"threshold": m.config.TitleThreshold,
 		}
 	}
 	for gid, pool := range m.contents {
-		contentsStats[gid] = map[string]int{
+		contentsStats[gid] = map[string]interface{}{
 			"current":   pool.Len(),
 			"max_size":  pool.GetMaxSize(),
-			"threshold": m.config.Threshold,
+			"threshold": m.config.ContentThreshold,
 		}
 	}
 	m.mu.RUnlock()
@@ -442,10 +434,14 @@ func (m *PoolManager) GetStats() map[string]interface{} {
 		"images":   imagesStats,
 		"emojis":   m.emojiManager.Count(),
 		"config": map[string]interface{}{
-			"titles_size":        m.config.TitlesSize,
-			"contents_size":      m.config.ContentsSize,
-			"threshold":          m.config.Threshold,
-			"refill_interval_ms": m.config.RefillIntervalMs,
+			"title_pool_size":           m.config.TitlePoolSize,
+			"title_workers":             m.config.TitleWorkers,
+			"title_refill_interval_ms":  m.config.TitleRefillIntervalMs,
+			"title_threshold":           m.config.TitleThreshold,
+			"content_pool_size":         m.config.ContentPoolSize,
+			"content_workers":           m.config.ContentWorkers,
+			"content_refill_interval_ms": m.config.ContentRefillIntervalMs,
+			"content_threshold":         m.config.ContentThreshold,
 		},
 	}
 }
@@ -481,8 +477,15 @@ func (m *PoolManager) LoadKeywords(ctx context.Context, groupID int) (int, error
 	}
 
 	m.keywordsMu.Lock()
+	// 计算旧数据内存
+	oldMem := SliceMemorySize(m.keywords[groupID]) + SliceMemorySize(m.rawKeywords[groupID])
+	// 更新数据
 	m.keywords[groupID] = encoded
 	m.rawKeywords[groupID] = rawCopy
+	// 计算新数据内存
+	newMem := SliceMemorySize(encoded) + SliceMemorySize(rawCopy)
+	// 更新内存计数
+	m.keywordsMemory.AddBytes(newMem - oldMem)
 	m.keywordsMu.Unlock()
 
 	log.Info().Int("group_id", groupID).Int("count", len(encoded)).Msg("Keywords loaded")
@@ -530,10 +533,14 @@ func (m *PoolManager) AppendKeywords(groupID int, keywords []string) {
 	// 追加原始关键词
 	m.rawKeywords[groupID] = append(m.rawKeywords[groupID], keywords...)
 
-	// 追加编码后的关键词
+	// 追加编码后的关键词并计算内存增量
+	var addedMem int64
 	for _, kw := range keywords {
-		m.keywords[groupID] = append(m.keywords[groupID], m.encoder.EncodeText(kw))
+		encoded := m.encoder.EncodeText(kw)
+		m.keywords[groupID] = append(m.keywords[groupID], encoded)
+		addedMem += StringMemorySize(kw) + StringMemorySize(encoded)
 	}
+	m.keywordsMemory.AddBytes(addedMem)
 
 	log.Debug().Int("group_id", groupID).Int("added", len(keywords)).Msg("Keywords appended to cache")
 }
@@ -591,7 +598,14 @@ func (m *PoolManager) LoadImages(ctx context.Context, groupID int) (int, error) 
 	}
 
 	m.imagesMu.Lock()
+	// 计算旧数据内存
+	oldMem := SliceMemorySize(m.images[groupID])
+	// 更新数据
 	m.images[groupID] = urls
+	// 计算新数据内存
+	newMem := SliceMemorySize(urls)
+	// 更新内存计数
+	m.imagesMemory.AddBytes(newMem - oldMem)
 	m.imagesMu.Unlock()
 
 	log.Info().Int("group_id", groupID).Int("count", len(urls)).Msg("Images loaded")
@@ -641,6 +655,9 @@ func (m *PoolManager) AppendImages(groupID int, urls []string) {
 		m.images[groupID] = []string{}
 	}
 	m.images[groupID] = append(m.images[groupID], urls...)
+
+	// 增加内存计数
+	m.imagesMemory.AddBytes(SliceMemorySize(urls))
 
 	log.Debug().Int("group_id", groupID).Int("added", len(urls)).Msg("Images appended to cache")
 }
@@ -719,8 +736,44 @@ func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
 // 兼容性方法（供 router/websocket 使用）
 // ============================================================
 
+// getKeywordGroupNames 从数据库获取关键词分组名称映射
+func (m *PoolManager) getKeywordGroupNames() map[int]string {
+	names := make(map[int]string)
+	rows, err := m.db.QueryContext(m.ctx, "SELECT id, name FROM keyword_groups")
+	if err != nil {
+		return names
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err == nil {
+			names[id] = name
+		}
+	}
+	return names
+}
+
+// getImageGroupNames 从数据库获取图片分组名称映射
+func (m *PoolManager) getImageGroupNames() map[int]string {
+	names := make(map[int]string)
+	rows, err := m.db.QueryContext(m.ctx, "SELECT id, name FROM image_groups")
+	if err != nil {
+		return names
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err == nil {
+			names[id] = name
+		}
+	}
+	return names
+}
+
 // GetDataPoolsStats 返回数据池运行状态统计（与前端展示格式一致）
-// 返回全部 5 个池：标题池、正文池、关键词池、图片池、表情库
+// 返回全部 5 个池：标题、正文、关键词、图片、表情
 func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 	m.mu.RLock()
 	lastRefresh := m.lastRefresh
@@ -741,8 +794,9 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 
 	// 1. 标题池（改用 TitleGenerator 统计）
 	var titlesCurrent, titlesMax int
+	var titlesMemory int64
 	if m.titleGenerator != nil {
-		titlesCurrent, titlesMax = m.titleGenerator.GetTotalStats()
+		titlesCurrent, titlesMax, titlesMemory = m.titleGenerator.GetTotalStats()
 	}
 	titlesUsed := titlesMax - titlesCurrent
 	titlesUtil := 0.0
@@ -750,7 +804,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		titlesUtil = float64(titlesCurrent) / float64(titlesMax) * 100
 	}
 	pools = append(pools, PoolStatusStats{
-		Name:        "标题池",
+		Name:        "标题",
 		Size:        titlesMax,
 		Available:   titlesCurrent,
 		Used:        titlesUsed,
@@ -758,15 +812,18 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  m.config.TitleWorkers,
 		LastRefresh: lastRefreshPtr,
+		MemoryBytes: titlesMemory,
 		PoolType:    "consumable",
 	})
 
 	// 2. 正文池（消费型，汇总所有分组）
 	m.mu.RLock()
 	var contentsMax, contentsCurrent int
+	var contentsMemory int64
 	for _, pool := range m.contents {
 		contentsMax += pool.GetMaxSize()
 		contentsCurrent += pool.Len()
+		contentsMemory += pool.MemoryBytes()
 	}
 	m.mu.RUnlock()
 
@@ -776,7 +833,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		contentsUtil = float64(contentsCurrent) / float64(contentsMax) * 100
 	}
 	pools = append(pools, PoolStatusStats{
-		Name:        "正文池",
+		Name:        "正文",
 		Size:        contentsMax,
 		Available:   contentsCurrent,
 		Used:        contentsUsed,
@@ -784,25 +841,32 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  1,
 		LastRefresh: lastRefreshPtr,
+		MemoryBytes: contentsMemory,
 		PoolType:    "consumable",
 	})
 
-	// 3. 关键词池（复用型，增加分组详情）
+	// 3. 关键词（复用型，增加分组详情）
+	keywordGroupNames := m.getKeywordGroupNames()
 	m.keywordsMu.RLock()
 	var totalKeywords int
 	keywordGroups := []PoolGroupInfo{}
 	for gid, items := range m.keywords {
 		count := len(items)
 		totalKeywords += count
+		name := keywordGroupNames[gid]
+		if name == "" {
+			name = fmt.Sprintf("分组%d", gid)
+		}
 		keywordGroups = append(keywordGroups, PoolGroupInfo{
 			ID:    gid,
-			Name:  fmt.Sprintf("分组%d", gid),
+			Name:  name,
 			Count: count,
 		})
 	}
+	keywordsMemory := m.keywordsMemory.Bytes()
 	m.keywordsMu.RUnlock()
 	pools = append(pools, PoolStatusStats{
-		Name:        "关键词池",
+		Name:        "关键词",
 		Size:        totalKeywords,
 		Available:   totalKeywords,
 		Used:        0,
@@ -810,26 +874,33 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  0,
 		LastRefresh: lastRefreshPtr,
+		MemoryBytes: keywordsMemory,
 		PoolType:    "reusable",
 		Groups:      keywordGroups,
 	})
 
-	// 4. 图片池（复用型，增加分组详情）
+	// 4. 图片（复用型，增加分组详情）
+	imageGroupNames := m.getImageGroupNames()
 	m.imagesMu.RLock()
 	var totalImages int
 	imageGroups := []PoolGroupInfo{}
 	for gid, items := range m.images {
 		count := len(items)
 		totalImages += count
+		name := imageGroupNames[gid]
+		if name == "" {
+			name = fmt.Sprintf("分组%d", gid)
+		}
 		imageGroups = append(imageGroups, PoolGroupInfo{
 			ID:    gid,
-			Name:  fmt.Sprintf("分组%d", gid),
+			Name:  name,
 			Count: count,
 		})
 	}
+	imagesMemory := m.imagesMemory.Bytes()
 	m.imagesMu.RUnlock()
 	pools = append(pools, PoolStatusStats{
-		Name:        "图片池",
+		Name:        "图片",
 		Size:        totalImages,
 		Available:   totalImages,
 		Used:        0,
@@ -837,14 +908,16 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  0,
 		LastRefresh: lastRefreshPtr,
+		MemoryBytes: imagesMemory,
 		PoolType:    "reusable",
 		Groups:      imageGroups,
 	})
 
 	// 5. 表情库（静态数据）
 	emojiCount := m.emojiManager.Count()
+	emojiMemory := m.emojiManager.MemoryBytes()
 	pools = append(pools, PoolStatusStats{
-		Name:        "表情库",
+		Name:        "表情",
 		Size:        emojiCount,
 		Available:   emojiCount,
 		Used:        0,
@@ -852,6 +925,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Status:      status,
 		NumWorkers:  0,
 		LastRefresh: nil,
+		MemoryBytes: emojiMemory,
 		PoolType:    "static",
 		Source:      "emojis.json",
 	})
