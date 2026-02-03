@@ -23,20 +23,14 @@
                 <el-icon :size="20"><Key /></el-icon>
               </div>
               <span class="item-label">关键词总数</span>
-              <span class="item-value">
-                {{ formatNumber(stats.keywords_total) }}
-                <span class="item-memory">({{ formatMemoryMB(stats.keyword_group_stats?.memory_mb || 0) }})</span>
-              </span>
+              <span class="item-value">{{ formatNumber(stats.keywords_total) }}</span>
             </div>
             <div class="stats-item">
               <div class="item-icon" style="background-color: #e6a23c">
                 <el-icon :size="20"><Picture /></el-icon>
               </div>
               <span class="item-label">图片总数</span>
-              <span class="item-value">
-                {{ formatNumber(stats.images_total) }}
-                <span class="item-memory">({{ formatMemoryMB(stats.image_group_stats?.memory_mb || 0) }})</span>
-              </span>
+              <span class="item-value">{{ formatNumber(stats.images_total) }}</span>
             </div>
             <div class="stats-item">
               <div class="item-icon" style="background-color: #f56c6c">
@@ -77,7 +71,7 @@ import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
 import { getDashboardStats, getSpiderStats } from '@/api/dashboard'
 import { getDailyStats } from '@/api/spiders'
-import { formatMemoryMB, formatNumber } from '@/utils/format'
+import { formatNumber } from '@/utils/format'
 import type { DashboardStats } from '@/types'
 import SystemStatsCard from '@/components/SystemStatsCard.vue'
 import { connectSystemStatsWs, disconnectSystemStatsWs } from '@/api/system-stats'
@@ -88,8 +82,8 @@ const stats = reactive<DashboardStats>({
   keywords_total: 0,
   images_total: 0,
   articles_total: 0,
-  keyword_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false, memory_mb: 0 },
-  image_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false, memory_mb: 0 }
+  keyword_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false },
+  image_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false }
 })
 
 const systemStats = ref<SystemStats | null>(null)
@@ -257,13 +251,6 @@ onUnmounted(() => {
           font-weight: 600;
           color: #303133;
           margin-left: auto;
-
-          .item-memory {
-            font-size: 11px;
-            font-weight: 400;
-            color: #909399;
-            margin-left: 2px;
-          }
         }
       }
     }

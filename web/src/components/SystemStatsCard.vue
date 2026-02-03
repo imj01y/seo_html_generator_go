@@ -60,8 +60,8 @@
             <el-progress
               type="circle"
               :percentage="disk.usage_percent"
-              :width="80"
-              :stroke-width="8"
+              :width="100"
+              :stroke-width="10"
               :color="getProgressColor(disk.usage_percent)"
               :format="(p: number) => p.toFixed(1) + '%'"
             />
@@ -223,7 +223,7 @@ function formatDiskSize(bytes: number): string {
       .disk-path {
         font-size: 13px;
         color: #606266;
-        max-width: 80px;
+        max-width: 100px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;

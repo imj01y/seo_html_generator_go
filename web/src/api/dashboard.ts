@@ -34,8 +34,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     total: 0,
     cursor: 0,
     remaining: 0,
-    loaded: false,
-    memory_mb: 0
+    loaded: false
   }
 
   let keywordStats = { ...defaultStats, total: res.keyword_count, remaining: res.keyword_count, loaded: res.keyword_count > 0 }

@@ -321,7 +321,6 @@ export interface GroupStats {
   cursor: number
   remaining: number
   loaded: boolean
-  memory_mb: number
   // 滑动窗口图片管理器新增字段
   pool_start?: number
   pool_end?: number
