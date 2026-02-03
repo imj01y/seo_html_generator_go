@@ -15,7 +15,7 @@
             :color="getProgressColor(stats.cpu.usage_percent)"
             class="stat-progress"
           />
-          <span class="stat-value">{{ stats.cpu.usage_percent.toFixed(1) }}%</span>
+          <span class="stat-value">{{ stats.cpu.usage_percent.toFixed(2) }}%</span>
           <span class="stat-extra">{{ stats.cpu.cores }}核</span>
         </div>
         <!-- 内存 -->
@@ -27,7 +27,7 @@
             :color="getProgressColor(stats.memory.usage_percent)"
             class="stat-progress"
           />
-          <span class="stat-value">{{ stats.memory.usage_percent.toFixed(1) }}%</span>
+          <span class="stat-value">{{ stats.memory.usage_percent.toFixed(2) }}%</span>
           <span class="stat-extra">{{ formatMemoryGB(stats.memory.used_bytes) }}/{{ formatMemoryGB(stats.memory.total_bytes) }}G</span>
         </div>
         <!-- 负载 -->
@@ -51,14 +51,14 @@
         <div class="panel-title">磁盘</div>
         <div class="disk-list">
           <div class="disk-row" v-for="disk in stats.disks" :key="disk.path">
-            <span class="disk-path">{{ disk.path }}</span>
+            <span class="disk-path" :title="disk.path">{{ disk.path }}</span>
             <el-progress
               :percentage="disk.usage_percent"
               :stroke-width="10"
               :color="getProgressColor(disk.usage_percent)"
               class="disk-progress"
             />
-            <span class="disk-percent">{{ Math.round(disk.usage_percent) }}%</span>
+            <span class="disk-percent">{{ disk.usage_percent.toFixed(2) }}%</span>
             <span class="disk-size">{{ formatDiskSize(disk.used_bytes) }}/{{ formatDiskSize(disk.total_bytes) }}</span>
           </div>
         </div>
@@ -180,7 +180,7 @@ function formatDiskSize(bytes: number): string {
     }
 
     .stat-value {
-      width: 50px;
+      width: 60px;
       text-align: right;
       font-size: 14px;
       font-weight: 500;
@@ -230,10 +230,13 @@ function formatDiskSize(bytes: number): string {
       }
 
       .disk-path {
-        width: 40px;
+        width: 60px;
         font-size: 13px;
         color: #606266;
         flex-shrink: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .disk-progress {
@@ -242,7 +245,7 @@ function formatDiskSize(bytes: number): string {
       }
 
       .disk-percent {
-        width: 36px;
+        width: 56px;
         text-align: right;
         font-size: 13px;
         font-weight: 500;
