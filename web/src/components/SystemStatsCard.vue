@@ -11,11 +11,12 @@
           <span class="stat-label">CPU</span>
           <el-progress
             :percentage="stats.cpu.usage_percent"
-            :stroke-width="12"
+            :stroke-width="20"
             :color="getProgressColor(stats.cpu.usage_percent)"
+            :text-inside="true"
+            :format="(p: number) => p.toFixed(2) + '%'"
             class="stat-progress"
           />
-          <span class="stat-value">{{ stats.cpu.usage_percent.toFixed(2) }}%</span>
           <span class="stat-extra">{{ stats.cpu.cores }}核</span>
         </div>
         <!-- 内存 -->
@@ -23,11 +24,12 @@
           <span class="stat-label">内存</span>
           <el-progress
             :percentage="stats.memory.usage_percent"
-            :stroke-width="12"
+            :stroke-width="20"
             :color="getProgressColor(stats.memory.usage_percent)"
+            :text-inside="true"
+            :format="(p: number) => p.toFixed(2) + '%'"
             class="stat-progress"
           />
-          <span class="stat-value">{{ stats.memory.usage_percent.toFixed(2) }}%</span>
           <span class="stat-extra">{{ formatMemoryGB(stats.memory.used_bytes) }}/{{ formatMemoryGB(stats.memory.total_bytes) }}G</span>
         </div>
         <!-- 负载 -->
@@ -50,16 +52,21 @@
       <div class="right-panel">
         <div class="panel-title">磁盘</div>
         <div class="disk-list">
-          <div class="disk-row" v-for="disk in stats.disks" :key="disk.path">
-            <span class="disk-path" :title="disk.path">{{ disk.path }}</span>
+          <div
+            class="disk-item"
+            v-for="disk in stats.disks"
+            :key="disk.path"
+            :title="`${formatDiskSize(disk.used_bytes)} / ${formatDiskSize(disk.total_bytes)}`"
+          >
             <el-progress
+              type="circle"
               :percentage="disk.usage_percent"
-              :stroke-width="10"
+              :width="80"
+              :stroke-width="8"
               :color="getProgressColor(disk.usage_percent)"
-              class="disk-progress"
+              :format="(p: number) => p.toFixed(1) + '%'"
             />
-            <span class="disk-percent">{{ disk.usage_percent.toFixed(2) }}%</span>
-            <span class="disk-size">{{ formatDiskSize(disk.used_bytes) }}/{{ formatDiskSize(disk.total_bytes) }}</span>
+            <span class="disk-path">{{ disk.path }}</span>
           </div>
         </div>
       </div>
@@ -179,15 +186,6 @@ function formatDiskSize(bytes: number): string {
       min-width: 0;
     }
 
-    .stat-value {
-      width: 60px;
-      text-align: right;
-      font-size: 14px;
-      font-weight: 500;
-      color: #303133;
-      flex-shrink: 0;
-    }
-
     .stat-extra {
       width: 100px;
       text-align: right;
@@ -219,46 +217,25 @@ function formatDiskSize(bytes: number): string {
   }
 
   .disk-list {
-    .disk-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+
+    .disk-item {
       display: flex;
+      flex-direction: column;
       align-items: center;
       gap: 8px;
-      margin-bottom: 8px;
-
-      &:last-child {
-        margin-bottom: 0;
-      }
+      cursor: default;
 
       .disk-path {
-        width: 60px;
         font-size: 13px;
         color: #606266;
-        flex-shrink: 0;
+        max-width: 80px;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-
-      .disk-progress {
-        flex: 1;
-        min-width: 0;
-      }
-
-      .disk-percent {
-        width: 56px;
-        text-align: right;
-        font-size: 13px;
-        font-weight: 500;
-        color: #303133;
-        flex-shrink: 0;
-      }
-
-      .disk-size {
-        width: 90px;
-        text-align: right;
-        font-size: 12px;
-        color: #909399;
-        flex-shrink: 0;
+        text-align: center;
       }
     }
   }
