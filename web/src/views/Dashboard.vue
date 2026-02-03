@@ -54,6 +54,13 @@
       </el-col>
     </el-row>
 
+    <!-- 系统资源卡片 -->
+    <el-row :gutter="20" class="stats-row">
+      <el-col :span="24">
+        <SystemStatsCard :stats="systemStats" />
+      </el-col>
+    </el-row>
+
     <!-- 图表区域 -->
     <el-row :gutter="20">
       <el-col :xs="24" :lg="16">
@@ -83,6 +90,9 @@ import { getDashboardStats, getSpiderStats } from '@/api/dashboard'
 import { getDailyStats } from '@/api/spiders'
 import { formatMemoryMB, formatNumber } from '@/utils/format'
 import type { DashboardStats } from '@/types'
+import SystemStatsCard from '@/components/SystemStatsCard.vue'
+import { connectSystemStatsWs, disconnectSystemStatsWs } from '@/api/system-stats'
+import type { SystemStats } from '@/types/system-stats'
 
 const stats = reactive<DashboardStats>({
   sites_count: 0,
@@ -92,6 +102,8 @@ const stats = reactive<DashboardStats>({
   keyword_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false, memory_mb: 0 },
   image_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false, memory_mb: 0 }
 })
+
+const systemStats = ref<SystemStats | null>(null)
 
 const trendChartRef = ref<HTMLElement>()
 const pieChartRef = ref<HTMLElement>()
@@ -188,12 +200,16 @@ onMounted(() => {
   loadTrendChart()
   loadPieChart()
   window.addEventListener('resize', handleResize)
+  connectSystemStatsWs((data) => {
+    systemStats.value = data
+  })
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   trendChart?.dispose()
   pieChart?.dispose()
+  disconnectSystemStatsWs()
 })
 </script>
 
