@@ -1,63 +1,52 @@
 <template>
   <div class="dashboard">
-    <!-- 统计卡片 -->
+    <!-- 系统资源 + 数据统计 -->
     <el-row :gutter="20" class="stats-row">
-      <el-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card cursor-pointer">
-          <div class="stat-icon" style="background-color: #409eff">
-            <el-icon :size="28"><Monitor /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ stats.sites_count }}</div>
-            <div class="stat-label">站点数量</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card cursor-pointer">
-          <div class="stat-icon" style="background-color: #67c23a">
-            <el-icon :size="28"><Key /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">
-              {{ formatNumber(stats.keywords_total) }}
-              <span class="stat-memory">{{ formatMemoryMB(stats.keyword_group_stats?.memory_mb || 0) }}</span>
-            </div>
-            <div class="stat-label">关键词总数</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card cursor-pointer">
-          <div class="stat-icon" style="background-color: #e6a23c">
-            <el-icon :size="28"><Picture /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">
-              {{ formatNumber(stats.images_total) }}
-              <span class="stat-memory">{{ formatMemoryMB(stats.image_group_stats?.memory_mb || 0) }}</span>
-            </div>
-            <div class="stat-label">图片总数</div>
-          </div>
-        </div>
-      </el-col>
-      <el-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card cursor-pointer">
-          <div class="stat-icon" style="background-color: #f56c6c">
-            <el-icon :size="28"><Document /></el-icon>
-          </div>
-          <div class="stat-info">
-            <div class="stat-value">{{ formatNumber(stats.articles_total) }}</div>
-            <div class="stat-label">文章总数</div>
-          </div>
-        </div>
-      </el-col>
-    </el-row>
-
-    <!-- 系统资源卡片 -->
-    <el-row :gutter="20" class="stats-row">
-      <el-col :span="24">
+      <el-col :xs="24" :lg="14">
         <SystemStatsCard :stats="systemStats" />
+      </el-col>
+      <el-col :xs="24" :lg="10">
+        <div class="data-stats-card">
+          <div class="card-header">
+            <span class="title">数据统计</span>
+          </div>
+          <div class="stats-list">
+            <div class="stats-item">
+              <div class="item-icon" style="background-color: #409eff">
+                <el-icon :size="20"><Monitor /></el-icon>
+              </div>
+              <span class="item-label">站点数量</span>
+              <span class="item-value">{{ stats.sites_count }}</span>
+            </div>
+            <div class="stats-item">
+              <div class="item-icon" style="background-color: #67c23a">
+                <el-icon :size="20"><Key /></el-icon>
+              </div>
+              <span class="item-label">关键词总数</span>
+              <span class="item-value">
+                {{ formatNumber(stats.keywords_total) }}
+                <span class="item-memory">({{ formatMemoryMB(stats.keyword_group_stats?.memory_mb || 0) }})</span>
+              </span>
+            </div>
+            <div class="stats-item">
+              <div class="item-icon" style="background-color: #e6a23c">
+                <el-icon :size="20"><Picture /></el-icon>
+              </div>
+              <span class="item-label">图片总数</span>
+              <span class="item-value">
+                {{ formatNumber(stats.images_total) }}
+                <span class="item-memory">({{ formatMemoryMB(stats.image_group_stats?.memory_mb || 0) }})</span>
+              </span>
+            </div>
+            <div class="stats-item">
+              <div class="item-icon" style="background-color: #f56c6c">
+                <el-icon :size="20"><Document /></el-icon>
+              </div>
+              <span class="item-label">文章总数</span>
+              <span class="item-value">{{ formatNumber(stats.articles_total) }}</span>
+            </div>
+          </div>
+        </div>
       </el-col>
     </el-row>
 
@@ -219,50 +208,64 @@ onUnmounted(() => {
     margin-bottom: 20px;
   }
 
-  .stat-card {
-    display: flex;
-    align-items: center;
-    padding: 20px;
+  .data-stats-card {
     background-color: #fff;
     border-radius: 8px;
+    padding: 16px 20px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: 100%;
 
-    &:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
-    }
+    .card-header {
+      margin-bottom: 16px;
 
-    .stat-icon {
-      width: 60px;
-      height: 60px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      color: #fff;
-    }
-
-    .stat-info {
-      margin-left: 16px;
-
-      .stat-value {
-        font-size: 28px;
+      .title {
+        font-size: 16px;
         font-weight: 600;
         color: #303133;
-
-        .stat-memory {
-          font-size: 14px;
-          font-weight: 400;
-          color: #909399;
-          margin-left: 8px;
-        }
       }
+    }
 
-      .stat-label {
-        font-size: 14px;
-        color: #909399;
-        margin-top: 4px;
+    .stats-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+
+      .stats-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        .item-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 6px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          flex-shrink: 0;
+        }
+
+        .item-label {
+          font-size: 14px;
+          color: #606266;
+          width: 80px;
+          flex-shrink: 0;
+        }
+
+        .item-value {
+          font-size: 18px;
+          font-weight: 600;
+          color: #303133;
+          margin-left: auto;
+
+          .item-memory {
+            font-size: 12px;
+            font-weight: 400;
+            color: #909399;
+            margin-left: 4px;
+          }
+        }
       }
     }
   }
