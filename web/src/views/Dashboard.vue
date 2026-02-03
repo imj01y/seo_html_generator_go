@@ -69,8 +69,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
-import { getDashboardStats, getSpiderStats } from '@/api/dashboard'
-import { getDailyStats } from '@/api/spiders'
+import { getDashboardStats } from '@/api/dashboard'
+import { getDailyStats, getSpiderStats } from '@/api/spiders'
 import { formatNumber } from '@/utils/format'
 import type { DashboardStats } from '@/types'
 import SystemStatsCard from '@/components/SystemStatsCard.vue'

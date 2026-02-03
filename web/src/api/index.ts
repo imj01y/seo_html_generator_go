@@ -6,7 +6,7 @@ export type { SuccessResponse, CreateResponse, CountResponse } from './shared'
 export * from './auth'
 
 // Dashboard
-export { getDashboardStats, getSpiderStats as getDashboardSpiderStats } from './dashboard'
+export { getDashboardStats } from './dashboard'
 
 // 站点和站群
 export * from './sites'

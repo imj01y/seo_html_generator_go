@@ -13,11 +13,6 @@ interface BackendDashboardStats {
   template_count: number
 }
 
-interface BackendSpiderVisits {
-  total_visits: number
-  today_visits: number
-}
-
 interface GroupStatsResponse {
   total: number
   groups?: Array<{ group_id: number; group_name: string; count: number }>
@@ -63,20 +58,5 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     articles_total: res.article_count,
     keyword_group_stats: keywordStats,
     image_group_stats: imageStats
-  }
-}
-
-export async function getSpiderStats(): Promise<{
-  total_visits: number
-  by_spider: Record<string, number>
-  by_site: Record<string, number>
-  by_status: Record<string, number>
-}> {
-  const res: BackendSpiderVisits = await request.get('/dashboard/spider-visits')
-  return {
-    total_visits: res.total_visits || 0,
-    by_spider: {},
-    by_site: {},
-    by_status: {}
   }
 }
