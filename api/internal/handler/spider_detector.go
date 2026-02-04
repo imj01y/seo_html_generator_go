@@ -359,7 +359,13 @@ func (h *SpiderDetectorHandler) GetSpiderTrend(c *gin.Context) {
 
 		var data []models.SpiderLogsStatsPoint
 		err := sqlxDB.Select(&data, `
-			SELECT period_start as time, total, status_2xx, status_3xx, status_4xx, status_5xx, avg_resp_time
+			SELECT period_start as time,
+				COALESCE(total, 0) as total,
+				COALESCE(status_2xx, 0) as status_2xx,
+				COALESCE(status_3xx, 0) as status_3xx,
+				COALESCE(status_4xx, 0) as status_4xx,
+				COALESCE(status_5xx, 0) as status_5xx,
+				COALESCE(avg_resp_time, 0) as avg_resp_time
 			FROM spider_logs_stats
 			WHERE `+where+`
 			ORDER BY period_start DESC
