@@ -14,6 +14,46 @@ import (
 	models "seo-generator/api/internal/model"
 )
 
+func TestImageRepository_Create(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewImageRepository(db)
+
+	t.Run("success", func(t *testing.T) {
+		image := &models.Image{
+			URL:     "https://example.com/image.jpg",
+			GroupID: 1,
+			Status:  1,
+		}
+
+		mock.ExpectExec("INSERT INTO images").
+			WithArgs(image.URL, image.GroupID, image.Status).
+			WillReturnResult(sqlmock.NewResult(10, 1))
+
+		err := repo.Create(context.Background(), image)
+
+		assert.NoError(t, err)
+		assert.Equal(t, uint(10), image.ID)
+	})
+
+	t.Run("error on insert", func(t *testing.T) {
+		image := &models.Image{
+			URL:     "https://example.com/image.jpg",
+			GroupID: 1,
+			Status:  1,
+		}
+
+		mock.ExpectExec("INSERT INTO images").
+			WithArgs(image.URL, image.GroupID, image.Status).
+			WillReturnError(sql.ErrConnDone)
+
+		err := repo.Create(context.Background(), image)
+
+		assert.Error(t, err)
+	})
+}
+
 func TestImageRepository_GetByID(t *testing.T) {
 	db, mock, cleanup := testutil.NewMockDB(t)
 	defer cleanup()

@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -73,4 +74,69 @@ func TestContentRepository_MarkAsUsed(t *testing.T) {
 	err := repo.MarkAsUsed(context.Background(), ids)
 
 	assert.NoError(t, err)
+}
+
+func TestContentRepository_CountByTemplateID(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewContentRepository(db)
+
+	t.Run("success", func(t *testing.T) {
+		templateID := 1
+		rows := sqlmock.NewRows([]string{"count"}).AddRow(58)
+
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM contents WHERE group_id = \\? AND \\(used IS NULL OR used = 0\\)").
+			WithArgs(templateID).
+			WillReturnRows(rows)
+
+		count, err := repo.CountByTemplateID(context.Background(), templateID)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(58), count)
+	})
+
+	t.Run("error on query", func(t *testing.T) {
+		templateID := 1
+
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM contents WHERE group_id = \\? AND \\(used IS NULL OR used = 0\\)").
+			WithArgs(templateID).
+			WillReturnError(sql.ErrConnDone)
+
+		count, err := repo.CountByTemplateID(context.Background(), templateID)
+
+		assert.Error(t, err)
+		assert.Equal(t, int64(0), count)
+	})
+}
+
+func TestContentRepository_DeleteByBatchID(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewContentRepository(db)
+
+	t.Run("success", func(t *testing.T) {
+		batchID := int64(100)
+
+		mock.ExpectExec("DELETE FROM contents WHERE batch_id = \\?").
+			WithArgs(batchID).
+			WillReturnResult(sqlmock.NewResult(0, 8))
+
+		err := repo.DeleteByBatchID(context.Background(), batchID)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("error on delete", func(t *testing.T) {
+		batchID := int64(100)
+
+		mock.ExpectExec("DELETE FROM contents WHERE batch_id = \\?").
+			WithArgs(batchID).
+			WillReturnError(sql.ErrConnDone)
+
+		err := repo.DeleteByBatchID(context.Background(), batchID)
+
+		assert.Error(t, err)
+	})
 }
