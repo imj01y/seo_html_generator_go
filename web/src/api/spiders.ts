@@ -116,3 +116,31 @@ export function getSpiderConfig(): Promise<{
 }> {
   return request.get('/spiders/config')
 }
+
+// ============================================
+// 蜘蛛日志趋势 API
+// ============================================
+
+export interface SpiderTrendPoint {
+  time: string
+  total: number
+  status_2xx: number
+  status_3xx: number
+  status_4xx: number
+  status_5xx: number
+  avg_resp_time: number
+}
+
+export interface SpiderTrendResponse {
+  period: string
+  items: SpiderTrendPoint[]
+}
+
+export async function getSpiderTrend(params?: {
+  period?: 'minute' | 'hour' | 'day' | 'month'
+  spider_type?: string
+  limit?: number
+}): Promise<SpiderTrendResponse> {
+  const res: SpiderTrendResponse = await request.get('/spiders/trend', { params })
+  return res || { period: params?.period || 'hour', items: [] }
+}
