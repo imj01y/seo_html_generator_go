@@ -5,37 +5,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand/v2"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
+
+	"seo-generator/api/internal/service/pool"
 )
 
 // ErrCachePoolEmpty is returned when the cache pool is empty
 var ErrCachePoolEmpty = errors.New("cache pool is empty")
 
 // PoolManager manages memory pools for titles, contents, keywords, and images
+// 注意: 关键词和图片池已重构到 pool 子包, 此处作为兼容层
 type PoolManager struct {
 	// 消费型池（FIFO，消费后标记）
 	titles   map[int]*MemoryPool // groupID -> pool
 	contents map[int]*MemoryPool // groupID -> pool
 
-	// 标题生成器（新增）
+	// 标题生成器
 	titleGenerator *TitleGenerator
 
-	// 复用型数据（随机获取，可重复）
-	keywords    map[int][]string // groupID -> encoded keywords
-	rawKeywords map[int][]string // groupID -> raw keywords
-	images      map[int][]string // groupID -> image URLs
-	keywordsMu  sync.RWMutex
-	imagesMu    sync.RWMutex
-
-	// 内存追踪
-	keywordsMemory MemoryTracker
-	imagesMemory   MemoryTracker
+	// 复用型池管理器（新架构）
+	poolManager *pool.Manager
 
 	// 辅助组件
 	encoder      *HTMLEntityEncoder
@@ -87,9 +81,7 @@ func NewPoolManager(db *sqlx.DB) *PoolManager {
 	return &PoolManager{
 		titles:       make(map[int]*MemoryPool),
 		contents:     make(map[int]*MemoryPool),
-		keywords:     make(map[int][]string),
-		rawKeywords:  make(map[int][]string),
-		images:       make(map[int][]string),
+		poolManager:  pool.NewManager(db),
 		encoder:      GetEncoder(),
 		emojiManager: NewEmojiManager(),
 		config:       DefaultCachePoolConfig(),
@@ -123,32 +115,18 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	// Initial fill for titles/contents
 	m.checkAndRefillAll()
 
-	// Discover and load keywords/images
-	keywordGroupIDs, err := m.discoverKeywordGroups(ctx)
-	if err != nil {
-		keywordGroupIDs = m.getDefaultKeywordGroups(ctx)
-		log.Warn().Err(err).
-			Ints("fallback_groups", keywordGroupIDs).
-			Msg("Failed to discover keyword groups, using defaults")
+	// Start pool manager (keywords and images)
+	if err := m.poolManager.Start(ctx); err != nil {
+		return fmt.Errorf("failed to start pool manager: %w", err)
 	}
 
-	imageGroupIDs, err := m.discoverImageGroups(ctx)
-	if err != nil {
-		imageGroupIDs = m.getDefaultImageGroups(ctx)
-		log.Warn().Err(err).
-			Ints("fallback_groups", imageGroupIDs).
-			Msg("Failed to discover image groups, using defaults")
+	// Get keyword groups for title generator
+	keywordGroupIDs := make([]int, 0)
+	for gid := range m.poolManager.GetKeywordPool().GetAllGroups() {
+		keywordGroupIDs = append(keywordGroupIDs, gid)
 	}
-
-	for _, gid := range keywordGroupIDs {
-		if _, err := m.LoadKeywords(ctx, gid); err != nil {
-			log.Warn().Err(err).Int("group", gid).Msg("Failed to load keywords")
-		}
-	}
-	for _, gid := range imageGroupIDs {
-		if _, err := m.LoadImages(ctx, gid); err != nil {
-			log.Warn().Err(err).Int("group", gid).Msg("Failed to load images")
-		}
+	if len(keywordGroupIDs) == 0 {
+		keywordGroupIDs = []int{1}
 	}
 
 	// 初始化并启动 TitleGenerator（必须在关键词加载完成后）
@@ -166,10 +144,12 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	go m.updateWorker()
 	// refreshLoop 已移除，复用型池不需要定时刷新
 
+	imageGroupCount := len(m.poolManager.GetImagePool().GetAllGroups())
+
 	log.Info().
 		Int("article_groups", len(groupIDs)).
 		Int("keyword_groups", len(keywordGroupIDs)).
-		Int("image_groups", len(imageGroupIDs)).
+		Int("image_groups", imageGroupCount).
 		Int("title_pool_size", m.config.TitlePoolSize).
 		Int("content_pool_size", m.config.ContentPoolSize).
 		Msg("PoolManager started")
@@ -184,6 +164,9 @@ func (m *PoolManager) Stop() {
 	close(m.updateCh)
 	if m.titleGenerator != nil {
 		m.titleGenerator.Stop()
+	}
+	if m.poolManager != nil {
+		m.poolManager.Stop()
 	}
 	m.wg.Wait()
 	log.Info().Msg("PoolManager stopped")
@@ -426,19 +409,9 @@ func (m *PoolManager) GetStats() map[string]interface{} {
 	}
 	m.mu.RUnlock()
 
-	m.keywordsMu.RLock()
-	keywordsStats := make(map[int]int)
-	for gid, items := range m.keywords {
-		keywordsStats[gid] = len(items)
-	}
-	m.keywordsMu.RUnlock()
-
-	m.imagesMu.RLock()
-	imagesStats := make(map[int]int)
-	for gid, items := range m.images {
-		imagesStats[gid] = len(items)
-	}
-	m.imagesMu.RUnlock()
+	// 从新的池管理器获取统计
+	keywordsStats := m.poolManager.GetKeywordPool().GetAllGroups()
+	imagesStats := m.poolManager.GetImagePool().GetAllGroups()
 
 	return map[string]interface{}{
 		"titles":   titlesStats,
@@ -471,217 +444,76 @@ func (m *PoolManager) GetConfig() *CachePoolConfig {
 // ============================================================
 
 // LoadKeywords loads keywords for a group from the database
+// 兼容层: 代理到 pool.KeywordPool
 func (m *PoolManager) LoadKeywords(ctx context.Context, groupID int) (int, error) {
-	query := `SELECT keyword FROM keywords WHERE group_id = ? AND status = 1`
-
-	var keywords []string
-	if err := m.db.SelectContext(ctx, &keywords, query, groupID); err != nil {
+	if err := m.poolManager.GetKeywordPool().ReloadGroup(ctx, groupID); err != nil {
 		return 0, err
 	}
-
-	// Store raw keywords
-	rawCopy := make([]string, len(keywords))
-	copy(rawCopy, keywords)
-
-	// Pre-encode keywords
-	encoded := make([]string, len(keywords))
-	for i, kw := range keywords {
-		encoded[i] = m.encoder.EncodeText(kw)
-	}
-
-	m.keywordsMu.Lock()
-	// 计算旧数据内存
-	oldMem := SliceMemorySize(m.keywords[groupID]) + SliceMemorySize(m.rawKeywords[groupID])
-	// 更新数据
-	m.keywords[groupID] = encoded
-	m.rawKeywords[groupID] = rawCopy
-	// 计算新数据内存
-	newMem := SliceMemorySize(encoded) + SliceMemorySize(rawCopy)
-	// 更新内存计数
-	m.keywordsMemory.AddBytes(newMem - oldMem)
-	m.keywordsMu.Unlock()
-
-	log.Info().Int("group_id", groupID).Int("count", len(encoded)).Msg("Keywords loaded")
-	return len(encoded), nil
+	count := m.poolManager.GetKeywordPool().GetGroupCount(groupID)
+	return count, nil
 }
 
 // GetRandomKeywords returns random pre-encoded keywords
+// 兼容层: 代理到 pool.KeywordPool
 func (m *PoolManager) GetRandomKeywords(groupID int, count int) []string {
-	m.keywordsMu.RLock()
-	items := m.keywords[groupID]
-	if len(items) == 0 {
-		items = m.keywords[1] // fallback to default group
-	}
-	m.keywordsMu.RUnlock()
-
-	return getRandomItems(items, count)
+	return m.poolManager.GetKeywordPool().GetRandomKeywords(groupID, count)
 }
 
 // GetRawKeywords returns raw (not encoded) keywords
+// 兼容层: 代理到 pool.KeywordPool
 func (m *PoolManager) GetRawKeywords(groupID int, count int) []string {
-	m.keywordsMu.RLock()
-	items := m.rawKeywords[groupID]
-	if len(items) == 0 {
-		items = m.rawKeywords[1]
-	}
-	m.keywordsMu.RUnlock()
-
-	return getRandomItems(items, count)
+	return m.poolManager.GetKeywordPool().GetRawKeywords(groupID, count)
 }
 
 // AppendKeywords 追加关键词到内存（新增时调用）
+// 兼容层: 代理到 pool.KeywordPool
 func (m *PoolManager) AppendKeywords(groupID int, keywords []string) {
-	if len(keywords) == 0 {
-		return
-	}
-
-	m.keywordsMu.Lock()
-	defer m.keywordsMu.Unlock()
-
-	if m.keywords[groupID] == nil {
-		m.keywords[groupID] = []string{}
-		m.rawKeywords[groupID] = []string{}
-	}
-
-	// 追加原始关键词
-	m.rawKeywords[groupID] = append(m.rawKeywords[groupID], keywords...)
-
-	// 追加编码后的关键词并计算内存增量
-	var addedMem int64
-	for _, kw := range keywords {
-		encoded := m.encoder.EncodeText(kw)
-		m.keywords[groupID] = append(m.keywords[groupID], encoded)
-		addedMem += StringMemorySize(kw) + StringMemorySize(encoded)
-	}
-	m.keywordsMemory.AddBytes(addedMem)
-
-	log.Debug().Int("group_id", groupID).Int("added", len(keywords)).Msg("Keywords appended to cache")
+	m.poolManager.GetKeywordPool().AppendKeywords(groupID, keywords)
 }
 
 // ReloadKeywordGroup 重载指定分组的关键词缓存（删除时调用）
+// 兼容层: 代理到 pool.KeywordPool
 func (m *PoolManager) ReloadKeywordGroup(ctx context.Context, groupID int) error {
-	_, err := m.LoadKeywords(ctx, groupID)
-	if err != nil {
-		log.Error().Err(err).Int("group_id", groupID).Msg("Failed to reload keyword group")
-	}
-	return err
+	return m.poolManager.GetKeywordPool().ReloadGroup(ctx, groupID)
 }
 
-// getRandomItems 从切片中随机选取指定数量的元素（Fisher-Yates 部分洗牌）
-func getRandomItems(items []string, count int) []string {
-	n := len(items)
-	if n == 0 || count == 0 {
-		return nil
-	}
-	if count > n {
-		count = n
-	}
-
-	swapped := make(map[int]int, count)
-	result := make([]string, count)
-
-	for i := 0; i < count; i++ {
-		j := i + rand.IntN(n-i)
-		vi, oki := swapped[i]
-		if !oki {
-			vi = i
-		}
-		vj, okj := swapped[j]
-		if !okj {
-			vj = j
-		}
-		swapped[i] = vj
-		swapped[j] = vi
-		result[i] = items[vj]
-	}
-	return result
-}
 
 // ============================================================
 // Images 方法
 // ============================================================
 
 // LoadImages loads image URLs for a group from the database
+// 兼容层: 代理到 pool.ImagePool
 func (m *PoolManager) LoadImages(ctx context.Context, groupID int) (int, error) {
-	query := `SELECT url FROM images WHERE group_id = ? AND status = 1`
-
-	var urls []string
-	if err := m.db.SelectContext(ctx, &urls, query, groupID); err != nil {
+	if err := m.poolManager.GetImagePool().ReloadGroup(ctx, groupID); err != nil {
 		return 0, err
 	}
-
-	m.imagesMu.Lock()
-	// 计算旧数据内存
-	oldMem := SliceMemorySize(m.images[groupID])
-	// 更新数据
-	m.images[groupID] = urls
-	// 计算新数据内存
-	newMem := SliceMemorySize(urls)
-	// 更新内存计数
-	m.imagesMemory.AddBytes(newMem - oldMem)
-	m.imagesMu.Unlock()
-
-	log.Info().Int("group_id", groupID).Int("count", len(urls)).Msg("Images loaded")
-	return len(urls), nil
+	count := m.poolManager.GetImagePool().GetGroupCount(groupID)
+	return count, nil
 }
 
 // GetRandomImage returns a random image URL
+// 兼容层: 代理到 pool.ImagePool
 func (m *PoolManager) GetRandomImage(groupID int) string {
-	m.imagesMu.RLock()
-	items := m.images[groupID]
-	if len(items) == 0 {
-		items = m.images[1]
-	}
-	m.imagesMu.RUnlock()
-
-	if len(items) == 0 {
-		return ""
-	}
-	return items[rand.IntN(len(items))]
+	return m.poolManager.GetImagePool().GetRandomImage(groupID)
 }
 
 // GetImages returns all image URLs for a group
+// 兼容层: 代理到 pool.ImagePool
 func (m *PoolManager) GetImages(groupID int) []string {
-	m.imagesMu.RLock()
-	urls := m.images[groupID]
-	m.imagesMu.RUnlock()
-
-	if len(urls) == 0 {
-		return nil
-	}
-
-	result := make([]string, len(urls))
-	copy(result, urls)
-	return result
+	return m.poolManager.GetImagePool().GetImages(groupID)
 }
 
 // AppendImages 追加图片到内存（新增时调用）
+// 兼容层: 代理到 pool.ImagePool
 func (m *PoolManager) AppendImages(groupID int, urls []string) {
-	if len(urls) == 0 {
-		return
-	}
-
-	m.imagesMu.Lock()
-	defer m.imagesMu.Unlock()
-
-	if m.images[groupID] == nil {
-		m.images[groupID] = []string{}
-	}
-	m.images[groupID] = append(m.images[groupID], urls...)
-
-	// 增加内存计数
-	m.imagesMemory.AddBytes(SliceMemorySize(urls))
-
-	log.Debug().Int("group_id", groupID).Int("added", len(urls)).Msg("Images appended to cache")
+	m.poolManager.GetImagePool().AppendImages(groupID, urls)
 }
 
 // ReloadImageGroup 重载指定分组的图片缓存（删除时调用）
+// 兼容层: 代理到 pool.ImagePool
 func (m *PoolManager) ReloadImageGroup(ctx context.Context, groupID int) error {
-	_, err := m.LoadImages(ctx, groupID)
-	if err != nil {
-		log.Error().Err(err).Int("group_id", groupID).Msg("Failed to reload image group")
-	}
-	return err
+	return m.poolManager.GetImagePool().ReloadGroup(ctx, groupID)
 }
 
 // ============================================================
@@ -718,62 +550,52 @@ func (m *PoolManager) ReloadEmojis(path string) error {
 // ============================================================
 
 // discoverKeywordGroups finds all keyword group IDs
+// 兼容层: 使用池管理器的数据
 func (m *PoolManager) discoverKeywordGroups(ctx context.Context) ([]int, error) {
-	query := `SELECT DISTINCT id FROM keyword_groups`
-	var ids []int
-	if err := m.db.SelectContext(ctx, &ids, query); err != nil {
-		log.Warn().Err(err).Msg("Failed to query keyword groups, using default")
+	groups := make([]int, 0)
+	for gid := range m.poolManager.GetKeywordPool().GetAllGroups() {
+		groups = append(groups, gid)
+	}
+	if len(groups) == 0 {
 		return []int{1}, nil
 	}
-	if len(ids) == 0 {
-		return []int{1}, nil
-	}
-	return ids, nil
+	return groups, nil
 }
 
 // discoverImageGroups finds all image group IDs
+// 兼容层: 使用池管理器的数据
 func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
-	query := `SELECT DISTINCT id FROM image_groups`
-	var ids []int
-	if err := m.db.SelectContext(ctx, &ids, query); err != nil {
-		log.Warn().Err(err).Msg("Failed to query image groups, using default")
+	groups := make([]int, 0)
+	for gid := range m.poolManager.GetImagePool().GetAllGroups() {
+		groups = append(groups, gid)
+	}
+	if len(groups) == 0 {
 		return []int{1}, nil
 	}
-	if len(ids) == 0 {
-		return []int{1}, nil
-	}
-	return ids, nil
+	return groups, nil
 }
 
 // getDefaultKeywordGroups 获取默认的关键词分组列表
+// 兼容层: 使用池管理器的数据
 func (m *PoolManager) getDefaultKeywordGroups(ctx context.Context) []int {
-	var groups []int
-	// 改为查询 keyword_groups 表，与 discoverKeywordGroups 保持一致
-	query := `SELECT id FROM keyword_groups`
-	err := m.db.SelectContext(ctx, &groups, query)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to get default keyword groups")
-		return []int{1} // 最后兜底，返回分组1
+	groups := make([]int, 0)
+	for gid := range m.poolManager.GetKeywordPool().GetAllGroups() {
+		groups = append(groups, gid)
 	}
 	if len(groups) == 0 {
-		log.Warn().Msg("No keyword groups found in database, using default group 1")
 		return []int{1}
 	}
 	return groups
 }
 
 // getDefaultImageGroups 获取默认的图片分组列表
+// 兼容层: 使用池管理器的数据
 func (m *PoolManager) getDefaultImageGroups(ctx context.Context) []int {
-	var groups []int
-	// 改为查询 image_groups 表
-	query := `SELECT id FROM image_groups`
-	err := m.db.SelectContext(ctx, &groups, query)
-	if err != nil {
-		log.Error().Err(err).Msg("Failed to get default image groups")
-		return []int{1} // 最后兜底，返回分组1
+	groups := make([]int, 0)
+	for gid := range m.poolManager.GetImagePool().GetAllGroups() {
+		groups = append(groups, gid)
 	}
 	if len(groups) == 0 {
-		log.Warn().Msg("No image groups found in database, using default group 1")
 		return []int{1}
 	}
 	return groups
@@ -894,11 +716,10 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 
 	// 3. 关键词（复用型，增加分组详情）
 	keywordGroupNames := m.getKeywordGroupNames()
-	m.keywordsMu.RLock()
+	kwGroups := m.poolManager.GetKeywordPool().GetAllGroups()
 	var totalKeywords int
 	keywordGroups := []PoolGroupInfo{}
-	for gid, items := range m.keywords {
-		count := len(items)
+	for gid, count := range kwGroups {
 		totalKeywords += count
 		name := keywordGroupNames[gid]
 		if name == "" {
@@ -910,8 +731,9 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 			Count: count,
 		})
 	}
-	keywordsMemory := m.keywordsMemory.Bytes()
-	m.keywordsMu.RUnlock()
+	// 获取内存统计
+	kwStats := m.poolManager.GetKeywordPool().GetStats(0)
+	keywordsMemory := kwStats.MemoryBytes
 	pools = append(pools, PoolStatusStats{
 		Name:        "关键词",
 		Size:        totalKeywords,
@@ -928,11 +750,10 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 
 	// 4. 图片（复用型，增加分组详情）
 	imageGroupNames := m.getImageGroupNames()
-	m.imagesMu.RLock()
+	imgGroups := m.poolManager.GetImagePool().GetAllGroups()
 	var totalImages int
 	imageGroups := []PoolGroupInfo{}
-	for gid, items := range m.images {
-		count := len(items)
+	for gid, count := range imgGroups {
 		totalImages += count
 		name := imageGroupNames[gid]
 		if name == "" {
@@ -944,8 +765,9 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 			Count: count,
 		})
 	}
-	imagesMemory := m.imagesMemory.Bytes()
-	m.imagesMu.RUnlock()
+	// 获取内存统计
+	imgStats := m.poolManager.GetImagePool().GetStats(0)
+	imagesMemory := imgStats.MemoryBytes
 	pools = append(pools, PoolStatusStats{
 		Name:        "图片",
 		Size:        totalImages,
@@ -987,58 +809,31 @@ type SimplePoolStats struct {
 }
 
 // GetPoolStatsSimple 返回简化的池统计
+// 兼容层: 使用池管理器的数据
 func (m *PoolManager) GetPoolStatsSimple() SimplePoolStats {
-	m.keywordsMu.RLock()
-	var totalKeywords int
-	for _, items := range m.keywords {
-		totalKeywords += len(items)
-	}
-	m.keywordsMu.RUnlock()
-
-	m.imagesMu.RLock()
-	var totalImages int
-	for _, items := range m.images {
-		totalImages += len(items)
-	}
-	m.imagesMu.RUnlock()
-
 	return SimplePoolStats{
-		Keywords: totalKeywords,
-		Images:   totalImages,
+		Keywords: m.poolManager.GetKeywordPool().GetTotalCount(),
+		Images:   m.poolManager.GetImagePool().GetTotalCount(),
 	}
 }
 
 // RefreshData 手动刷新指定数据池
-func (m *PoolManager) RefreshData(ctx context.Context, pool string) error {
-	switch pool {
-	case "keywords", "all":
-		groupIDs, err := m.discoverKeywordGroups(ctx)
-		if err != nil {
-			groupIDs = m.getDefaultKeywordGroups(ctx)
-			log.Warn().Err(err).
-				Ints("fallback_groups", groupIDs).
-				Msg("Failed to discover keyword groups, using defaults")
+// 兼容层: 使用池管理器重新加载
+func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
+	switch poolType {
+	case "keywords":
+		groupIDs, _ := m.discoverKeywordGroups(ctx)
+		if err := m.poolManager.GetKeywordPool().Reload(ctx, groupIDs); err != nil {
+			return fmt.Errorf("reload keywords: %w", err)
 		}
-		for _, gid := range groupIDs {
-			if _, err := m.LoadKeywords(ctx, gid); err != nil {
-				return err
-			}
+	case "images":
+		groupIDs, _ := m.discoverImageGroups(ctx)
+		if err := m.poolManager.GetImagePool().Reload(ctx, groupIDs); err != nil {
+			return fmt.Errorf("reload images: %w", err)
 		}
-	}
-
-	switch pool {
-	case "images", "all":
-		groupIDs, err := m.discoverImageGroups(ctx)
-		if err != nil {
-			groupIDs = m.getDefaultImageGroups(ctx)
-			log.Warn().Err(err).
-				Ints("fallback_groups", groupIDs).
-				Msg("Failed to discover image groups, using defaults")
-		}
-		for _, gid := range groupIDs {
-			if _, err := m.LoadImages(ctx, gid); err != nil {
-				return err
-			}
+	case "all":
+		if err := m.poolManager.ReloadAll(ctx); err != nil {
+			return fmt.Errorf("reload all pools: %w", err)
 		}
 	}
 

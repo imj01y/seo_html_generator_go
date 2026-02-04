@@ -306,18 +306,19 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Spider Detector routes (require JWT)
-	spiderDetectorHandler := &SpiderDetectorHandler{}
-	spiderDetectorRoutes := r.Group("/api/spiders")
-	spiderDetectorRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
-	{
-		spiderDetectorRoutes.GET("/config", spiderDetectorHandler.GetSpiderConfig)
-		spiderDetectorRoutes.POST("/test", spiderDetectorHandler.TestSpiderDetection)
-		spiderDetectorRoutes.GET("/logs", spiderDetectorHandler.GetSpiderLogs)
-		spiderDetectorRoutes.GET("/stats", spiderDetectorHandler.GetSpiderStats)
-		spiderDetectorRoutes.GET("/daily-stats", spiderDetectorHandler.GetSpiderDailyStats)
-		spiderDetectorRoutes.GET("/hourly-stats", spiderDetectorHandler.GetSpiderHourlyStats)
-		spiderDetectorRoutes.DELETE("/logs/clear", spiderDetectorHandler.ClearSpiderLogs)
-	}
+	// TODO: SpiderDetectorHandler 已在 Task 3.1 中移除,需要使用新的 spider 子包实现
+	// spiderDetectorHandler := &SpiderDetectorHandler{}
+	// spiderDetectorRoutes := r.Group("/api/spiders")
+	// spiderDetectorRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	// {
+	// 	spiderDetectorRoutes.GET("/config", spiderDetectorHandler.GetSpiderConfig)
+	// 	spiderDetectorRoutes.POST("/test", spiderDetectorHandler.TestSpiderDetection)
+	// 	spiderDetectorRoutes.GET("/logs", spiderDetectorHandler.GetSpiderLogs)
+	// 	spiderDetectorRoutes.GET("/stats", spiderDetectorHandler.GetSpiderStats)
+	// 	spiderDetectorRoutes.GET("/daily-stats", spiderDetectorHandler.GetSpiderDailyStats)
+	// 	spiderDetectorRoutes.GET("/hourly-stats", spiderDetectorHandler.GetSpiderHourlyStats)
+	// 	spiderDetectorRoutes.DELETE("/logs/clear", spiderDetectorHandler.ClearSpiderLogs)
+	// }
 
 	// Processor routes (数据加工，require JWT)
 	processorHandler := &ProcessorHandler{}
