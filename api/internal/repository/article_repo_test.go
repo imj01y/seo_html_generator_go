@@ -52,6 +52,127 @@ func TestArticleRepository_GetByID(t *testing.T) {
 	})
 }
 
+func TestArticleRepository_List(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewArticleRepository(db)
+
+	t.Run("success with pagination", func(t *testing.T) {
+		groupID := 1
+		page := 1
+		pageSize := 10
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(25)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM original_articles WHERE group_id = \\?").
+			WithArgs(groupID).
+			WillReturnRows(countRows)
+
+		// Mock list query
+		now := time.Now()
+		rows := sqlmock.NewRows([]string{"id", "group_id", "source_id", "source_url", "title", "content", "status", "created_at", "updated_at"}).
+			AddRow(uint(1), 1, nil, nil, "文章1", "内容1", 1, now, now).
+			AddRow(uint(2), 1, nil, nil, "文章2", "内容2", 1, now, now)
+
+		mock.ExpectQuery("SELECT (.+) FROM original_articles WHERE group_id = \\? ORDER BY id DESC LIMIT \\? OFFSET \\?").
+			WithArgs(groupID, pageSize, 0).
+			WillReturnRows(rows)
+
+		articles, total, err := repo.List(context.Background(), groupID, page, pageSize)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(25), total)
+		assert.Len(t, articles, 2)
+		assert.Equal(t, "文章1", articles[0].Title)
+		assert.Equal(t, "文章2", articles[1].Title)
+	})
+
+	t.Run("success with page 2", func(t *testing.T) {
+		groupID := 1
+		page := 2
+		pageSize := 10
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(25)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM original_articles WHERE group_id = \\?").
+			WithArgs(groupID).
+			WillReturnRows(countRows)
+
+		// Mock list query
+		now := time.Now()
+		rows := sqlmock.NewRows([]string{"id", "group_id", "source_id", "source_url", "title", "content", "status", "created_at", "updated_at"}).
+			AddRow(uint(11), 1, nil, nil, "文章11", "内容11", 1, now, now)
+
+		mock.ExpectQuery("SELECT (.+) FROM original_articles WHERE group_id = \\? ORDER BY id DESC LIMIT \\? OFFSET \\?").
+			WithArgs(groupID, pageSize, 10).
+			WillReturnRows(rows)
+
+		articles, total, err := repo.List(context.Background(), groupID, page, pageSize)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(25), total)
+		assert.Len(t, articles, 1)
+		assert.Equal(t, "文章11", articles[0].Title)
+	})
+
+	t.Run("success with different page size", func(t *testing.T) {
+		groupID := 1
+		page := 1
+		pageSize := 5
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(20)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM original_articles WHERE group_id = \\?").
+			WithArgs(groupID).
+			WillReturnRows(countRows)
+
+		// Mock list query
+		now := time.Now()
+		rows := sqlmock.NewRows([]string{"id", "group_id", "source_id", "source_url", "title", "content", "status", "created_at", "updated_at"}).
+			AddRow(uint(1), 1, nil, nil, "文章1", "内容1", 1, now, now).
+			AddRow(uint(2), 1, nil, nil, "文章2", "内容2", 1, now, now).
+			AddRow(uint(3), 1, nil, nil, "文章3", "内容3", 1, now, now).
+			AddRow(uint(4), 1, nil, nil, "文章4", "内容4", 1, now, now).
+			AddRow(uint(5), 1, nil, nil, "文章5", "内容5", 1, now, now)
+
+		mock.ExpectQuery("SELECT (.+) FROM original_articles WHERE group_id = \\? ORDER BY id DESC LIMIT \\? OFFSET \\?").
+			WithArgs(groupID, pageSize, 0).
+			WillReturnRows(rows)
+
+		articles, total, err := repo.List(context.Background(), groupID, page, pageSize)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(20), total)
+		assert.Len(t, articles, 5)
+	})
+
+	t.Run("empty result", func(t *testing.T) {
+		groupID := 999
+		page := 1
+		pageSize := 10
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(0)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM original_articles WHERE group_id = \\?").
+			WithArgs(groupID).
+			WillReturnRows(countRows)
+
+		// Mock list query
+		rows := sqlmock.NewRows([]string{"id", "group_id", "source_id", "source_url", "title", "content", "status", "created_at", "updated_at"})
+
+		mock.ExpectQuery("SELECT (.+) FROM original_articles WHERE group_id = \\? ORDER BY id DESC LIMIT \\? OFFSET \\?").
+			WithArgs(groupID, pageSize, 0).
+			WillReturnRows(rows)
+
+		articles, total, err := repo.List(context.Background(), groupID, page, pageSize)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(0), total)
+		assert.Len(t, articles, 0)
+	})
+}
+
 func TestArticleRepository_Create(t *testing.T) {
 	db, mock, cleanup := testutil.NewMockDB(t)
 	defer cleanup()

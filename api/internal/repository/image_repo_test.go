@@ -71,6 +71,123 @@ func TestImageRepository_RandomByGroupID(t *testing.T) {
 	assert.Equal(t, "https://example.com/image1.jpg", images[0].URL)
 }
 
+func TestImageRepository_List(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewImageRepository(db)
+
+	t.Run("success with pagination", func(t *testing.T) {
+		groupID := 1
+		status := 1
+		filter := ImageFilter{
+			GroupID:    &groupID,
+			Status:     &status,
+			Pagination: NewPagination(1, 10),
+		}
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(25)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images WHERE group_id = \\? AND status = \\?").
+			WithArgs(groupID, status).
+			WillReturnRows(countRows)
+
+		// Mock list query
+		rows := sqlmock.NewRows([]string{"id", "url", "group_id", "status"}).
+			AddRow(uint(1), "https://example.com/image1.jpg", 1, 1).
+			AddRow(uint(2), "https://example.com/image2.jpg", 1, 1)
+
+		mock.ExpectQuery("SELECT id, url, group_id, status FROM images WHERE group_id = \\? AND status = \\? ORDER BY id DESC LIMIT 10 OFFSET 0").
+			WithArgs(groupID, status).
+			WillReturnRows(rows)
+
+		images, total, err := repo.List(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(25), total)
+		assert.Len(t, images, 2)
+		assert.Equal(t, "https://example.com/image1.jpg", images[0].URL)
+		assert.Equal(t, "https://example.com/image2.jpg", images[1].URL)
+	})
+
+	t.Run("success with group filter only", func(t *testing.T) {
+		groupID := 1
+		filter := ImageFilter{
+			GroupID: &groupID,
+		}
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(5)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images WHERE group_id = \\?").
+			WithArgs(groupID).
+			WillReturnRows(countRows)
+
+		// Mock list query
+		rows := sqlmock.NewRows([]string{"id", "url", "group_id", "status"}).
+			AddRow(uint(1), "https://example.com/image1.jpg", 1, 1)
+
+		mock.ExpectQuery("SELECT id, url, group_id, status FROM images WHERE group_id = \\? ORDER BY id DESC").
+			WithArgs(groupID).
+			WillReturnRows(rows)
+
+		images, total, err := repo.List(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(5), total)
+		assert.Len(t, images, 1)
+	})
+
+	t.Run("success with status filter only", func(t *testing.T) {
+		status := 1
+		filter := ImageFilter{
+			Status: &status,
+		}
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(10)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images WHERE status = \\?").
+			WithArgs(status).
+			WillReturnRows(countRows)
+
+		// Mock list query
+		rows := sqlmock.NewRows([]string{"id", "url", "group_id", "status"}).
+			AddRow(uint(1), "https://example.com/image1.jpg", 1, 1)
+
+		mock.ExpectQuery("SELECT id, url, group_id, status FROM images WHERE status = \\? ORDER BY id DESC").
+			WithArgs(status).
+			WillReturnRows(rows)
+
+		images, total, err := repo.List(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(10), total)
+		assert.Len(t, images, 1)
+	})
+
+	t.Run("success without filters", func(t *testing.T) {
+		filter := ImageFilter{}
+
+		// Mock count query
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(100)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images").
+			WillReturnRows(countRows)
+
+		// Mock list query
+		rows := sqlmock.NewRows([]string{"id", "url", "group_id", "status"}).
+			AddRow(uint(1), "https://example.com/image1.jpg", 1, 1).
+			AddRow(uint(2), "https://example.com/image2.jpg", 2, 1)
+
+		mock.ExpectQuery("SELECT id, url, group_id, status FROM images ORDER BY id DESC").
+			WillReturnRows(rows)
+
+		images, total, err := repo.List(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(100), total)
+		assert.Len(t, images, 2)
+	})
+}
+
 func TestImageRepository_BatchImport(t *testing.T) {
 	db, mock, cleanup := testutil.NewMockDB(t)
 	defer cleanup()
