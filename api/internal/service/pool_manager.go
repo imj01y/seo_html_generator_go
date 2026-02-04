@@ -552,33 +552,6 @@ func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
 	}
 	return groups, nil
 }
-
-// getDefaultKeywordGroups 获取默认的关键词分组列表
-// 兼容层: 使用池管理器的数据
-func (m *PoolManager) getDefaultKeywordGroups(ctx context.Context) []int {
-	groups := make([]int, 0)
-	for gid := range m.poolManager.GetKeywordPool().GetAllGroups() {
-		groups = append(groups, gid)
-	}
-	if len(groups) == 0 {
-		return []int{1}
-	}
-	return groups
-}
-
-// getDefaultImageGroups 获取默认的图片分组列表
-// 兼容层: 使用池管理器的数据
-func (m *PoolManager) getDefaultImageGroups(ctx context.Context) []int {
-	groups := make([]int, 0)
-	for gid := range m.poolManager.GetImagePool().GetAllGroups() {
-		groups = append(groups, gid)
-	}
-	if len(groups) == 0 {
-		return []int{1}
-	}
-	return groups
-}
-
 // ============================================================
 // 兼容性方法（供 router/websocket 使用）
 // ============================================================

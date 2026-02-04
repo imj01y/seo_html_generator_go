@@ -211,50 +211,53 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	r.GET("/api/groups/options", AuthMiddleware(deps.Config.Auth.SecretKey), sitesHandler.GetAllGroupOptions)
 
 	// Spider Projects routes (require JWT)
-	spidersHandler := &SpidersHandler{}
+	spiderProjectsHandler := &SpiderProjectsHandler{}
+	spiderFilesHandler := &SpiderFilesHandler{}
+	spiderExecutionHandler := &SpiderExecutionHandler{}
+	spiderProjectStatsHandler := &SpiderStatsHandler{}
 	spiderRoutes := r.Group("/api/spider-projects")
 	spiderRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{
-		spiderRoutes.GET("", spidersHandler.List)
-		spiderRoutes.POST("", spidersHandler.Create)
-		spiderRoutes.GET("/templates", spidersHandler.GetCodeTemplates)
-		spiderRoutes.GET("/:id", spidersHandler.Get)
-		spiderRoutes.PUT("/:id", spidersHandler.Update)
-		spiderRoutes.DELETE("/:id", spidersHandler.Delete)
-		spiderRoutes.POST("/:id/toggle", spidersHandler.Toggle)
+		spiderRoutes.GET("", spiderProjectsHandler.List)
+		spiderRoutes.POST("", spiderProjectsHandler.Create)
+		spiderRoutes.GET("/templates", spiderProjectsHandler.GetCodeTemplates)
+		spiderRoutes.GET("/:id", spiderProjectsHandler.Get)
+		spiderRoutes.PUT("/:id", spiderProjectsHandler.Update)
+		spiderRoutes.DELETE("/:id", spiderProjectsHandler.Delete)
+		spiderRoutes.POST("/:id/toggle", spiderProjectsHandler.Toggle)
 
 		// 文件管理 - 支持树形结构
-		spiderRoutes.GET("/:id/files", spidersHandler.ListFiles)           // ?tree=true 返回树形结构
-		spiderRoutes.GET("/:id/files/*path", spidersHandler.GetFile)       // 获取文件内容
-		spiderRoutes.POST("/:id/files", spidersHandler.CreateItem)         // 根目录创建
-		spiderRoutes.POST("/:id/files/*path", spidersHandler.CreateItem)   // 指定目录创建
-		spiderRoutes.PUT("/:id/files/*path", spidersHandler.UpdateFile)    // 更新文件
-		spiderRoutes.DELETE("/:id/files/*path", spidersHandler.DeleteFile) // 删除文件/目录
-		spiderRoutes.PATCH("/:id/files/*path", spidersHandler.MoveItem)    // 移动/重命名
+		spiderRoutes.GET("/:id/files", spiderFilesHandler.ListFiles)           // ?tree=true 返回树形结构
+		spiderRoutes.GET("/:id/files/*path", spiderFilesHandler.GetFile)       // 获取文件内容
+		spiderRoutes.POST("/:id/files", spiderFilesHandler.CreateItem)         // 根目录创建
+		spiderRoutes.POST("/:id/files/*path", spiderFilesHandler.CreateItem)   // 指定目录创建
+		spiderRoutes.PUT("/:id/files/*path", spiderFilesHandler.UpdateFile)    // 更新文件
+		spiderRoutes.DELETE("/:id/files/*path", spiderFilesHandler.DeleteFile) // 删除文件/目录
+		spiderRoutes.PATCH("/:id/files/*path", spiderFilesHandler.MoveItem)    // 移动/重命名
 
 		// 任务控制
-		spiderRoutes.POST("/:id/run", spidersHandler.Run)
-		spiderRoutes.POST("/:id/test", spidersHandler.Test)
-		spiderRoutes.POST("/:id/test/stop", spidersHandler.TestStop)
-		spiderRoutes.POST("/:id/stop", spidersHandler.Stop)
-		spiderRoutes.POST("/:id/pause", spidersHandler.Pause)
-		spiderRoutes.POST("/:id/resume", spidersHandler.Resume)
+		spiderRoutes.POST("/:id/run", spiderExecutionHandler.Run)
+		spiderRoutes.POST("/:id/test", spiderExecutionHandler.Test)
+		spiderRoutes.POST("/:id/test/stop", spiderExecutionHandler.TestStop)
+		spiderRoutes.POST("/:id/stop", spiderExecutionHandler.Stop)
+		spiderRoutes.POST("/:id/pause", spiderExecutionHandler.Pause)
+		spiderRoutes.POST("/:id/resume", spiderExecutionHandler.Resume)
 
 		// 统计
-		spiderRoutes.GET("/:id/stats/realtime", spidersHandler.GetRealtimeStats)
-		spiderRoutes.GET("/:id/stats/chart", spidersHandler.GetChartStats)
+		spiderRoutes.GET("/:id/stats/realtime", spiderProjectStatsHandler.GetRealtimeStats)
+		spiderRoutes.GET("/:id/stats/chart", spiderProjectStatsHandler.GetChartStats)
 
 		// 队列管理
-		spiderRoutes.POST("/:id/queue/clear", spidersHandler.ClearQueue)
-		spiderRoutes.POST("/:id/reset", spidersHandler.Reset)
+		spiderRoutes.POST("/:id/queue/clear", spiderProjectStatsHandler.ClearQueue)
+		spiderRoutes.POST("/:id/reset", spiderProjectStatsHandler.Reset)
 
 		// 失败请求
-		spiderRoutes.GET("/:id/failed", spidersHandler.ListFailed)
-		spiderRoutes.GET("/:id/failed/stats", spidersHandler.GetFailedStats)
-		spiderRoutes.POST("/:id/failed/retry-all", spidersHandler.RetryAllFailed)
-		spiderRoutes.POST("/:id/failed/:fid/retry", spidersHandler.RetryOneFailed)
-		spiderRoutes.POST("/:id/failed/:fid/ignore", spidersHandler.IgnoreFailed)
-		spiderRoutes.DELETE("/:id/failed/:fid", spidersHandler.DeleteFailed)
+		spiderRoutes.GET("/:id/failed", spiderProjectStatsHandler.ListFailed)
+		spiderRoutes.GET("/:id/failed/stats", spiderProjectStatsHandler.GetFailedStats)
+		spiderRoutes.POST("/:id/failed/retry-all", spiderProjectStatsHandler.RetryAllFailed)
+		spiderRoutes.POST("/:id/failed/:fid/retry", spiderProjectStatsHandler.RetryOneFailed)
+		spiderRoutes.POST("/:id/failed/:fid/ignore", spiderProjectStatsHandler.IgnoreFailed)
+		spiderRoutes.DELETE("/:id/failed/:fid", spiderProjectStatsHandler.DeleteFailed)
 	}
 
 	// Spider Stats routes (require JWT)
@@ -306,19 +309,18 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Spider Detector routes (require JWT)
-	// TODO: SpiderDetectorHandler 已在 Task 3.1 中移除,需要使用新的 spider 子包实现
-	// spiderDetectorHandler := &SpiderDetectorHandler{}
-	// spiderDetectorRoutes := r.Group("/api/spiders")
-	// spiderDetectorRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
-	// {
-	// 	spiderDetectorRoutes.GET("/config", spiderDetectorHandler.GetSpiderConfig)
-	// 	spiderDetectorRoutes.POST("/test", spiderDetectorHandler.TestSpiderDetection)
-	// 	spiderDetectorRoutes.GET("/logs", spiderDetectorHandler.GetSpiderLogs)
-	// 	spiderDetectorRoutes.GET("/stats", spiderDetectorHandler.GetSpiderStats)
-	// 	spiderDetectorRoutes.GET("/daily-stats", spiderDetectorHandler.GetSpiderDailyStats)
-	// 	spiderDetectorRoutes.GET("/hourly-stats", spiderDetectorHandler.GetSpiderHourlyStats)
-	// 	spiderDetectorRoutes.DELETE("/logs/clear", spiderDetectorHandler.ClearSpiderLogs)
-	// }
+	spiderDetectorHandler := &SpiderDetectorHandler{}
+	spiderDetectorRoutes := r.Group("/api/spiders")
+	spiderDetectorRoutes.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
+	{
+		spiderDetectorRoutes.GET("/config", spiderDetectorHandler.GetSpiderConfig)
+		spiderDetectorRoutes.POST("/test", spiderDetectorHandler.TestSpiderDetection)
+		spiderDetectorRoutes.GET("/logs", spiderDetectorHandler.GetSpiderLogs)
+		spiderDetectorRoutes.GET("/stats", spiderDetectorHandler.GetSpiderStats)
+		spiderDetectorRoutes.GET("/daily-stats", spiderDetectorHandler.GetSpiderDailyStats)
+		spiderDetectorRoutes.GET("/hourly-stats", spiderDetectorHandler.GetSpiderHourlyStats)
+		spiderDetectorRoutes.DELETE("/logs/clear", spiderDetectorHandler.ClearSpiderLogs)
+	}
 
 	// Processor routes (数据加工，require JWT)
 	processorHandler := &ProcessorHandler{}
