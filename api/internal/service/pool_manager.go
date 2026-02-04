@@ -41,11 +41,11 @@ type PoolManager struct {
 	mu     sync.RWMutex
 
 	// 后台任务
-	ctx      context.Context
-	cancel   context.CancelFunc
-	updateCh chan UpdateTask
-	wg       sync.WaitGroup
-	stopped  atomic.Bool
+	ctx     context.Context
+	cancel  context.CancelFunc
+	batcher *pool.UpdateBatcher // 批量更新器（替代 updateCh）
+	wg      sync.WaitGroup
+	stopped atomic.Bool
 
 	// 状态追踪
 	lastRefresh time.Time
@@ -78,6 +78,13 @@ type PoolStatusStats struct {
 // NewPoolManager creates a new pool manager
 func NewPoolManager(db *sqlx.DB) *PoolManager {
 	ctx, cancel := context.WithCancel(context.Background())
+
+	// 配置批量更新器：最多 100 条记录或 5 秒刷新一次
+	batcherConfig := pool.BatcherConfig{
+		MaxBatch:      100,
+		FlushInterval: 5 * time.Second,
+	}
+
 	return &PoolManager{
 		titles:       make(map[int]*MemoryPool),
 		contents:     make(map[int]*MemoryPool),
@@ -88,7 +95,7 @@ func NewPoolManager(db *sqlx.DB) *PoolManager {
 		db:           db,
 		ctx:          ctx,
 		cancel:       cancel,
-		updateCh:     make(chan UpdateTask, 1000),
+		batcher:      pool.NewUpdateBatcher(db, batcherConfig),
 	}
 }
 
@@ -139,10 +146,9 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	m.mu.Unlock()
 
 	// Start background workers
-	m.wg.Add(2)
+	m.wg.Add(1)
 	go m.refillLoop()
-	go m.updateWorker()
-	// refreshLoop 已移除，复用型池不需要定时刷新
+	// updateWorker 已替换为 UpdateBatcher（自动批量处理）
 
 	imageGroupCount := len(m.poolManager.GetImagePool().GetAllGroups())
 
@@ -161,7 +167,9 @@ func (m *PoolManager) Start(ctx context.Context) error {
 func (m *PoolManager) Stop() {
 	m.stopped.Store(true)
 	m.cancel()
-	close(m.updateCh)
+	if m.batcher != nil {
+		m.batcher.Stop() // 刷新并关闭批量更新器
+	}
 	if m.titleGenerator != nil {
 		m.titleGenerator.Stop()
 	}
@@ -225,24 +233,20 @@ func (m *PoolManager) Pop(poolType string, groupID int) (string, error) {
 		return "", err
 	}
 
-	pool := m.getOrCreatePool(poolType, groupID)
-	item, ok := pool.Pop()
+	memPool := m.getOrCreatePool(poolType, groupID)
+	item, ok := memPool.Pop()
 	if !ok {
 		// Try to refill and pop again
-		m.refillPool(pool)
-		item, ok = pool.Pop()
+		m.refillPool(memPool)
+		item, ok = memPool.Pop()
 		if !ok {
 			return "", ErrCachePoolEmpty
 		}
 	}
 
-	// Async update status
-	if !m.stopped.Load() {
-		select {
-		case m.updateCh <- UpdateTask{Table: poolType, ID: item.ID}:
-		default:
-			log.Warn().Str("table", poolType).Int64("id", item.ID).Msg("Update channel full")
-		}
+	// Async batch update status (never drops messages)
+	if !m.stopped.Load() && m.batcher != nil {
+		m.batcher.Add(pool.UpdateTask{Table: poolType, ID: item.ID})
 	}
 
 	return item.Text, nil
@@ -325,32 +329,6 @@ func (m *PoolManager) refillPool(pool *MemoryPool) {
 			Int("added", len(items)).
 			Int("total", pool.Len()).
 			Msg("Pool refilled")
-	}
-}
-
-// updateWorker processes status updates
-func (m *PoolManager) updateWorker() {
-	defer m.wg.Done()
-
-	for task := range m.updateCh {
-		select {
-		case <-m.ctx.Done():
-			return
-		default:
-			m.processUpdate(task)
-		}
-	}
-}
-
-// processUpdate updates the status of a consumed item
-func (m *PoolManager) processUpdate(task UpdateTask) {
-	if err := validatePoolType(task.Table); err != nil {
-		return
-	}
-	query := fmt.Sprintf("UPDATE %s SET status = 0 WHERE id = ?", task.Table)
-	_, err := m.db.ExecContext(m.ctx, query, task.ID)
-	if err != nil {
-		log.Warn().Err(err).Str("table", task.Table).Int64("id", task.ID).Msg("Failed to update status")
 	}
 }
 

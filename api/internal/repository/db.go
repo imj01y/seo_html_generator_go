@@ -33,15 +33,23 @@ func Init(cfg *config.DatabaseConfig) error {
 		return fmt.Errorf("failed to connect to database: %w", err)
 	}
 
-	// Configure connection pool for high concurrency (500 concurrent requests)
-	// Use at least 50 connections, or config value if higher
+	// Configure connection pool for high concurrency
+	// MaxOpenConns: 最大并发连接数（至少 50）
+	// MaxIdleConns: 空闲连接池大小（设置为 MaxOpenConns 的 20%，减少内存占用）
+	// ConnMaxLifetime: 连接最大生命周期，防止长时间连接导致问题
+	// ConnMaxIdleTime: 连接最大空闲时间，释放长时间未使用的连接
 	maxConns := cfg.PoolSize
 	if maxConns < 50 {
 		maxConns = 50
 	}
+	idleConns := maxConns / 5
+	if idleConns < 10 {
+		idleConns = 10 // 至少保持 10 个空闲连接
+	}
 	db.SetMaxOpenConns(maxConns)
-	db.SetMaxIdleConns(maxConns) // Keep all connections alive to avoid reconnection overhead
-	db.SetConnMaxLifetime(30 * time.Minute) // Shorter lifetime to avoid stale connections
+	db.SetMaxIdleConns(idleConns)
+	db.SetConnMaxLifetime(5 * time.Minute)
+	db.SetConnMaxIdleTime(2 * time.Minute)
 
 	// Test connection
 	if err := db.Ping(); err != nil {

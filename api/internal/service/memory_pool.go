@@ -30,12 +30,6 @@ type PoolItem struct {
 	Text string `db:"text" json:"text"`
 }
 
-// UpdateTask represents a status update task
-type UpdateTask struct {
-	Table string
-	ID    int64
-}
-
 // MemoryPool is a thread-safe FIFO queue for pool items
 type MemoryPool struct {
 	items       []PoolItem
