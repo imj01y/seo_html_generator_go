@@ -94,6 +94,19 @@ type Content struct {
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
+// OriginalArticle represents an original article from the database.
+type OriginalArticle struct {
+	ID        uint           `db:"id"         json:"id"`
+	GroupID   int            `db:"group_id"   json:"group_id"`
+	SourceID  sql.NullInt64  `db:"source_id"  json:"source_id"`
+	SourceURL sql.NullString `db:"source_url" json:"source_url"`
+	Title     string         `db:"title"      json:"title"`
+	Content   string         `db:"content"    json:"content"`
+	Status    int            `db:"status"     json:"status"`
+	CreatedAt time.Time      `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time      `db:"updated_at" json:"updated_at"`
+}
+
 // SpiderLog represents a spider/crawler visit log entry.
 type SpiderLog struct {
 	ID         int64     `db:"id"          json:"id"`
