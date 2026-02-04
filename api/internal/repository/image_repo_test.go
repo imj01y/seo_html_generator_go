@@ -252,3 +252,137 @@ func TestImageRepository_BatchImport(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), count)
 }
+
+func TestImageRepository_Delete(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewImageRepository(db)
+
+	t.Run("success with multiple IDs", func(t *testing.T) {
+		ids := []uint{1, 2, 3}
+
+		mock.ExpectExec("DELETE FROM images WHERE id IN \\(\\?,\\?,\\?\\)").
+			WithArgs(uint(1), uint(2), uint(3)).
+			WillReturnResult(sqlmock.NewResult(0, 3))
+
+		err := repo.Delete(context.Background(), ids)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("success with single ID", func(t *testing.T) {
+		ids := []uint{1}
+
+		mock.ExpectExec("DELETE FROM images WHERE id IN \\(\\?\\)").
+			WithArgs(uint(1)).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := repo.Delete(context.Background(), ids)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("empty array returns nil", func(t *testing.T) {
+		ids := []uint{}
+
+		err := repo.Delete(context.Background(), ids)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		ids := []uint{1}
+
+		mock.ExpectExec("DELETE FROM images WHERE id IN \\(\\?\\)").
+			WithArgs(uint(1)).
+			WillReturnError(sql.ErrConnDone)
+
+		err := repo.Delete(context.Background(), ids)
+
+		assert.Error(t, err)
+	})
+}
+
+func TestImageRepository_Count(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewImageRepository(db)
+
+	t.Run("success with filters", func(t *testing.T) {
+		groupID := 1
+		status := 1
+		filter := ImageFilter{
+			GroupID: &groupID,
+			Status:  &status,
+		}
+
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(25)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images WHERE group_id = \\? AND status = \\?").
+			WithArgs(groupID, status).
+			WillReturnRows(countRows)
+
+		count, err := repo.Count(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(25), count)
+	})
+
+	t.Run("success without filters", func(t *testing.T) {
+		filter := ImageFilter{}
+
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(100)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images").
+			WillReturnRows(countRows)
+
+		count, err := repo.Count(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(100), count)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		filter := ImageFilter{}
+
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images").
+			WillReturnError(sql.ErrConnDone)
+
+		count, err := repo.Count(context.Background(), filter)
+
+		assert.Error(t, err)
+		assert.Equal(t, int64(0), count)
+	})
+}
+
+func TestImageRepository_CountByGroupID(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewImageRepository(db)
+
+	t.Run("success", func(t *testing.T) {
+		groupID := 1
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(50)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images WHERE group_id = \\? AND status = 1").
+			WithArgs(groupID).
+			WillReturnRows(countRows)
+
+		count, err := repo.CountByGroupID(context.Background(), groupID)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(50), count)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		groupID := 1
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM images WHERE group_id = \\? AND status = 1").
+			WithArgs(groupID).
+			WillReturnError(sql.ErrConnDone)
+
+		count, err := repo.CountByGroupID(context.Background(), groupID)
+
+		assert.Error(t, err)
+		assert.Equal(t, int64(0), count)
+	})
+}

@@ -255,3 +255,161 @@ func TestSiteRepository_Create(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, 1, site.ID)
 }
+
+func TestSiteRepository_Update(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewSiteRepository(db)
+
+	t.Run("success", func(t *testing.T) {
+		site := &models.Site{
+			ID:          1,
+			SiteGroupID: 1,
+			Domain:      "example.com",
+			Name:        "更新站点",
+			Template:    "default",
+			Status:      1,
+		}
+
+		mock.ExpectExec("UPDATE sites SET").
+			WithArgs(site.SiteGroupID, site.Domain, site.Name, site.Template, site.Status,
+				site.KeywordGroupID, site.ImageGroupID, site.ArticleGroupID,
+				site.ICPNumber, site.BaiduToken, site.Analytics, site.ID).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := repo.Update(context.Background(), site)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		site := &models.Site{
+			ID:          999,
+			SiteGroupID: 1,
+			Domain:      "example.com",
+			Name:        "站点",
+			Template:    "default",
+			Status:      1,
+		}
+
+		mock.ExpectExec("UPDATE sites SET").
+			WithArgs(site.SiteGroupID, site.Domain, site.Name, site.Template, site.Status,
+				site.KeywordGroupID, site.ImageGroupID, site.ArticleGroupID,
+				site.ICPNumber, site.BaiduToken, site.Analytics, site.ID).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+
+		err := repo.Update(context.Background(), site)
+
+		assert.Equal(t, ErrNotFound, err)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		site := &models.Site{
+			ID:          1,
+			SiteGroupID: 1,
+			Domain:      "example.com",
+			Name:        "站点",
+			Template:    "default",
+			Status:      1,
+		}
+
+		mock.ExpectExec("UPDATE sites SET").
+			WithArgs(site.SiteGroupID, site.Domain, site.Name, site.Template, site.Status,
+				site.KeywordGroupID, site.ImageGroupID, site.ArticleGroupID,
+				site.ICPNumber, site.BaiduToken, site.Analytics, site.ID).
+			WillReturnError(sql.ErrConnDone)
+
+		err := repo.Update(context.Background(), site)
+
+		assert.Error(t, err)
+	})
+}
+
+func TestSiteRepository_Delete(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewSiteRepository(db)
+
+	t.Run("success", func(t *testing.T) {
+		mock.ExpectExec("DELETE FROM sites WHERE id = \\?").
+			WithArgs(1).
+			WillReturnResult(sqlmock.NewResult(0, 1))
+
+		err := repo.Delete(context.Background(), 1)
+
+		assert.NoError(t, err)
+	})
+
+	t.Run("not found", func(t *testing.T) {
+		mock.ExpectExec("DELETE FROM sites WHERE id = \\?").
+			WithArgs(999).
+			WillReturnResult(sqlmock.NewResult(0, 0))
+
+		err := repo.Delete(context.Background(), 999)
+
+		assert.Equal(t, ErrNotFound, err)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		mock.ExpectExec("DELETE FROM sites WHERE id = \\?").
+			WithArgs(1).
+			WillReturnError(sql.ErrConnDone)
+
+		err := repo.Delete(context.Background(), 1)
+
+		assert.Error(t, err)
+	})
+}
+
+func TestSiteRepository_Count(t *testing.T) {
+	db, mock, cleanup := testutil.NewMockDB(t)
+	defer cleanup()
+
+	repo := NewSiteRepository(db)
+
+	t.Run("success with filters", func(t *testing.T) {
+		siteGroupID := 1
+		status := 1
+		filter := SiteFilter{
+			SiteGroupID: &siteGroupID,
+			Status:      &status,
+		}
+
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(30)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM sites WHERE site_group_id = \\? AND status = \\?").
+			WithArgs(siteGroupID, status).
+			WillReturnRows(countRows)
+
+		count, err := repo.Count(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(30), count)
+	})
+
+	t.Run("success without filters", func(t *testing.T) {
+		filter := SiteFilter{}
+
+		countRows := sqlmock.NewRows([]string{"count"}).AddRow(100)
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM sites").
+			WillReturnRows(countRows)
+
+		count, err := repo.Count(context.Background(), filter)
+
+		assert.NoError(t, err)
+		assert.Equal(t, int64(100), count)
+	})
+
+	t.Run("database error", func(t *testing.T) {
+		filter := SiteFilter{}
+
+		mock.ExpectQuery("SELECT COUNT\\(\\*\\) FROM sites").
+			WillReturnError(sql.ErrConnDone)
+
+		count, err := repo.Count(context.Background(), filter)
+
+		assert.Error(t, err)
+		assert.Equal(t, int64(0), count)
+	})
+}
