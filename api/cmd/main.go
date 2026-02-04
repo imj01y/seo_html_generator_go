@@ -16,6 +16,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	api "seo-generator/api/internal/handler"
+	"seo-generator/api/internal/di"
 	models "seo-generator/api/internal/model"
 	database "seo-generator/api/internal/repository"
 	core "seo-generator/api/internal/service"
@@ -83,6 +84,14 @@ func main() {
 	} else {
 		log.Info().Msg("Redis is disabled in configuration")
 	}
+
+	// Create dependency injection container
+	container := di.NewContainer(db, cfg)
+	if redisClient != nil {
+		container.SetRedis(redisClient)
+	}
+	defer container.Close()
+	log.Info().Msg("Dependency injection container initialized")
 
 	// Initialize encoder
 	core.InitEncoder(0.5)
