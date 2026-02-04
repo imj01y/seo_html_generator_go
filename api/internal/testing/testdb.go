@@ -1,4 +1,5 @@
-// api/internal/testing/testdb.go
+// Package testing provides testing utilities for database operations.
+// It includes mock database creation and test fixtures.
 package testing
 
 import (
@@ -22,19 +23,4 @@ func NewMockDB(t *testing.T) (*sqlx.DB, sqlmock.Sqlmock, func()) {
 	}
 
 	return sqlxDB, mock, cleanup
-}
-
-// ExpectBegin expects a transaction to begin
-func ExpectBegin(mock sqlmock.Sqlmock) {
-	mock.ExpectBegin()
-}
-
-// ExpectCommit expects a transaction to commit
-func ExpectCommit(mock sqlmock.Sqlmock) {
-	mock.ExpectCommit()
-}
-
-// ExpectRollback expects a transaction to rollback
-func ExpectRollback(mock sqlmock.Sqlmock) {
-	mock.ExpectRollback()
 }

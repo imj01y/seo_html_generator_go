@@ -1,4 +1,5 @@
-// api/internal/testing/fixtures.go
+// Package testing provides testing utilities for database operations.
+// It includes mock database creation and test fixtures.
 package testing
 
 import "time"
@@ -17,7 +18,8 @@ func (f *Fixtures) ValidSite() map[string]interface{} {
 		"id":               1,
 		"site_group_id":    1,
 		"domain":           "example.com",
-		"template_id":      1,
+		"name":             "Example Site",
+		"template":         "default_template.html",
 		"keyword_group_id": 1,
 		"image_group_id":   1,
 		"status":           1,
@@ -29,19 +31,21 @@ func (f *Fixtures) ValidSite() map[string]interface{} {
 // ValidKeyword returns a valid keyword for testing
 func (f *Fixtures) ValidKeyword() map[string]interface{} {
 	return map[string]interface{}{
-		"id":       int64(1),
-		"keyword":  "测试关键词",
-		"group_id": 1,
-		"status":   1,
+		"id":         uint(1),
+		"keyword":    "测试关键词",
+		"group_id":   1,
+		"status":     1,
+		"created_at": time.Now(),
 	}
 }
 
 // ValidImage returns a valid image for testing
 func (f *Fixtures) ValidImage() map[string]interface{} {
 	return map[string]interface{}{
-		"id":       int64(1),
-		"url":      "https://example.com/image.jpg",
-		"group_id": 1,
-		"status":   1,
+		"id":         uint(1),
+		"url":        "https://example.com/image.jpg",
+		"group_id":   1,
+		"status":     1,
+		"created_at": time.Now(),
 	}
 }
