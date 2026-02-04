@@ -112,7 +112,7 @@ type ArticleRepository interface {
 
 	// List retrieves articles with pagination
 	// Returns articles slice, total count, and error
-	List(ctx context.Context, groupID int, page, pageSize int) ([]*models.OriginalArticle, int64, error)
+	List(ctx context.Context, filter ArticleFilter) ([]*models.OriginalArticle, int64, error)
 
 	// Update updates an existing article
 	Update(ctx context.Context, article *models.OriginalArticle) error

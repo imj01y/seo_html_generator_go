@@ -51,3 +51,9 @@ type ImageFilter struct {
 	Status     *int
 	Pagination *Pagination
 }
+
+// ArticleFilter 文章查询过滤器
+type ArticleFilter struct {
+	GroupID    *int
+	Pagination *Pagination
+}
