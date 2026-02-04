@@ -32,9 +32,11 @@
         <div class="card">
           <div class="card-header">
             <span class="title">访问趋势</span>
-            <el-radio-group v-model="chartType" size="small" @change="loadChart">
-              <el-radio-button label="daily">按天</el-radio-button>
-              <el-radio-button label="hourly">按小时</el-radio-button>
+            <el-radio-group v-model="periodType" size="small" @change="loadChart">
+              <el-radio-button label="minute">分钟</el-radio-button>
+              <el-radio-button label="hour">小时</el-radio-button>
+              <el-radio-button label="day">天</el-radio-button>
+              <el-radio-button label="month">月</el-radio-button>
             </el-radio-group>
           </div>
           <div ref="chartRef" class="chart"></div>
@@ -159,8 +161,7 @@ import dayjs from 'dayjs'
 import {
   getSpiderLogs,
   getSpiderStats,
-  getDailyStats,
-  getHourlyStats,
+  getSpiderTrend,
   clearOldLogs
 } from '@/api/spiders'
 import type { SpiderLog, SpiderStats } from '@/types'
@@ -171,7 +172,7 @@ const pieChartRef = ref<HTMLElement>()
 let chart: echarts.ECharts | null = null
 let pieChart: echarts.ECharts | null = null
 
-const chartType = ref<'daily' | 'hourly'>('daily')
+const periodType = ref<'minute' | 'hour' | 'day' | 'month'>('hour')
 const dateRange = ref<[string, string] | null>(null)
 
 const stats = reactive<SpiderStats>({
@@ -247,33 +248,55 @@ const loadChart = async () => {
   chart = chart || echarts.init(chartRef.value)
 
   try {
-    if (chartType.value === 'daily') {
-      const dailyData = await getDailyStats(7)
-      chart.setOption({
-        tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: dailyData.map(d => d.date) },
-        yAxis: { type: 'value' },
-        series: [{
-          name: '访问量',
-          type: 'line',
-          data: dailyData.map(d => d.total),
-          smooth: true,
-          areaStyle: { opacity: 0.3 }
-        }]
-      })
-    } else {
-      const hourlyData = await getHourlyStats()
-      chart.setOption({
-        tooltip: { trigger: 'axis' },
-        xAxis: { type: 'category', data: hourlyData.map(d => `${d.hour}:00`) },
-        yAxis: { type: 'value' },
-        series: [{
-          name: '访问量',
-          type: 'bar',
-          data: hourlyData.map(d => d.total)
-        }]
-      })
+    const response = await getSpiderTrend({ period: periodType.value, limit: 100 })
+    const trendData = response.items || []
+
+    // 根据实际返回的 period 更新（可能发生了回退）
+    if (response.period !== periodType.value) {
+      periodType.value = response.period as typeof periodType.value
     }
+
+    // 格式化时间标签
+    const formatTime = (timeStr: string): string => {
+      const date = new Date(timeStr)
+      switch (periodType.value) {
+        case 'minute':
+          return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+        case 'hour':
+          return date.toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit' })
+        case 'day':
+          return date.toLocaleDateString('zh-CN', { month: '2-digit', day: '2-digit' })
+        case 'month':
+          return date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit' })
+        default:
+          return timeStr
+      }
+    }
+
+    // 根据粒度选择图表类型
+    const chartTypeMap: Record<string, 'line' | 'bar'> = {
+      'minute': 'line',
+      'hour': 'bar',
+      'day': 'line',
+      'month': 'bar'
+    }
+    const seriesType = chartTypeMap[periodType.value] || 'line'
+
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      xAxis: {
+        type: 'category',
+        data: trendData.map(d => formatTime(d.time))
+      },
+      yAxis: { type: 'value' },
+      series: [{
+        name: '访问量',
+        type: seriesType,
+        data: trendData.map(d => d.total),
+        smooth: seriesType === 'line',
+        areaStyle: seriesType === 'line' ? { opacity: 0.3 } : undefined
+      }]
+    }, true)
   } catch {
     // 错误已处理
   }
