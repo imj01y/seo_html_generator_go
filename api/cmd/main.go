@@ -348,6 +348,13 @@ func main() {
 		log.Info().Msg("StatsArchiver skipped (Redis not available)")
 	}
 
+	// Initialize and start SpiderLogsArchiver
+	spiderLogsArchiver := core.NewSpiderLogsArchiver(db)
+	spiderLogsArchiverCtx, spiderLogsArchiverCancel := context.WithCancel(context.Background())
+	go spiderLogsArchiver.Start(spiderLogsArchiverCtx)
+	defer spiderLogsArchiverCancel()
+	log.Info().Msg("SpiderLogsArchiver initialized and started")
+
 	// Initialize and start PoolReloader for hot-reload of pool configurations (requires Redis)
 	var poolReloader *core.PoolReloader
 	if redisClient != nil && funcsManager != nil {
@@ -409,6 +416,10 @@ func main() {
 		statsArchiver.Stop()
 		log.Info().Msg("StatsArchiver stopped")
 	}
+
+	// Stop SpiderLogsArchiver
+	spiderLogsArchiver.Stop()
+	log.Info().Msg("SpiderLogsArchiver stopped")
 
 	// 停止监控服务
 	monitor.Stop()
