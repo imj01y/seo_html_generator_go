@@ -126,14 +126,18 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	// Discover and load keywords/images
 	keywordGroupIDs, err := m.discoverKeywordGroups(ctx)
 	if err != nil {
-		log.Warn().Err(err).Msg("Failed to discover keyword groups, using defaults")
-		keywordGroupIDs = m.getDefaultKeywordGroups()
+		keywordGroupIDs = m.getDefaultKeywordGroups(ctx)
+		log.Warn().Err(err).
+			Ints("fallback_groups", keywordGroupIDs).
+			Msg("Failed to discover keyword groups, using defaults")
 	}
 
 	imageGroupIDs, err := m.discoverImageGroups(ctx)
 	if err != nil {
-		log.Warn().Err(err).Msg("Failed to discover image groups, using defaults")
-		imageGroupIDs = m.getDefaultImageGroups()
+		imageGroupIDs = m.getDefaultImageGroups(ctx)
+		log.Warn().Err(err).
+			Ints("fallback_groups", imageGroupIDs).
+			Msg("Failed to discover image groups, using defaults")
 	}
 
 	for _, gid := range keywordGroupIDs {
@@ -742,25 +746,35 @@ func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
 }
 
 // getDefaultKeywordGroups 获取默认的关键词分组列表
-func (m *PoolManager) getDefaultKeywordGroups() []int {
+func (m *PoolManager) getDefaultKeywordGroups(ctx context.Context) []int {
 	var groups []int
-	query := `SELECT DISTINCT group_id FROM keywords WHERE status = 1`
-	err := m.db.Select(&groups, query)
+	// 改为查询 keyword_groups 表，与 discoverKeywordGroups 保持一致
+	query := `SELECT id FROM keyword_groups`
+	err := m.db.SelectContext(ctx, &groups, query)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get default keyword groups")
 		return []int{1} // 最后兜底，返回分组1
+	}
+	if len(groups) == 0 {
+		log.Warn().Msg("No keyword groups found in database, using default group 1")
+		return []int{1}
 	}
 	return groups
 }
 
 // getDefaultImageGroups 获取默认的图片分组列表
-func (m *PoolManager) getDefaultImageGroups() []int {
+func (m *PoolManager) getDefaultImageGroups(ctx context.Context) []int {
 	var groups []int
-	query := `SELECT DISTINCT group_id FROM images WHERE status = 1`
-	err := m.db.Select(&groups, query)
+	// 改为查询 image_groups 表
+	query := `SELECT id FROM image_groups`
+	err := m.db.SelectContext(ctx, &groups, query)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to get default image groups")
 		return []int{1} // 最后兜底，返回分组1
+	}
+	if len(groups) == 0 {
+		log.Warn().Msg("No image groups found in database, using default group 1")
+		return []int{1}
 	}
 	return groups
 }
@@ -1000,8 +1014,10 @@ func (m *PoolManager) RefreshData(ctx context.Context, pool string) error {
 	case "keywords", "all":
 		groupIDs, err := m.discoverKeywordGroups(ctx)
 		if err != nil {
-			log.Warn().Err(err).Msg("Failed to discover keyword groups, using defaults")
-			groupIDs = m.getDefaultKeywordGroups()
+			groupIDs = m.getDefaultKeywordGroups(ctx)
+			log.Warn().Err(err).
+				Ints("fallback_groups", groupIDs).
+				Msg("Failed to discover keyword groups, using defaults")
 		}
 		for _, gid := range groupIDs {
 			if _, err := m.LoadKeywords(ctx, gid); err != nil {
@@ -1014,8 +1030,10 @@ func (m *PoolManager) RefreshData(ctx context.Context, pool string) error {
 	case "images", "all":
 		groupIDs, err := m.discoverImageGroups(ctx)
 		if err != nil {
-			log.Warn().Err(err).Msg("Failed to discover image groups, using defaults")
-			groupIDs = m.getDefaultImageGroups()
+			groupIDs = m.getDefaultImageGroups(ctx)
+			log.Warn().Err(err).
+				Ints("fallback_groups", groupIDs).
+				Msg("Failed to discover image groups, using defaults")
 		}
 		for _, gid := range groupIDs {
 			if _, err := m.LoadImages(ctx, gid); err != nil {
