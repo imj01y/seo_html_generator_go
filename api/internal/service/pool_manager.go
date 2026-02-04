@@ -434,14 +434,14 @@ func (m *PoolManager) GetStats() map[string]interface{} {
 		"images":   imagesStats,
 		"emojis":   m.emojiManager.Count(),
 		"config": map[string]interface{}{
-			"title_pool_size":           m.config.TitlePoolSize,
-			"title_workers":             m.config.TitleWorkers,
-			"title_refill_interval_ms":  m.config.TitleRefillIntervalMs,
-			"title_threshold":           m.config.TitleThreshold,
-			"content_pool_size":         m.config.ContentPoolSize,
-			"content_workers":           m.config.ContentWorkers,
+			"title_pool_size":            m.config.TitlePoolSize,
+			"title_workers":              m.config.TitleWorkers,
+			"title_refill_interval_ms":   m.config.TitleRefillIntervalMs,
+			"title_threshold":            m.config.TitleThreshold,
+			"content_pool_size":          m.config.ContentPoolSize,
+			"content_workers":            m.config.ContentWorkers,
 			"content_refill_interval_ms": m.config.ContentRefillIntervalMs,
-			"content_threshold":         m.config.ContentThreshold,
+			"content_threshold":          m.config.ContentThreshold,
 		},
 	}
 }
