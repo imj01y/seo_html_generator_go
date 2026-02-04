@@ -3,6 +3,10 @@
 组件初始化模块
 
 提供所有系统组件的初始化逻辑，包括数据库、Redis、缓存池等。
+
+注意：以下功能已迁移到 Go API：
+- 蜘蛛检测器 → api/internal/service/spider_detector.go
+- 正文管理器 → api/internal/service/pool_manager.go
 """
 import asyncio
 from pathlib import Path
@@ -13,9 +17,7 @@ from loguru import logger
 from config import get_config
 from database.db import init_database, init_db_pool, get_db_pool
 from core.redis_client import init_redis_client, get_redis_client
-from core.spider_detector import init_spider_detector
 from core.auth import ensure_default_admin
-from core.content_manager import init_content_manager, get_content_manager
 
 
 # 全局变量：worker 引用（用于清理）
@@ -120,28 +122,6 @@ async def init_pool_components():
     logger.info("Pool components initialized")
 
 
-async def init_content_components():
-    """初始化内容相关组件（正文管理器）
-
-    注意：标题管理器已迁移到 Go API (api/internal/service/title_generator.go)
-    """
-    redis_client = get_redis_client()
-    db_pool = get_db_pool()
-
-    if not (redis_client and db_pool):
-        return
-
-    # 正文管理器
-    try:
-        await init_content_manager(redis_client, db_pool, group_id=1, max_size=50000)
-        content_manager = get_content_manager(group_id=1)
-        if content_manager:
-            stats = content_manager.get_stats()
-            logger.info(f"Content manager (group 1) initialized: {stats['total']} contents loaded")
-    except Exception as e:
-        logger.warning(f"Content manager initialization failed: {e}")
-
-
 async def init_background_workers():
     """初始化后台工作线程"""
     global _scheduler_worker
@@ -191,24 +171,13 @@ async def init_components(project_root: Optional[Path] = None):
     # 1-2. 数据库组件
     await init_database_components(config, project_root)
 
-    # 3. 缓存组件
+    # 3. 缓存组件 (Redis)
     await init_cache_components(config)
 
-    # 4. 蜘蛛检测器
-    init_spider_detector(
-        enable_dns_verify=config.spider_detector.dns_verify_enabled,
-        dns_verify_types=config.spider_detector.dns_verify_types,
-        dns_timeout=config.spider_detector.dns_timeout
-    )
-    logger.info("Spider detector initialized")
-
-    # 5. 分组管理器
+    # 4. 分组管理器
     await init_pool_components()
 
-    # 6. 内容组件（标题、正文管理器）
-    await init_content_components()
-
-    # 7. 后台工作线程
+    # 5. 后台工作线程
     await init_background_workers()
 
     logger.info("All components initialized successfully")
