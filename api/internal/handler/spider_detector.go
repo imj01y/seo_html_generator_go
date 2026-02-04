@@ -311,3 +311,77 @@ func (h *SpiderDetectorHandler) ClearSpiderLogs(c *gin.Context) {
 		"deleted": affected,
 	})
 }
+
+// GetSpiderTrend 获取蜘蛛访问趋势
+// GET /api/spiders/trend
+func (h *SpiderDetectorHandler) GetSpiderTrend(c *gin.Context) {
+	db, exists := c.Get("db")
+	if !exists {
+		core.Success(c, models.SpiderLogsTrendResponse{Period: "hour", Items: []models.SpiderLogsStatsPoint{}})
+		return
+	}
+	sqlxDB := db.(*sqlx.DB)
+
+	period := c.DefaultQuery("period", "hour")
+	spiderType := c.Query("spider_type")
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "100"))
+
+	if limit < 1 || limit > 500 {
+		limit = 100
+	}
+
+	// 验证 period 参数
+	validPeriods := map[string]bool{"minute": true, "hour": true, "day": true, "month": true}
+	if !validPeriods[period] {
+		period = "hour"
+	}
+
+	// 周期回退顺序
+	periodFallback := map[string]string{
+		"month": "day",
+		"day":   "hour",
+		"hour":  "minute",
+	}
+
+	// 尝试查询，如果没有数据则回退到更细粒度
+	for {
+		where := "period_type = ?"
+		args := []interface{}{period}
+
+		if spiderType != "" {
+			where += " AND spider_type = ?"
+			args = append(args, spiderType)
+		} else {
+			where += " AND spider_type IS NULL"
+		}
+
+		args = append(args, limit)
+
+		var data []models.SpiderLogsStatsPoint
+		err := sqlxDB.Select(&data, `
+			SELECT period_start as time, total, status_2xx, status_3xx, status_4xx, status_5xx, avg_resp_time
+			FROM spider_logs_stats
+			WHERE `+where+`
+			ORDER BY period_start DESC
+			LIMIT ?
+		`, args...)
+
+		if err == nil && len(data) > 0 {
+			// 反转为时间正序
+			for i, j := 0, len(data)-1; i < j; i, j = i+1, j-1 {
+				data[i], data[j] = data[j], data[i]
+			}
+			core.Success(c, models.SpiderLogsTrendResponse{Period: period, Items: data})
+			return
+		}
+
+		// 回退到更细粒度
+		fallback, ok := periodFallback[period]
+		if !ok {
+			// 已经是最细粒度，返回空
+			core.Success(c, models.SpiderLogsTrendResponse{Period: period, Items: []models.SpiderLogsStatsPoint{}})
+			return
+		}
+		period = fallback
+	}
+}
