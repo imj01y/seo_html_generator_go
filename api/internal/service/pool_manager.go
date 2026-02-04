@@ -124,8 +124,17 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	m.checkAndRefillAll()
 
 	// Discover and load keywords/images
-	keywordGroupIDs, _ := m.discoverKeywordGroups(ctx)
-	imageGroupIDs, _ := m.discoverImageGroups(ctx)
+	keywordGroupIDs, err := m.discoverKeywordGroups(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to discover keyword groups, using defaults")
+		keywordGroupIDs = m.getDefaultKeywordGroups()
+	}
+
+	imageGroupIDs, err := m.discoverImageGroups(ctx)
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to discover image groups, using defaults")
+		imageGroupIDs = m.getDefaultImageGroups()
+	}
 
 	for _, gid := range keywordGroupIDs {
 		if _, err := m.LoadKeywords(ctx, gid); err != nil {
@@ -732,6 +741,30 @@ func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
 	return ids, nil
 }
 
+// getDefaultKeywordGroups 获取默认的关键词分组列表
+func (m *PoolManager) getDefaultKeywordGroups() []int {
+	var groups []int
+	query := `SELECT DISTINCT group_id FROM keywords WHERE status = 1`
+	err := m.db.Select(&groups, query)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get default keyword groups")
+		return []int{1} // 最后兜底，返回分组1
+	}
+	return groups
+}
+
+// getDefaultImageGroups 获取默认的图片分组列表
+func (m *PoolManager) getDefaultImageGroups() []int {
+	var groups []int
+	query := `SELECT DISTINCT group_id FROM images WHERE status = 1`
+	err := m.db.Select(&groups, query)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to get default image groups")
+		return []int{1} // 最后兜底，返回分组1
+	}
+	return groups
+}
+
 // ============================================================
 // 兼容性方法（供 router/websocket 使用）
 // ============================================================
@@ -965,7 +998,11 @@ func (m *PoolManager) GetPoolStatsSimple() SimplePoolStats {
 func (m *PoolManager) RefreshData(ctx context.Context, pool string) error {
 	switch pool {
 	case "keywords", "all":
-		groupIDs, _ := m.discoverKeywordGroups(ctx)
+		groupIDs, err := m.discoverKeywordGroups(ctx)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to discover keyword groups, using defaults")
+			groupIDs = m.getDefaultKeywordGroups()
+		}
 		for _, gid := range groupIDs {
 			if _, err := m.LoadKeywords(ctx, gid); err != nil {
 				return err
@@ -975,7 +1012,11 @@ func (m *PoolManager) RefreshData(ctx context.Context, pool string) error {
 
 	switch pool {
 	case "images", "all":
-		groupIDs, _ := m.discoverImageGroups(ctx)
+		groupIDs, err := m.discoverImageGroups(ctx)
+		if err != nil {
+			log.Warn().Err(err).Msg("Failed to discover image groups, using defaults")
+			groupIDs = m.getDefaultImageGroups()
+		}
 		for _, gid := range groupIDs {
 			if _, err := m.LoadImages(ctx, gid); err != nil {
 				return err
