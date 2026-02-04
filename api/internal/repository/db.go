@@ -1,5 +1,6 @@
-// Package database handles MySQL database connections
-package database
+// Package repository provides data access layer interfaces and implementations.
+// This file handles MySQL database connections.
+package repository
 
 import (
 	"fmt"
