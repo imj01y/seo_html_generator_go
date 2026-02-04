@@ -320,6 +320,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		spiderDetectorRoutes.GET("/daily-stats", spiderDetectorHandler.GetSpiderDailyStats)
 		spiderDetectorRoutes.GET("/hourly-stats", spiderDetectorHandler.GetSpiderHourlyStats)
 		spiderDetectorRoutes.DELETE("/logs/clear", spiderDetectorHandler.ClearSpiderLogs)
+		spiderDetectorRoutes.GET("/trend", spiderDetectorHandler.GetSpiderTrend)
 	}
 
 	// Processor routes (数据加工，require JWT)
