@@ -22,6 +22,28 @@ func NewImageRepository(db *sqlx.DB) ImageRepository {
 	return &imageRepo{db: db}
 }
 
+// buildWhereClause 构建 WHERE 子句和参数
+func (r *imageRepo) buildWhereClause(filter ImageFilter) (string, []interface{}) {
+	whereClauses := []string{}
+	args := []interface{}{}
+
+	if filter.GroupID != nil {
+		whereClauses = append(whereClauses, "group_id = ?")
+		args = append(args, *filter.GroupID)
+	}
+	if filter.Status != nil {
+		whereClauses = append(whereClauses, "status = ?")
+		args = append(args, *filter.Status)
+	}
+
+	whereClause := ""
+	if len(whereClauses) > 0 {
+		whereClause = "WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	return whereClause, args
+}
+
 func (r *imageRepo) Create(ctx context.Context, image *models.Image) error {
 	query := `INSERT INTO images (url, group_id, status) VALUES (?, ?, ?)`
 	result, err := r.db.ExecContext(ctx, query, image.URL, image.GroupID, image.Status)
@@ -54,22 +76,7 @@ func (r *imageRepo) GetByID(ctx context.Context, id uint) (*models.Image, error)
 }
 
 func (r *imageRepo) List(ctx context.Context, filter ImageFilter) ([]*models.Image, int64, error) {
-	whereClauses := []string{}
-	args := []interface{}{}
-
-	if filter.GroupID != nil {
-		whereClauses = append(whereClauses, "group_id = ?")
-		args = append(args, *filter.GroupID)
-	}
-	if filter.Status != nil {
-		whereClauses = append(whereClauses, "status = ?")
-		args = append(args, *filter.Status)
-	}
-
-	whereClause := ""
-	if len(whereClauses) > 0 {
-		whereClause = "WHERE " + strings.Join(whereClauses, " AND ")
-	}
+	whereClause, args := r.buildWhereClause(filter)
 
 	// Count total
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM images %s", whereClause)
@@ -131,8 +138,12 @@ func (r *imageRepo) BatchImport(ctx context.Context, images []*models.Image) (in
 	for _, img := range images {
 		_, err := stmt.ExecContext(ctx, img.URL, img.GroupID, img.Status)
 		if err != nil {
-			// Skip duplicates
-			continue
+			// 仅跳过重复键错误
+			if IsDuplicateKeyError(err) {
+				continue
+			}
+			// 其他错误立即返回
+			return count, fmt.Errorf("insert image: %w", err)
 		}
 		count++
 	}
@@ -164,23 +175,7 @@ func (r *imageRepo) Delete(ctx context.Context, ids []uint) error {
 }
 
 func (r *imageRepo) Count(ctx context.Context, filter ImageFilter) (int64, error) {
-	whereClauses := []string{}
-	args := []interface{}{}
-
-	if filter.GroupID != nil {
-		whereClauses = append(whereClauses, "group_id = ?")
-		args = append(args, *filter.GroupID)
-	}
-	if filter.Status != nil {
-		whereClauses = append(whereClauses, "status = ?")
-		args = append(args, *filter.Status)
-	}
-
-	whereClause := ""
-	if len(whereClauses) > 0 {
-		whereClause = "WHERE " + strings.Join(whereClauses, " AND ")
-	}
-
+	whereClause, args := r.buildWhereClause(filter)
 	query := fmt.Sprintf("SELECT COUNT(*) FROM images %s", whereClause)
 
 	var count int64

@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jmoiron/sqlx"
 
@@ -55,26 +56,48 @@ func (r *articleRepo) GetByID(ctx context.Context, id uint) (*models.OriginalArt
 	return &article, nil
 }
 
-func (r *articleRepo) List(ctx context.Context, groupID int, page, pageSize int) ([]*models.OriginalArticle, int64, error) {
-	// Count total
-	countQuery := `SELECT COUNT(*) FROM original_articles WHERE group_id = ?`
+func (r *articleRepo) List(ctx context.Context, filter ArticleFilter) ([]*models.OriginalArticle, int64, error) {
+	whereClauses := []string{}
+	args := []interface{}{}
+
+	if filter.GroupID != nil {
+		whereClauses = append(whereClauses, "group_id = ?")
+		args = append(args, *filter.GroupID)
+	}
+
+	whereClause := ""
+	if len(whereClauses) > 0 {
+		whereClause = "WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	// Count query
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM original_articles %s", whereClause)
 	var total int64
-	if err := r.db.GetContext(ctx, &total, countQuery, groupID); err != nil {
+	err := r.db.GetContext(ctx, &total, countQuery, args...)
+	if err != nil {
 		return nil, 0, fmt.Errorf("count articles: %w", err)
 	}
 
-	// Query with pagination
-	offset := (page - 1) * pageSize
-	query := `
+	// Select query with pagination
+	offset := 0
+	limit := 10
+	if filter.Pagination != nil {
+		offset = filter.Pagination.Offset
+		limit = filter.Pagination.PageSize
+	}
+
+	query := fmt.Sprintf(`
 		SELECT id, group_id, source_id, source_url, title, content, status, created_at, updated_at
-		FROM original_articles
-		WHERE group_id = ?
+		FROM original_articles %s
 		ORDER BY id DESC
 		LIMIT ? OFFSET ?
-	`
+	`, whereClause)
+
+	paginationArgs := append(args, limit, offset)
 
 	var articles []*models.OriginalArticle
-	if err := r.db.SelectContext(ctx, &articles, query, groupID, pageSize, offset); err != nil {
+	err = r.db.SelectContext(ctx, &articles, query, paginationArgs...)
+	if err != nil {
 		return nil, 0, fmt.Errorf("list articles: %w", err)
 	}
 
@@ -160,8 +183,12 @@ func (r *articleRepo) BatchImport(ctx context.Context, articles []*models.Origin
 	for _, article := range articles {
 		_, err := stmt.ExecContext(ctx, article.GroupID, article.SourceID, article.SourceURL, article.Title, article.Content, article.Status)
 		if err != nil {
-			// Skip duplicates
-			continue
+			// 仅跳过重复键错误
+			if IsDuplicateKeyError(err) {
+				continue
+			}
+			// 其他错误立即返回
+			return count, fmt.Errorf("insert article: %w", err)
 		}
 		count++
 	}

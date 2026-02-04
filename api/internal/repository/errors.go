@@ -2,7 +2,10 @@
 // This file defines common error types used across all repository operations.
 package repository
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 var (
 	// ErrNotFound is returned when a record is not found
@@ -17,3 +20,14 @@ var (
 	// ErrTransactionFailed is returned when a transaction fails
 	ErrTransactionFailed = errors.New("transaction failed")
 )
+
+// IsDuplicateKeyError 检测是否为重复键错误
+func IsDuplicateKeyError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := err.Error()
+	// MySQL: Error 1062 - Duplicate entry
+	return strings.Contains(errMsg, "Duplicate entry") ||
+		strings.Contains(errMsg, "duplicate key")
+}

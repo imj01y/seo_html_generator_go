@@ -38,11 +38,18 @@ func (r *contentRepo) BatchCreate(ctx context.Context, contents []*models.Conten
 	}
 	defer stmt.Close()
 
+	var count int
 	for _, content := range contents {
 		_, err := stmt.ExecContext(ctx, content.GroupID, content.Content, content.BatchID)
 		if err != nil {
+			// 仅跳过重复键错误
+			if IsDuplicateKeyError(err) {
+				continue
+			}
+			// 其他错误立即返回
 			return fmt.Errorf("insert content: %w", err)
 		}
+		count++
 	}
 
 	if err := tx.Commit(); err != nil {

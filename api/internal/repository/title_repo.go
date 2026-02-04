@@ -38,11 +38,18 @@ func (r *titleRepo) BatchCreate(ctx context.Context, titles []*models.Title) err
 	}
 	defer stmt.Close()
 
+	var count int
 	for _, title := range titles {
 		_, err := stmt.ExecContext(ctx, title.GroupID, title.Title, title.BatchID)
 		if err != nil {
+			// 仅跳过重复键错误
+			if IsDuplicateKeyError(err) {
+				continue
+			}
+			// 其他错误立即返回
 			return fmt.Errorf("insert title: %w", err)
 		}
+		count++
 	}
 
 	if err := tx.Commit(); err != nil {

@@ -22,6 +22,32 @@ func NewSiteRepository(db *sqlx.DB) SiteRepository {
 	return &siteRepo{db: db}
 }
 
+// buildWhereClause 构建 WHERE 子句和参数
+func (r *siteRepo) buildWhereClause(filter SiteFilter) (string, []interface{}) {
+	whereClauses := []string{}
+	args := []interface{}{}
+
+	if filter.SiteGroupID != nil {
+		whereClauses = append(whereClauses, "site_group_id = ?")
+		args = append(args, *filter.SiteGroupID)
+	}
+	if filter.Domain != nil && *filter.Domain != "" {
+		whereClauses = append(whereClauses, "domain LIKE ?")
+		args = append(args, "%"+*filter.Domain+"%")
+	}
+	if filter.Status != nil {
+		whereClauses = append(whereClauses, "status = ?")
+		args = append(args, *filter.Status)
+	}
+
+	whereClause := ""
+	if len(whereClauses) > 0 {
+		whereClause = "WHERE " + strings.Join(whereClauses, " AND ")
+	}
+
+	return whereClause, args
+}
+
 func (r *siteRepo) Create(ctx context.Context, site *models.Site) error {
 	query := `INSERT INTO sites (site_group_id, domain, name, template, status) VALUES (?, ?, ?, ?, ?)`
 	result, err := r.db.ExecContext(ctx, query, site.SiteGroupID, site.Domain, site.Name, site.Template, site.Status)
@@ -81,26 +107,7 @@ func (r *siteRepo) GetByDomain(ctx context.Context, domain string) (*models.Site
 }
 
 func (r *siteRepo) List(ctx context.Context, filter SiteFilter) ([]*models.Site, int64, error) {
-	whereClauses := []string{}
-	args := []interface{}{}
-
-	if filter.SiteGroupID != nil {
-		whereClauses = append(whereClauses, "site_group_id = ?")
-		args = append(args, *filter.SiteGroupID)
-	}
-	if filter.Domain != nil && *filter.Domain != "" {
-		whereClauses = append(whereClauses, "domain LIKE ?")
-		args = append(args, "%"+*filter.Domain+"%")
-	}
-	if filter.Status != nil {
-		whereClauses = append(whereClauses, "status = ?")
-		args = append(args, *filter.Status)
-	}
-
-	whereClause := ""
-	if len(whereClauses) > 0 {
-		whereClause = "WHERE " + strings.Join(whereClauses, " AND ")
-	}
+	whereClause, args := r.buildWhereClause(filter)
 
 	// Count total
 	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM sites %s", whereClause)
@@ -215,11 +222,18 @@ func (r *siteRepo) BatchCreate(ctx context.Context, sites []*models.Site) error 
 	}
 	defer stmt.Close()
 
+	var count int
 	for _, site := range sites {
 		_, err := stmt.ExecContext(ctx, site.SiteGroupID, site.Domain, site.Name, site.Template, site.Status)
 		if err != nil {
+			// 仅跳过重复键错误
+			if IsDuplicateKeyError(err) {
+				continue
+			}
+			// 其他错误立即返回
 			return fmt.Errorf("insert site: %w", err)
 		}
+		count++
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -230,23 +244,7 @@ func (r *siteRepo) BatchCreate(ctx context.Context, sites []*models.Site) error 
 }
 
 func (r *siteRepo) Count(ctx context.Context, filter SiteFilter) (int64, error) {
-	whereClauses := []string{}
-	args := []interface{}{}
-
-	if filter.SiteGroupID != nil {
-		whereClauses = append(whereClauses, "site_group_id = ?")
-		args = append(args, *filter.SiteGroupID)
-	}
-	if filter.Status != nil {
-		whereClauses = append(whereClauses, "status = ?")
-		args = append(args, *filter.Status)
-	}
-
-	whereClause := ""
-	if len(whereClauses) > 0 {
-		whereClause = "WHERE " + strings.Join(whereClauses, " AND ")
-	}
-
+	whereClause, args := r.buildWhereClause(filter)
 	query := fmt.Sprintf("SELECT COUNT(*) FROM sites %s", whereClause)
 
 	var count int64
