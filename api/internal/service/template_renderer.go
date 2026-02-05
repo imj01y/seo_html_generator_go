@@ -27,6 +27,7 @@ type RenderData struct {
 	Title          string        // 静态标题（兼容用途）
 	TitleGenerator func() string // 动态标题生成器
 	SiteID         int
+	ImageGroupID   int // 图片分组ID
 	AnalyticsCode  template.HTML
 	BaiduPushJS    template.HTML
 	ArticleContent template.HTML
@@ -183,6 +184,7 @@ func (r *TemplateRenderer) getPlaceholderValue(p Placeholder, data *RenderData) 
 type templateRenderContext struct {
 	Title          string
 	SiteID         int
+	ImageGroupID   int
 	AnalyticsCode  template.HTML
 	BaiduPushJS    template.HTML
 	ArticleContent template.HTML
@@ -202,7 +204,7 @@ func (c *templateRenderContext) RandomURL() string {
 }
 
 func (c *templateRenderContext) RandomImage() string {
-	return c.funcsManager.RandomImage()
+	return c.funcsManager.RandomImage(c.ImageGroupID)
 }
 
 func (c *templateRenderContext) Cls(name string) string {

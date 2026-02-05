@@ -109,7 +109,10 @@ func resolvePlaceholder(p Placeholder, data *RenderData, fm *TemplateFuncsManage
 	case PlaceholderKeywordEmoji:
 		return fm.RandomKeywordEmoji()
 	case PlaceholderImage:
-		return fm.RandomImage()
+		if data != nil {
+			return fm.RandomImage(data.ImageGroupID)
+		}
+		return fm.RandomImage(1) // 默认分组
 	case PlaceholderNumber:
 		return formatInt(fm.RandomNumber(p.MinMax[0], p.MinMax[1]))
 	case PlaceholderNow:
