@@ -134,6 +134,12 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 		articleGroupID = int(site.ArticleGroupID.Int64)
 	}
 
+	// Get image group ID
+	imageGroupID := 1
+	if site.ImageGroupID.Valid {
+		imageGroupID = int(site.ImageGroupID.Int64)
+	}
+
 	// Get title and content from pool
 	var title, content string
 	title, err = h.poolManager.Pop("titles", articleGroupID)
@@ -175,6 +181,7 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 		Title:          h.generateTitle(titleKeywords), // 兼容静态用途
 		TitleGenerator: titleGenerator,                 // 动态生成器
 		SiteID:         site.ID,
+		ImageGroupID:   imageGroupID,
 		AnalyticsCode:  template.HTML(analyticsCode),
 		BaiduPushJS:    template.HTML(baiduPushJS),
 		ArticleContent: template.HTML(articleContent),
