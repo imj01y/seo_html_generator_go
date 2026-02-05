@@ -159,7 +159,7 @@ func main() {
 	scheduler := core.NewScheduler(db)
 
 	// Register task handlers
-	core.RegisterAllHandlers(scheduler, poolManager, templateCache)
+	core.RegisterAllHandlers(scheduler, poolManager, templateCache, db, redisClient)
 
 	// Start scheduler
 	schedCtx := context.Background()
