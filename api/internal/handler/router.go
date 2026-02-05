@@ -35,9 +35,9 @@ type Dependencies struct {
 
 // SetupRouter configures all API routes
 func SetupRouter(r *gin.Engine, deps *Dependencies) {
-	// 全局依赖注入中间件：将 db、redis 和 config 注入到 context 中
-	// 供使用 c.Get("db")、c.Get("redis") 和 c.Get("config") 的 Handler 使用
-	r.Use(DependencyInjectionMiddleware(deps.DB, deps.Redis, deps.Config))
+	// 全局依赖注入中间件：将 db、redis、config 和 scheduler 注入到 context 中
+	// 供使用 c.Get("db")、c.Get("redis")、c.Get("config") 和 c.Get("scheduler") 的 Handler 使用
+	r.Use(DependencyInjectionMiddleware(deps.DB, deps.Redis, deps.Config, deps.Scheduler))
 
 	// Auth routes (public - no middleware required)
 	authGroup := r.Group("/api/auth")
