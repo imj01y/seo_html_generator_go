@@ -14,16 +14,16 @@ import (
 
 // TemplateFuncStats 模板函数调用统计
 type TemplateFuncStats struct {
-	Cls              int `json:"cls"`               // cls() 调用次数
-	RandomURL        int `json:"random_url"`        // random_url() 调用次数
-	KeywordWithEmoji int `json:"keyword_with_emoji"` // keyword_with_emoji() 调用次数
-	RandomKeyword    int `json:"random_keyword"`    // random_keyword() 调用次数
-	RandomImage      int `json:"random_image"`      // random_image() 调用次数
-	RandomTitle      int `json:"random_title"`      // random_title() 调用次数
-	RandomContent    int `json:"random_content"`    // random_content() 调用次数
+	Cls               int `json:"cls"`                 // cls() 调用次数
+	RandomURL         int `json:"random_url"`          // random_url() 调用次数
+	KeywordWithEmoji  int `json:"keyword_with_emoji"`  // keyword_with_emoji() 调用次数
+	RandomKeyword     int `json:"random_keyword"`      // random_keyword() 调用次数
+	RandomImage       int `json:"random_image"`        // random_image() 调用次数
+	RandomTitle       int `json:"random_title"`        // random_title() 调用次数
+	RandomContent     int `json:"random_content"`      // random_content() 调用次数
 	ContentWithPinyin int `json:"content_with_pinyin"` // content_with_pinyin() 调用次数
-	RandomNumber     int `json:"random_number"`     // random_number() 调用次数
-	Now              int `json:"now"`               // now() 调用次数
+	RandomNumber      int `json:"random_number"`       // random_number() 调用次数
+	Now               int `json:"now"`                 // now() 调用次数
 }
 
 // Add 合并统计
@@ -43,16 +43,16 @@ func (s *TemplateFuncStats) Add(other *TemplateFuncStats) {
 // Multiply 乘以倍数（用于循环展开）
 func (s *TemplateFuncStats) Multiply(factor int) *TemplateFuncStats {
 	return &TemplateFuncStats{
-		Cls:              s.Cls * factor,
-		RandomURL:        s.RandomURL * factor,
-		KeywordWithEmoji: s.KeywordWithEmoji * factor,
-		RandomKeyword:    s.RandomKeyword * factor,
-		RandomImage:      s.RandomImage * factor,
-		RandomTitle:      s.RandomTitle * factor,
-		RandomContent:    s.RandomContent * factor,
+		Cls:               s.Cls * factor,
+		RandomURL:         s.RandomURL * factor,
+		KeywordWithEmoji:  s.KeywordWithEmoji * factor,
+		RandomKeyword:     s.RandomKeyword * factor,
+		RandomImage:       s.RandomImage * factor,
+		RandomTitle:       s.RandomTitle * factor,
+		RandomContent:     s.RandomContent * factor,
 		ContentWithPinyin: s.ContentWithPinyin * factor,
-		RandomNumber:     s.RandomNumber * factor,
-		Now:              s.Now * factor,
+		RandomNumber:      s.RandomNumber * factor,
+		Now:               s.Now * factor,
 	}
 }
 
@@ -103,9 +103,9 @@ type TemplateAnalysis struct {
 	SiteGroupID  int                `json:"site_group_id"`
 	ContentHash  string             `json:"content_hash"`
 	Stats        *TemplateFuncStats `json:"stats"`
-	LoopCount    int                `json:"loop_count"`    // 循环层数
+	LoopCount    int                `json:"loop_count"`     // 循环层数
 	MaxLoopDepth int                `json:"max_loop_depth"` // 最大嵌套深度
-	AnalyzedAt   int64              `json:"analyzed_at"`   // 分析时间戳
+	AnalyzedAt   int64              `json:"analyzed_at"`    // 分析时间戳
 }
 
 // PoolSizeConfig 池大小配置
@@ -143,16 +143,16 @@ type TemplateAnalyzer struct {
 
 // 函数匹配模式
 var defaultFuncPatterns = map[string]string{
-	"cls":               `\{\{\s*cls\s*\([^)]*\)\s*\}\}`,
-	"random_url":        `\{\{\s*random_url\s*\(\s*\)\s*\}\}`,
-	"keyword_with_emoji": `\{\{\s*keyword_with_emoji\s*\(\s*\)\s*\}\}`,
-	"random_keyword":    `\{\{\s*random_keyword\s*\(\s*\)\s*\}\}`,
-	"random_image":      `\{\{\s*random_image\s*\(\s*\)\s*\}\}`,
-	"random_title":      `\{\{\s*random_title\s*\(\s*\)\s*\}\}`,
-	"random_content":    `\{\{\s*random_content\s*\(\s*\)\s*\}\}`,
+	"cls":                 `\{\{\s*cls\s*\([^)]*\)\s*\}\}`,
+	"random_url":          `\{\{\s*random_url\s*\(\s*\)\s*\}\}`,
+	"keyword_with_emoji":  `\{\{\s*keyword_with_emoji\s*\(\s*\)\s*\}\}`,
+	"random_keyword":      `\{\{\s*random_keyword\s*\(\s*\)\s*\}\}`,
+	"random_image":        `\{\{\s*random_image\s*\(\s*\)\s*\}\}`,
+	"random_title":        `\{\{\s*random_title\s*\(\s*\)\s*\}\}`,
+	"random_content":      `\{\{\s*random_content\s*\(\s*\)\s*\}\}`,
 	"content_with_pinyin": `\{\{\s*content_with_pinyin\s*\(\s*\)\s*\}\}`,
-	"random_number":     `\{\{\s*random_number\s*\([^)]*\)\s*\}\}`,
-	"now":               `\{\{\s*now\s*\(\s*\)\s*\}\}`,
+	"random_number":       `\{\{\s*random_number\s*\([^)]*\)\s*\}\}`,
+	"now":                 `\{\{\s*now\s*\(\s*\)\s*\}\}`,
 }
 
 // 循环匹配模式: {% for i in range(N) %} ... {% endfor %}
@@ -420,16 +420,16 @@ func (a *TemplateAnalyzer) GetMaxStats() *TemplateFuncStats {
 
 	// 返回副本
 	return &TemplateFuncStats{
-		Cls:              a.maxStats.Cls,
-		RandomURL:        a.maxStats.RandomURL,
-		KeywordWithEmoji: a.maxStats.KeywordWithEmoji,
-		RandomKeyword:    a.maxStats.RandomKeyword,
-		RandomImage:      a.maxStats.RandomImage,
-		RandomTitle:      a.maxStats.RandomTitle,
-		RandomContent:    a.maxStats.RandomContent,
+		Cls:               a.maxStats.Cls,
+		RandomURL:         a.maxStats.RandomURL,
+		KeywordWithEmoji:  a.maxStats.KeywordWithEmoji,
+		RandomKeyword:     a.maxStats.RandomKeyword,
+		RandomImage:       a.maxStats.RandomImage,
+		RandomTitle:       a.maxStats.RandomTitle,
+		RandomContent:     a.maxStats.RandomContent,
 		ContentWithPinyin: a.maxStats.ContentWithPinyin,
-		RandomNumber:     a.maxStats.RandomNumber,
-		Now:              a.maxStats.Now,
+		RandomNumber:      a.maxStats.RandomNumber,
+		Now:               a.maxStats.Now,
 	}
 }
 
@@ -457,16 +457,16 @@ func (a *TemplateAnalyzer) GetStats() map[string]interface{} {
 		"target_qps":         a.targetQPS,
 		"safety_factor":      a.safetyFactor,
 		"max_stats": map[string]int{
-			"cls":               a.maxStats.Cls,
-			"random_url":        a.maxStats.RandomURL,
-			"keyword_with_emoji": a.maxStats.KeywordWithEmoji,
-			"random_keyword":    a.maxStats.RandomKeyword,
-			"random_image":      a.maxStats.RandomImage,
-			"random_title":      a.maxStats.RandomTitle,
-			"random_content":    a.maxStats.RandomContent,
+			"cls":                 a.maxStats.Cls,
+			"random_url":          a.maxStats.RandomURL,
+			"keyword_with_emoji":  a.maxStats.KeywordWithEmoji,
+			"random_keyword":      a.maxStats.RandomKeyword,
+			"random_image":        a.maxStats.RandomImage,
+			"random_title":        a.maxStats.RandomTitle,
+			"random_content":      a.maxStats.RandomContent,
 			"content_with_pinyin": a.maxStats.ContentWithPinyin,
-			"random_number":     a.maxStats.RandomNumber,
-			"now":               a.maxStats.Now,
+			"random_number":       a.maxStats.RandomNumber,
+			"now":                 a.maxStats.Now,
 		},
 	}
 }

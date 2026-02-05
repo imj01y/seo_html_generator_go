@@ -455,7 +455,6 @@ func (m *PoolManager) ReloadKeywordGroup(ctx context.Context, groupID int) error
 	return m.poolManager.GetKeywordPool().ReloadGroup(ctx, groupID)
 }
 
-
 // ============================================================
 // Images 方法
 // ============================================================
@@ -562,6 +561,7 @@ func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
 	}
 	return groups, nil
 }
+
 // ============================================================
 // 兼容性方法（供 router/websocket 使用）
 // ============================================================

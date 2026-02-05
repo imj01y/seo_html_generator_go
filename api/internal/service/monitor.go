@@ -8,14 +8,14 @@ import (
 
 // Monitor 监控服务，整合指标采集和告警管理
 type Monitor struct {
-	metrics      *Metrics           // 指标收集器
-	alertManager *AlertManager      // 告警管理器
-	history      []MetricsSnapshot  // 历史数据
-	historySize  int                // 历史数据最大数量
-	mu           sync.RWMutex       // 读写锁
-	interval     time.Duration      // 采集间隔
-	stopChan     chan struct{}      // 停止信号
-	running      bool               // 运行状态
+	metrics      *Metrics          // 指标收集器
+	alertManager *AlertManager     // 告警管理器
+	history      []MetricsSnapshot // 历史数据
+	historySize  int               // 历史数据最大数量
+	mu           sync.RWMutex      // 读写锁
+	interval     time.Duration     // 采集间隔
+	stopChan     chan struct{}     // 停止信号
+	running      bool              // 运行状态
 }
 
 // NewMonitor 创建监控服务
@@ -187,29 +187,29 @@ func (m *Monitor) GetStats() map[string]interface{} {
 
 	return map[string]interface{}{
 		// 监控服务状态
-		"running":         running,
-		"interval_ms":     m.interval.Milliseconds(),
-		"history_size":    m.historySize,
-		"history_count":   historyLen,
+		"running":       running,
+		"interval_ms":   m.interval.Milliseconds(),
+		"history_size":  m.historySize,
+		"history_count": historyLen,
 
 		// 当前指标摘要
-		"total_requests":   snapshot.TotalRequests,
-		"error_requests":   snapshot.ErrorRequests,
-		"qps":              snapshot.QPS,
-		"avg_latency_ms":   snapshot.AvgLatencyMs,
-		"max_latency_ms":   snapshot.MaxLatencyMs,
-		"pool_hit_rate":    snapshot.PoolHitRate,
-		"cache_hit_rate":   snapshot.CacheHitRate,
+		"total_requests": snapshot.TotalRequests,
+		"error_requests": snapshot.ErrorRequests,
+		"qps":            snapshot.QPS,
+		"avg_latency_ms": snapshot.AvgLatencyMs,
+		"max_latency_ms": snapshot.MaxLatencyMs,
+		"pool_hit_rate":  snapshot.PoolHitRate,
+		"cache_hit_rate": snapshot.CacheHitRate,
 
 		// 系统指标
-		"num_goroutine":    snapshot.NumGoroutine,
-		"heap_alloc_mb":    float64(snapshot.HeapAllocBytes) / (1024 * 1024),
+		"num_goroutine": snapshot.NumGoroutine,
+		"heap_alloc_mb": float64(snapshot.HeapAllocBytes) / (1024 * 1024),
 
 		// 告警状态
 		"unresolved_alerts": len(unresolvedAlerts),
 
 		// 时间戳
-		"timestamp":        snapshot.Timestamp,
+		"timestamp": snapshot.Timestamp,
 	}
 }
 

@@ -106,11 +106,11 @@ func (m *Manager) GetStats() map[string]interface{} {
 	for gid := range kwGroups {
 		stats := m.keywordPool.GetStats(gid)
 		kwStats[gid] = map[string]interface{}{
-			"current":       stats.Current,
-			"capacity":      stats.Capacity,
-			"cache_hits":    stats.CacheHits,
-			"cache_misses":  stats.CacheMisses,
-			"memory_bytes":  stats.MemoryBytes,
+			"current":      stats.Current,
+			"capacity":     stats.Capacity,
+			"cache_hits":   stats.CacheHits,
+			"cache_misses": stats.CacheMisses,
+			"memory_bytes": stats.MemoryBytes,
 		}
 	}
 
@@ -120,11 +120,11 @@ func (m *Manager) GetStats() map[string]interface{} {
 	for gid := range imgGroups {
 		stats := m.imagePool.GetStats(gid)
 		imgStats[gid] = map[string]interface{}{
-			"current":       stats.Current,
-			"capacity":      stats.Capacity,
-			"cache_hits":    stats.CacheHits,
-			"cache_misses":  stats.CacheMisses,
-			"memory_bytes":  stats.MemoryBytes,
+			"current":      stats.Current,
+			"capacity":     stats.Capacity,
+			"cache_hits":   stats.CacheHits,
+			"cache_misses": stats.CacheMisses,
+			"memory_bytes": stats.MemoryBytes,
 		}
 	}
 
@@ -132,8 +132,8 @@ func (m *Manager) GetStats() map[string]interface{} {
 		"keywords": kwStats,
 		"images":   imgStats,
 		"totals": map[string]interface{}{
-			"keyword_count": m.keywordPool.GetTotalCount(),
-			"image_count":   m.imagePool.GetTotalCount(),
+			"keyword_count":  m.keywordPool.GetTotalCount(),
+			"image_count":    m.imagePool.GetTotalCount(),
 			"keyword_groups": len(kwGroups),
 			"image_groups":   len(imgGroups),
 		},

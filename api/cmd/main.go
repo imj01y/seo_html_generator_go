@@ -16,8 +16,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
-	api "seo-generator/api/internal/handler"
 	"seo-generator/api/internal/di"
+	api "seo-generator/api/internal/handler"
 	models "seo-generator/api/internal/model"
 	database "seo-generator/api/internal/repository"
 	core "seo-generator/api/internal/service"

@@ -33,10 +33,10 @@ type CachePoolConfig struct {
 	UrlRefillIntervalMs int     `db:"url_refill_interval_ms" json:"url_refill_interval_ms"`
 	UrlThreshold        float64 `db:"url_threshold" json:"url_threshold"`
 	// 关键词表情池配置
-	KeywordEmojiPoolSize         int     `db:"keyword_emoji_pool_size" json:"keyword_emoji_pool_size"`
-	KeywordEmojiWorkers          int     `db:"keyword_emoji_workers" json:"keyword_emoji_workers"`
-	KeywordEmojiRefillIntervalMs int     `db:"keyword_emoji_refill_interval_ms" json:"keyword_emoji_refill_interval_ms"`
-	KeywordEmojiThreshold        float64 `db:"keyword_emoji_threshold" json:"keyword_emoji_threshold"`
+	KeywordEmojiPoolSize         int       `db:"keyword_emoji_pool_size" json:"keyword_emoji_pool_size"`
+	KeywordEmojiWorkers          int       `db:"keyword_emoji_workers" json:"keyword_emoji_workers"`
+	KeywordEmojiRefillIntervalMs int       `db:"keyword_emoji_refill_interval_ms" json:"keyword_emoji_refill_interval_ms"`
+	KeywordEmojiThreshold        float64   `db:"keyword_emoji_threshold" json:"keyword_emoji_threshold"`
 	UpdatedAt                    time.Time `db:"updated_at" json:"updated_at"`
 }
 

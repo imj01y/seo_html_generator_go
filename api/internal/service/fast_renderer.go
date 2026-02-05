@@ -32,10 +32,10 @@ const (
 
 // Placeholder 占位符信息
 type Placeholder struct {
-	Token    string          // __PH_CLS_0__ 等
-	Type     PlaceholderType // 类型
-	Arg      string          // 参数，如 cls("header") 中的 "header"
-	MinMax   [2]int          // 用于 random_number
+	Token  string          // __PH_CLS_0__ 等
+	Type   PlaceholderType // 类型
+	Arg    string          // 参数，如 cls("header") 中的 "header"
+	MinMax [2]int          // 用于 random_number
 }
 
 // CompiledFastTemplate 预编译的快速模板

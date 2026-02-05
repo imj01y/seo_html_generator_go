@@ -52,7 +52,7 @@ type ObjectPool[T any] struct {
 type PoolConfig struct {
 	Name          string
 	Size          int
-	Threshold     float64       // 低于此比例触发补充（0-1）
+	Threshold     float64 // 低于此比例触发补充（0-1）
 	NumWorkers    int
 	CheckInterval time.Duration
 	MemorySizer   func(any) int64 // 可选：计算单个元素内存占用的函数

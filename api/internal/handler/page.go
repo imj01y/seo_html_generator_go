@@ -13,9 +13,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/pkg/config"
-	core "seo-generator/api/internal/service"
 	"seo-generator/api/internal/model"
+	core "seo-generator/api/internal/service"
+	"seo-generator/api/pkg/config"
 )
 
 // PageHandler handles /page requests

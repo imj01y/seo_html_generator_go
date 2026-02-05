@@ -35,25 +35,25 @@ type SpiderConfig struct {
 
 // CompiledSpiderRule contains a spider rule with compiled regex patterns
 type CompiledSpiderRule struct {
-	Type           string
-	Name           string
-	Patterns       []*regexp.Regexp
-	DNSDomains     []string
-	Enabled        bool
+	Type       string
+	Name       string
+	Patterns   []*regexp.Regexp
+	DNSDomains []string
+	Enabled    bool
 }
 
 // SpiderConfigLoader handles loading and hot-reloading of spider configuration
 type SpiderConfigLoader struct {
-	configPath     string
-	config         *SpiderConfig
-	compiledRules  []*CompiledSpiderRule
-	rulesByType    map[string]*CompiledSpiderRule
-	mu             sync.RWMutex
-	watcher        *fsnotify.Watcher
-	onChange       func(*SpiderConfig, []*CompiledSpiderRule)
-	stopChan       chan struct{}
-	debounceTimer  *time.Timer
-	debounceMu     sync.Mutex
+	configPath    string
+	config        *SpiderConfig
+	compiledRules []*CompiledSpiderRule
+	rulesByType   map[string]*CompiledSpiderRule
+	mu            sync.RWMutex
+	watcher       *fsnotify.Watcher
+	onChange      func(*SpiderConfig, []*CompiledSpiderRule)
+	stopChan      chan struct{}
+	debounceTimer *time.Timer
+	debounceMu    sync.Mutex
 }
 
 // NewSpiderConfigLoader creates a new configuration loader

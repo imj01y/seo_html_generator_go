@@ -479,10 +479,10 @@ func (s *Scheduler) GetStats() map[string]interface{} {
 	}
 
 	return map[string]interface{}{
-		"running":       s.running,
-		"total_tasks":   len(s.tasks),
-		"active_tasks":  activeCount,
-		"cron_entries":  len(s.cron.Entries()),
-		"handlers":      len(s.handlers),
+		"running":      s.running,
+		"total_tasks":  len(s.tasks),
+		"active_tasks": activeCount,
+		"cron_entries": len(s.cron.Entries()),
+		"handlers":     len(s.handlers),
 	}
 }

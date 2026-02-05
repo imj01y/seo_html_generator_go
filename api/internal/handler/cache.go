@@ -10,9 +10,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 
-	"seo-generator/api/pkg/config"
-	core "seo-generator/api/internal/service"
 	database "seo-generator/api/internal/repository"
+	core "seo-generator/api/internal/service"
+	"seo-generator/api/pkg/config"
 )
 
 // CacheHandler 缓存管理处理器
@@ -325,4 +325,3 @@ func (h *CacheHandler) ReloadCacheConfig(c *gin.Context) {
 		"cache_dir": newCacheDir,
 	})
 }
-
