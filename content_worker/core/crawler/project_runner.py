@@ -15,7 +15,6 @@ from loguru import logger
 if TYPE_CHECKING:
     from redis.asyncio import Redis
     from aiomysql import Pool
-    from core.workers.logger_protocol import LoggerProtocol
 
 from .spider import Spider
 from .request import Request
@@ -38,7 +37,6 @@ class ProjectRunner:
         concurrency: int = 3,
         is_test: bool = False,
         max_items: int = 0,
-        log: Optional['LoggerProtocol'] = None,
     ):
         """
         初始化运行器
@@ -63,7 +61,6 @@ class ProjectRunner:
         self.max_items = max_items
         self._stop_flag = False
         self._spider_instance: Optional[Spider] = None
-        self.log = log
 
     def _get_spider_class(self) -> type:
         """
@@ -130,9 +127,7 @@ class ProjectRunner:
             self._apply_settings(spider.__custom_setting__)
 
         spider_name = spider.name or spider_cls.__name__
-        logger.info(f"Spider '{spider_name}' starting")
-        if self.log:
-            await self.log.info(f"Spider '{spider_name}' 启动，并发数: {self.concurrency}")
+        logger.info(f"Spider '{spider_name}' starting, concurrency: {self.concurrency}")
 
         # 初始化队列
         queue = RequestQueue(self.redis, self.project_id, is_test=self.is_test)
@@ -152,10 +147,9 @@ class ProjectRunner:
                 is_test=self.is_test,
                 max_items=self.max_items,
                 start_requests_iter=start_requests_iter,
-                log=self.log,
             )
 
-            logger.info(f"Starting queue consumer with {self.concurrency} workers")
+            logger.debug(f"Starting queue consumer with {self.concurrency} workers")
 
             # 消费器负责按需从生成器获取请求并入队
             async for item in consumer.run():
@@ -180,7 +174,7 @@ class ProjectRunner:
 
         except asyncio.CancelledError:
             # 任务被取消，向上传播
-            logger.info(f"Project {self.project_id} runner cancelled")
+            logger.debug(f"Project {self.project_id} runner cancelled")
             spider.close("cancelled")
             raise
 

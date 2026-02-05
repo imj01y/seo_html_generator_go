@@ -116,7 +116,7 @@ class RequestQueue:
         if not request.dont_filter:
             is_seen = await self.redis.sismember(self._key_seen, fingerprint)
             if is_seen:
-                logger.debug(f"Request already seen, skipped: {request.url[:50]}")
+                logger.debug(f"Request already seen, skipped: {request.url}")
                 return False
 
         # 加入 seen 集合
@@ -134,7 +134,7 @@ class RequestQueue:
         if request.callback_name == 'parse_detail':
             await self.redis.hincrby(self._key_stats, 'total', 1)
 
-        logger.debug(f"Request pushed: {request.url[:50]}, priority={request.priority}")
+        logger.debug(f"Request pushed: {request.url}, priority={request.priority}")
         return True
 
     async def push_many(self, requests: list) -> int:
@@ -197,7 +197,7 @@ class RequestQueue:
             })
         )
 
-        logger.debug(f"Request popped: {request.url[:50]}")
+        logger.debug(f"Request popped: {request.url}")
         return request
 
     async def complete(self, request: Request, success: bool = True) -> None:
@@ -216,15 +216,13 @@ class RequestQueue:
         if success:
             # 加入 completed 集合
             await self.redis.sadd(self._key_completed, fingerprint)
-            # 只统计详情页
-            if request.callback_name == 'parse_detail':
-                await self.redis.hincrby(self._key_stats, 'completed', 1)
-            logger.debug(f"Request completed: {request.url[:50]}")
+            # completed 统计由 command_listener 在数据保存时更新，此处不统计
+            logger.debug(f"Request completed: {request.url}")
         else:
             # 只统计详情页
             if request.callback_name == 'parse_detail':
                 await self.redis.hincrby(self._key_stats, 'failed', 1)
-            logger.debug(f"Request failed: {request.url[:50]}")
+            logger.debug(f"Request failed: {request.url}")
 
     async def retry(self, request: Request) -> bool:
         """
@@ -243,7 +241,7 @@ class RequestQueue:
 
         # 检查重试次数
         if request.retry_count >= request.max_retries:
-            logger.warning(f"Request exceeded max retries: {request.url[:50]}")
+            logger.warning(f"Request exceeded max retries: {request.url}")
             return False
 
         # 增加重试计数
@@ -256,7 +254,7 @@ class RequestQueue:
         if request.callback_name == 'parse_detail':
             await self.redis.hincrby(self._key_stats, 'retried', 1)
 
-        logger.debug(f"Request retry {new_request.retry_count}/{new_request.max_retries}: {request.url[:50]}")
+        logger.debug(f"Request retry {new_request.retry_count}/{new_request.max_retries}: {request.url}")
         return True
 
     async def get_stats(self) -> QueueStats:
@@ -298,7 +296,7 @@ class RequestQueue:
     async def set_state(self, state: str) -> None:
         """设置任务状态"""
         await self.redis.set(self._key_state, state)
-        logger.info(f"Project {self.project_id} state changed to: {state}")
+        logger.debug(f"Project {self.project_id} state changed to: {state}")
 
     async def pause(self) -> None:
         """暂停任务"""
@@ -334,7 +332,7 @@ class RequestQueue:
             self._key_queued_count,
         ]
         await self.redis.delete(*keys)
-        logger.info(f"Project {self.project_id} queue cleared")
+        logger.debug(f"Project {self.project_id} queue cleared")
 
     async def recover_timeout(self) -> int:
         """
@@ -377,12 +375,12 @@ class RequestQueue:
                         if request.callback_name == 'parse_detail':
                             await self.redis.hincrby(self._key_stats, 'retried', 1)
                         recovered += 1
-                        logger.info(f"Recovered timeout request: {request.url[:50]}")
+                        logger.debug(f"Recovered timeout request: {request.url}")
                     else:
                         # 只统计详情页
                         if request.callback_name == 'parse_detail':
                             await self.redis.hincrby(self._key_stats, 'failed', 1)
-                        logger.warning(f"Timeout request exceeded max retries: {request.url[:50]}")
+                        logger.warning(f"Timeout request exceeded max retries: {request.url}")
 
                     # 从 processing 移除
                     await self.redis.hdel(self._key_processing, fingerprint)

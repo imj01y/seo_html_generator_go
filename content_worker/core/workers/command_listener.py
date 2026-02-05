@@ -15,48 +15,7 @@ from loguru import logger
 
 from database.db import fetch_one, insert, execute_query, get_db_pool
 from core.redis_client import get_redis_client
-
-
-class RedisLogger:
-    """日志发布到 Redis，Go 订阅后推送给前端"""
-
-    def __init__(self, rdb, project_id: int, prefix: str = "project"):
-        self.rdb = rdb
-        self.channel = f"spider:logs:{prefix}_{project_id}"
-
-    async def _publish(self, level: str, message: str):
-        log = {
-            "type": "log",  # 前端 switch 需要此字段
-            "level": level,
-            "message": message,
-            "timestamp": datetime.now().isoformat()
-        }
-        await self.rdb.publish(self.channel, json.dumps(log, ensure_ascii=False))
-
-    async def info(self, msg: str):
-        await self._publish("INFO", msg)
-        logger.bind(from_redis_logger=True).info(msg)
-
-    async def warning(self, msg: str):
-        await self._publish("WARNING", msg)
-        logger.bind(from_redis_logger=True).warning(msg)
-
-    async def error(self, msg: str):
-        await self._publish("ERROR", msg)
-        logger.bind(from_redis_logger=True).error(msg)
-
-    async def debug(self, msg: str):
-        await self._publish("DEBUG", msg)
-        logger.bind(from_redis_logger=True).debug(msg)
-
-    async def item(self, data: dict):
-        """发送数据项，前端会解析并展示"""
-        await self._publish("ITEM", json.dumps(data, ensure_ascii=False))
-
-    async def end(self):
-        """发送测试结束信号"""
-        msg = {"type": "end", "timestamp": datetime.now().isoformat()}
-        await self.rdb.publish(self.channel, json.dumps(msg, ensure_ascii=False))
+from core.realtime_logger import RealtimeLogger
 
 
 class CommandListener:
@@ -224,7 +183,7 @@ class CommandListener:
         from core.crawler.project_runner import ProjectRunner
         from core.crawler.request_queue import RequestQueue
 
-        log = RedisLogger(self.rdb, project_id, "project")
+        log = RealtimeLogger(self.rdb, f"spider:logs:project_{project_id}")
 
         # 更新状态
         await self.rdb.set(
@@ -235,7 +194,7 @@ class CommandListener:
         items_count = 0
 
         try:
-            await log.info("正在加载项目...")
+            log.info("正在加载项目...")
 
             # 获取项目配置
             row = await fetch_one(
@@ -243,7 +202,7 @@ class CommandListener:
                 (project_id,)
             )
             if not row:
-                await log.error("项目不存在")
+                log.error("项目不存在")
                 return
 
             config = json.loads(row['config']) if row['config'] else {}
@@ -251,7 +210,7 @@ class CommandListener:
             # 加载项目文件
             loader = ProjectLoader(project_id)
             modules = await loader.load()
-            await log.info(f"已加载 {len(modules)} 个模块")
+            log.info(f"已加载 {len(modules)} 个模块")
 
             # 清除旧的停止信号
             stop_key = f"spider_project:{project_id}:stop"
@@ -265,17 +224,16 @@ class CommandListener:
                 redis=self.rdb,
                 db_pool=get_db_pool(),
                 concurrency=row.get('concurrency', 3),
-                log=log,
             )
 
-            await log.info("开始执行 Spider...")
+            log.info("开始执行 Spider...")
 
             group_id = row['output_group_id']
 
             async for item in runner.run():
                 # 检查停止信号
                 if await self.rdb.get(stop_key):
-                    await log.info("收到停止信号，任务终止")
+                    log.info("收到停止信号，任务终止")
                     await self.rdb.delete(stop_key)
                     break
 
@@ -291,7 +249,7 @@ class CommandListener:
                         if keywords:
                             added = await self._batch_insert_keywords(keywords, target_group)
                             items_count += added
-                            await log.info(f"关键词写入: 新增 {added}, 跳过 {len(keywords) - added}")
+                            log.info(f"关键词写入: 新增 {added}, 跳过 {len(keywords) - added}")
                             if added > 0:
                                 await self._publish_stats(project_id, items_count)
 
@@ -303,7 +261,7 @@ class CommandListener:
                         if urls:
                             added = await self._batch_insert_images(urls, target_group)
                             items_count += added
-                            await log.info(f"图片写入: 新增 {added}, 跳过 {len(urls) - added}")
+                            log.info(f"图片写入: 新增 {added}, 跳过 {len(urls) - added}")
                             if added > 0:
                                 await self._publish_stats(project_id, items_count)
 
@@ -329,18 +287,18 @@ class CommandListener:
                                 try:
                                     await self.rdb.lpush("pending:articles", article_id)
                                 except Exception as queue_err:
-                                    await log.warning(f"推送到待处理队列失败: {queue_err}")
+                                    log.warning(f"推送到待处理队列失败: {queue_err}")
 
                     if items_count > 0 and items_count % 10 == 0:
-                        await log.info(f"已抓取 {items_count} 条数据")
+                        log.info(f"已抓取 {items_count} 条数据")
 
                 except Exception as e:
                     if 'Duplicate' in str(e):
-                        await log.warning(f"数据重复，已跳过")
+                        log.warning("数据重复，已跳过")
                     else:
-                        await log.error(f"保存数据失败: {e}")
+                        log.error(f"保存数据失败: {e}")
 
-            await log.info(f"任务完成：共 {items_count} 条数据")
+            log.info(f"任务完成：共 {items_count} 条数据")
 
             # 更新统计
             await execute_query(
@@ -359,7 +317,7 @@ class CommandListener:
             )
 
         except asyncio.CancelledError:
-            await log.info("任务已被取消")
+            log.info("任务已被取消")
             await execute_query(
                 "UPDATE spider_projects SET status = 'idle', last_error = %s WHERE id = %s",
                 ("任务被取消", project_id),
@@ -367,7 +325,7 @@ class CommandListener:
             )
 
         except Exception as e:
-            await log.error(f"任务异常: {str(e)}")
+            log.error(f"任务异常: {str(e)}")
             await execute_query(
                 "UPDATE spider_projects SET status = 'error', last_error = %s WHERE id = %s",
                 (str(e), project_id),
@@ -375,6 +333,7 @@ class CommandListener:
             )
 
         finally:
+            await log.end()
             await self.rdb.set(
                 f"spider:status:{project_id}",
                 json.dumps({"status": "idle"})
@@ -387,35 +346,11 @@ class CommandListener:
         from core.crawler.project_runner import ProjectRunner
         from core.crawler.request_queue import RequestQueue
 
-        log = RedisLogger(self.rdb, project_id, "test")
-        loop = asyncio.get_running_loop()
-
-        # 临时 handler：捕获用户代码中的 logger 调用，转发到前端
-        def log_sink(message):
-            import traceback as tb
-            # 跳过已通过 RedisLogger._publish 发送的日志（避免重复）
-            if message.record["extra"].get("from_redis_logger"):
-                return
-            level = message.record["level"].name
-            msg = message.record["message"]
-
-            # 处理异常堆栈（logger.exception() 调用时）
-            exc_info = message.record["exception"]
-            if exc_info:
-                # 格式化完整堆栈跟踪，和 PyCharm 显示一致
-                exc_lines = tb.format_exception(exc_info.type, exc_info.value, exc_info.traceback)
-                msg = msg + "\n" + "".join(exc_lines)
-
-            # 桥接同步 sink 到异步 Redis publish
-            loop.call_soon_threadsafe(
-                lambda l=level, m=msg: asyncio.create_task(log._publish(l, m))
-            )
-
-        handler_id = logger.add(log_sink, format="{message}", level="DEBUG")
+        log = RealtimeLogger(self.rdb, f"spider:logs:test_{project_id}")
 
         try:
             limit_text = f"最多 {max_items} 条" if max_items > 0 else "不限制条数"
-            await log.info(f"开始测试运行（{limit_text}）...")
+            log.info(f"开始测试运行（{limit_text}）...")
 
             # 清除测试队列
             queue = RequestQueue(self.rdb, project_id, is_test=True)
@@ -426,14 +361,14 @@ class CommandListener:
                 (project_id,)
             )
             if not row:
-                await log.error("项目不存在")
+                log.error("项目不存在")
                 return
 
             config = json.loads(row['config']) if row['config'] else {}
 
             loader = ProjectLoader(project_id)
             modules = await loader.load()
-            await log.info(f"已加载 {len(modules)} 个模块")
+            log.info(f"已加载 {len(modules)} 个模块")
 
             runner = ProjectRunner(
                 project_id=project_id,
@@ -444,7 +379,6 @@ class CommandListener:
                 concurrency=row.get('concurrency', 3),
                 is_test=True,
                 max_items=max_items,
-                log=log,
             )
 
             items_count = 0
@@ -452,11 +386,11 @@ class CommandListener:
                 # 检查停止信号
                 state = await queue.get_state()
                 if state == RequestQueue.STATE_STOPPED:
-                    await log.info("测试已停止")
+                    log.info("测试已停止")
                     break
 
                 if not item.get('title') or not item.get('content'):
-                    await log.warning(f"数据缺少必填字段(title 或 content)，已跳过")
+                    log.warning("数据缺少必填字段(title 或 content)，已跳过")
                     continue
 
                 items_count += 1
@@ -464,9 +398,9 @@ class CommandListener:
                 # 输出数据预览
                 title = item.get('title', '(无标题)')[:50]
                 if max_items > 0:
-                    await log.info(f"[{items_count}/{max_items}] {title}")
+                    log.info(f"[{items_count}/{max_items}] {title}")
                 else:
-                    await log.info(f"[{items_count}] {title}")
+                    log.info(f"[{items_count}] {title}")
 
                 # 发送数据项供前端展示
                 await log.item(item)
@@ -474,19 +408,16 @@ class CommandListener:
                 if max_items > 0 and items_count >= max_items:
                     break
 
-            await log.info(f"测试完成：共 {items_count} 条数据")
-            await log.end()  # 发送结束信号
+            log.info(f"测试完成：共 {items_count} 条数据")
 
         except asyncio.CancelledError:
-            await log.info("测试已被取消")
-            await log.end()
+            log.info("测试已被取消")
 
         except Exception as e:
-            await log.error(f"测试异常: {str(e)}")
-            await log.end()
+            log.error(f"测试异常: {str(e)}")
 
         finally:
-            logger.remove(handler_id)  # 移除临时 handler
+            await log.end()
             self.running_tasks.pop(project_id, None)
 
     async def stop_project(self, project_id: int):

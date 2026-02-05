@@ -13,7 +13,6 @@ from loguru import logger
 
 if TYPE_CHECKING:
     from redis.asyncio import Redis
-    from core.workers.logger_protocol import LoggerProtocol
 
 from .spider import Spider
 from .request import Request
@@ -53,7 +52,6 @@ class QueueConsumer:
         is_test: bool = False,
         max_items: int = 0,
         start_requests_iter: Optional[Iterator] = None,
-        log: Optional['LoggerProtocol'] = None,
     ):
         """
         初始化消费器
@@ -85,9 +83,6 @@ class QueueConsumer:
 
         # 运行状态
         self._running = False
-
-        # 日志（可选，用于推送到前端）
-        self.log = log
 
     def _get_callback(self, callback_name: str) -> Callable:
         """
@@ -126,7 +121,7 @@ class QueueConsumer:
 
         # 如果已达限制，不再补充（停止翻页）
         if await self._check_item_limit():
-            logger.info("Item limit reached, stop feeding more requests (no more pagination)")
+            logger.debug("Item limit reached, stop feeding more requests (no more pagination)")
             self.start_requests_iter = None
             return False
 
@@ -144,11 +139,11 @@ class QueueConsumer:
             # start_requests 产出的请求跳过去重，确保列表页每次都能抓取
             request.dont_filter = True
             await self.queue.push(request)
-            logger.info(f"Fed request from start_requests: {request.url[:80]}")
+            logger.debug(f"Fed request from start_requests: {request.url}")
             return True
         except StopIteration:
             # 生成器已耗尽（所有列表页都已入队）
-            logger.info("start_requests exhausted")
+            logger.debug("start_requests exhausted")
             self.start_requests_iter = None
             return False
 
@@ -186,12 +181,7 @@ class QueueConsumer:
                 except (json.JSONDecodeError, TypeError):
                     pass  # 保持原始 body
 
-            # 推送到前端
-            if self.log:
-                url_short = request.url[:60] + ('...' if len(request.url) > 60 else '')
-                await self.log.debug(f"正在请求: {url_short}")
-
-            logger.info(f"Fetching [{request.method}]: {request.url[:80]}")
+            logger.debug(f"Fetching [{request.method}]: {request.url}")
             body = await self.http_client.fetch(
                 url=request.url,
                 method=request.method,
@@ -202,15 +192,10 @@ class QueueConsumer:
             )
 
             if body is None:
-                logger.info(f"Fetch failed: {request.url[:80]}")
-                if self.log:
-                    error_msg = self.http_client.last_error or '未知错误'
-                    await self.log.warning(f"请求失败: {request.url[:50]} - {error_msg}")
+                logger.debug(f"Fetch failed: {request.url}")
+                error_msg = self.http_client.last_error or '未知错误'
+                logger.warning(f"请求失败: {request.url[:80]} - {error_msg}")
                 return None
-
-            if self.log:
-                size_kb = len(body) / 1024
-                await self.log.debug(f"请求成功 (200, {size_kb:.1f}KB)")
 
             response = Response.from_request(
                 request=request,
@@ -220,18 +205,18 @@ class QueueConsumer:
 
             # 调用 Spider 的响应验证（如果有）
             if not self.spider.validate(request, response):
-                logger.warning(f"Response validation failed for {request.url[:50]}")
+                logger.warning(f"Response validation failed for {request.url}")
                 return None
 
             return response
 
         except asyncio.CancelledError:
             # 任务被取消，向上传播
-            logger.info(f"Fetch cancelled: {request.url[:50]}")
+            logger.debug(f"Fetch cancelled: {request.url}")
             raise
 
         except Exception as e:
-            logger.error(f"Fetch error for {request.url[:50]}: {e}")
+            logger.error(f"Fetch error for {request.url}: {e}")
             # 调用 Spider 的异常回调
             self.spider.exception_request(request, None, e)
             return None
@@ -253,13 +238,12 @@ class QueueConsumer:
         # 计算重试延迟（指数退避）
         if request.retry_count > 0:
             delay = request.retry_delay * (2 ** (request.retry_count - 1))
-            logger.debug(f"Retry delay {delay}s for {request.url[:50]}")
-            if self.log:
-                await self.log.warning(f"正在重试 ({request.retry_count}/{request.max_retries}): {request.url[:50]}")
+            logger.debug(f"Retry delay {delay}s for {request.url}")
+            logger.warning(f"正在重试 ({request.retry_count}/{request.max_retries}): {request.url}")
             try:
                 await asyncio.sleep(delay)
             except asyncio.CancelledError:
-                logger.info(f"Retry sleep cancelled for {request.url[:50]}")
+                logger.debug(f"Retry sleep cancelled for {request.url}")
                 raise
 
         # 发起请求
@@ -296,7 +280,7 @@ class QueueConsumer:
                     for item in result:
                         # 检查停止信号
                         if self.stop_callback and self.stop_callback():
-                            logger.info("Stop signal received during callback iteration")
+                            logger.debug("Stop signal received during callback iteration")
                             return
                         if isinstance(item, Request):
                             # 先递增计数，再检查限制
@@ -331,7 +315,7 @@ class QueueConsumer:
                     if self.max_items > 0:
                         queued = await self.queue.incr_queued_count()
                         if queued > self.max_items:
-                            logger.debug(f"Queued limit reached ({self.max_items}), skipping: {result.url[:50]}")
+                            logger.debug(f"Queued limit reached ({self.max_items}), skipping: {result.url}")
                             can_queue = False
                     if can_queue:
                         if callable(result.callback):
@@ -354,12 +338,12 @@ class QueueConsumer:
 
         except asyncio.CancelledError:
             # 任务被取消，向上传播
-            logger.info(f"Request processing cancelled: {request.url}")
+            logger.debug(f"Request processing cancelled: {request.url}")
             raise
 
         except Exception as e:
             # logger.exception 会输出完整堆栈，全局 sink 会转发到前端
-            logger.exception(f"Callback error for {request.url}")
+            logger.exception(f"Callback error for {request.url[:80]}")
             # 调用 Spider 的异常回调
             self.spider.exception_request(request, response, e)
             # 回调出错，尝试重试
@@ -383,13 +367,13 @@ class QueueConsumer:
             worker_id: 工作者ID
             output_queue: 输出队列
         """
-        logger.info(f"Worker {worker_id} started")
+        logger.debug(f"Worker {worker_id} started")
 
         try:
             while self._running:
                 # 检查停止信号
                 if self.stop_callback and self.stop_callback():
-                    logger.info(f"Worker {worker_id} received stop signal")
+                    logger.debug(f"Worker {worker_id} received stop signal")
                     break
 
                 # 检查队列状态
@@ -398,7 +382,7 @@ class QueueConsumer:
                     await asyncio.sleep(1)
                     continue
                 if state == RequestQueue.STATE_STOPPED:
-                    logger.info(f"Worker {worker_id} exiting: state is STOPPED")
+                    logger.debug(f"Worker {worker_id} exiting: state is STOPPED")
                     break
 
                 # 从队列取请求
@@ -412,10 +396,10 @@ class QueueConsumer:
                 if self.stop_callback and self.stop_callback():
                     # 放回队列，然后退出
                     await self.queue.push(request)
-                    logger.info(f"Worker {worker_id} returning request and stopping")
+                    logger.debug(f"Worker {worker_id} returning request and stopping")
                     break
 
-                logger.info(f"Worker {worker_id} processing: {request.url[:80]}")
+                logger.debug(f"Worker {worker_id} processing: {request.url}")
 
                 # 处理请求
                 try:
@@ -424,16 +408,16 @@ class QueueConsumer:
                 except asyncio.CancelledError:
                     # 任务被取消，放回请求并退出
                     await self.queue.push(request)
-                    logger.info(f"Worker {worker_id} cancelled, returning request")
+                    logger.debug(f"Worker {worker_id} cancelled, returning request")
                     raise
                 except Exception as e:
                     logger.error(f"Worker {worker_id} error: {e}")
 
         except asyncio.CancelledError:
-            logger.info(f"Worker {worker_id} cancelled")
+            logger.debug(f"Worker {worker_id} cancelled")
             raise
 
-        logger.info(f"Worker {worker_id} stopped")
+        logger.debug(f"Worker {worker_id} stopped")
 
     async def run(self) -> AsyncGenerator[Dict[str, Any], None]:
         """
@@ -465,7 +449,7 @@ class QueueConsumer:
                 for i in range(self.concurrency)
             ]
 
-            logger.info(f"Started {self.concurrency} workers (standing by)")
+            logger.debug(f"Started {self.concurrency} workers (standing by)")
 
             # 监控循环
             empty_count = 0
@@ -488,7 +472,7 @@ class QueueConsumer:
                     if not has_more:
                         empty_count += 1
                         if empty_count >= 3:  # 连续3次检测为空，认为完成
-                            logger.info(f"Queue empty and no more requests, stopping")
+                            logger.debug("Queue empty and no more requests, stopping")
                             break
                     else:
                         empty_count = 0
@@ -522,7 +506,7 @@ class QueueConsumer:
                     await self.queue.set_state(RequestQueue.STATE_STOPPED)
 
         except asyncio.CancelledError:
-            logger.info(f"Consumer cancelled for project {self.project_id}")
+            logger.debug(f"Consumer cancelled for project {self.project_id}")
             raise
 
         finally:

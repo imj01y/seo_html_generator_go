@@ -50,7 +50,6 @@ class GeneratorWorker:
         batch_size: int = 50,
         min_paragraph_length: int = 20,
         retry_max: int = 3,
-        log=None,
         on_complete=None,
     ):
         """
@@ -63,7 +62,7 @@ class GeneratorWorker:
             batch_size: 批量写入大小
             min_paragraph_length: 段落最小长度
             retry_max: 最大重试次数
-            log: 日志发布器（可选，用于发布实时日志到前端）
+            on_complete: 任务完成回调
         """
         self.db_pool = db_pool
         self.redis = redis_client
@@ -71,8 +70,7 @@ class GeneratorWorker:
         self.batch_size = batch_size
         self.min_paragraph_length = min_paragraph_length
         self.retry_max = retry_max
-        self.log = log  # 日志发布器
-        self.on_complete = on_complete  # 任务完成回调
+        self.on_complete = on_complete
 
         # 文本处理器（延迟初始化）
         self.annotator = None
@@ -467,16 +465,14 @@ class GeneratorWorker:
             # 更新今日处理量
             await self._update_daily_stats()
 
-            # 每处理 10 篇文章发布一次日志
-            if self.log and self._processed_count % 10 == 0:
-                await self.log.info(f"已处理 {self._processed_count} 篇文章")
+            # 每处理 10 篇文章打印一次日志
+            if self._processed_count % 10 == 0:
+                logger.info(f"已处理 {self._processed_count} 篇文章")
 
             return True
 
         except Exception as e:
             logger.error(f"Failed to process article {article_id}: {e}")
-            if self.log:
-                await self.log.error(f"处理文章 {article_id} 失败: {e}")
             return False
 
     async def _update_daily_stats(self):

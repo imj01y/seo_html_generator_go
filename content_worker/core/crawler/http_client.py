@@ -145,7 +145,7 @@ class AsyncHttpClient:
             except asyncio.CancelledError:
                 # 任务被取消，设置错误信息并向上传播
                 self.last_error = "请求已取消"
-                logger.info(f"Request cancelled: {url[:50]}")
+                logger.debug(f"Request cancelled: {url[:50]}")
                 raise
 
             except httpx.TimeoutException as e:
@@ -176,7 +176,7 @@ class AsyncHttpClient:
                 except asyncio.CancelledError:
                     # 等待期间被取消
                     self.last_error = "请求已取消"
-                    logger.info(f"Retry sleep cancelled: {url[:50]}")
+                    logger.debug(f"Retry sleep cancelled: {url[:50]}")
                     raise
 
         # 保存错误信息供调用方使用
