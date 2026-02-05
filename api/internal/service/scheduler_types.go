@@ -3,6 +3,7 @@ package core
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -114,6 +115,27 @@ func ParseRefreshTemplateParams(data json.RawMessage) (*RefreshTemplateParams, e
 	var params RefreshTemplateParams
 	if err := json.Unmarshal(data, &params); err != nil {
 		return nil, err
+	}
+	return &params, nil
+}
+
+// TaskTypeRunSpider 运行爬虫任务类型
+const TaskTypeRunSpider TaskType = "run_spider"
+
+// RunSpiderParams 运行爬虫参数
+type RunSpiderParams struct {
+	ProjectID   int    `json:"project_id"`
+	ProjectName string `json:"project_name"`
+}
+
+// ParseRunSpiderParams 解析运行爬虫参数
+func ParseRunSpiderParams(data json.RawMessage) (*RunSpiderParams, error) {
+	var params RunSpiderParams
+	if err := json.Unmarshal(data, &params); err != nil {
+		return nil, err
+	}
+	if params.ProjectID == 0 {
+		return nil, fmt.Errorf("project_id is required")
 	}
 	return &params, nil
 }
