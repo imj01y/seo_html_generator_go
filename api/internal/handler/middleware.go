@@ -47,8 +47,8 @@ func AuthMiddleware(secret string) gin.HandlerFunc {
 }
 
 // DependencyInjectionMiddleware 依赖注入中间件
-// 将数据库、Redis 连接和配置注入到 Gin context 中，供 Handler 使用
-func DependencyInjectionMiddleware(db *sqlx.DB, rdb *redis.Client, cfg *config.Config) gin.HandlerFunc {
+// 将数据库、Redis 连接、配置和调度器注入到 Gin context 中，供 Handler 使用
+func DependencyInjectionMiddleware(db *sqlx.DB, rdb *redis.Client, cfg *config.Config, scheduler *core.Scheduler) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if db != nil {
 			c.Set("db", db)
@@ -58,6 +58,9 @@ func DependencyInjectionMiddleware(db *sqlx.DB, rdb *redis.Client, cfg *config.C
 		}
 		if cfg != nil {
 			c.Set("config", cfg)
+		}
+		if scheduler != nil {
+			c.Set("scheduler", scheduler)
 		}
 		c.Next()
 	}
