@@ -482,6 +482,16 @@ func (m *PoolManager) GetImages(groupID int) []string {
 	return m.poolManager.GetImagePool().GetImages(groupID)
 }
 
+// GetImageGroupIDs 返回所有图片分组ID
+func (m *PoolManager) GetImageGroupIDs() []int {
+	groups := m.poolManager.GetImagePool().GetAllGroups()
+	ids := make([]int, 0, len(groups))
+	for gid := range groups {
+		ids = append(ids, gid)
+	}
+	return ids
+}
+
 // AppendImages 追加图片到内存（新增时调用）
 // 兼容层: 代理到 pool.ImagePool
 func (m *PoolManager) AppendImages(groupID int, urls []string) {
