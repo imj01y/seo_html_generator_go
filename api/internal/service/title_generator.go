@@ -12,9 +12,10 @@ import (
 
 // TitlePool 标题池（基于 channel）
 type TitlePool struct {
-	ch          chan string
-	groupID     int
-	memoryBytes atomic.Int64 // 内存占用追踪
+	ch            chan string
+	groupID       int
+	memoryBytes   atomic.Int64 // 内存占用追踪
+	consumedCount atomic.Int64 // 被消费的数量（Pop 计数）
 }
 
 // TitleGenerator 动态标题生成器
@@ -94,9 +95,12 @@ func (g *TitleGenerator) Pop(groupID int) (string, error) {
 	case title := <-pool.ch:
 		// 减少内存计数
 		pool.memoryBytes.Add(-StringMemorySize(title))
+		// 增加消费计数
+		pool.consumedCount.Add(1)
 		return title, nil
 	default:
-		// 池空，同步生成一个返回
+		// 池空，同步生成一个返回（也计入消费）
+		pool.consumedCount.Add(1)
 		return g.generateTitle(groupID), nil
 	}
 }
@@ -259,7 +263,7 @@ func (g *TitleGenerator) GetStats() map[int]map[string]int {
 }
 
 // GetTotalStats 获取汇总统计
-func (g *TitleGenerator) GetTotalStats() (current, maxSize int, memoryBytes int64) {
+func (g *TitleGenerator) GetTotalStats() (current, maxSize int, memoryBytes, consumedCount int64) {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 
@@ -267,6 +271,7 @@ func (g *TitleGenerator) GetTotalStats() (current, maxSize int, memoryBytes int6
 		current += len(pool.ch)
 		maxSize += g.config.TitlePoolSize
 		memoryBytes += pool.memoryBytes.Load()
+		consumedCount += pool.consumedCount.Load()
 	}
 	return
 }

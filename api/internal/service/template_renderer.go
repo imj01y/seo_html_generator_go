@@ -14,12 +14,10 @@ import (
 
 // TemplateRenderer handles template parsing and rendering
 type TemplateRenderer struct {
-	converter      *TemplateConverter
-	funcsManager   *TemplateFuncsManager
-	compiledCache  sync.Map // cache key -> *template.Template
-	fastRenderer   *FastRenderer
-	preloadContent string // Pre-loaded content for content() function
-	mu             sync.Mutex
+	converter     *TemplateConverter
+	funcsManager  *TemplateFuncsManager
+	compiledCache sync.Map // cache key -> *template.Template
+	fastRenderer  *FastRenderer
 }
 
 // RenderData holds data passed to templates
@@ -51,32 +49,15 @@ func NewTemplateRenderer(funcsManager *TemplateFuncsManager) *TemplateRenderer {
 	}
 }
 
-// SetPreloadContent sets the pre-loaded content for the content() function
-func (r *TemplateRenderer) SetPreloadContent(content string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.preloadContent = content
-}
-
-// GetPreloadContent gets and clears the pre-loaded content
-func (r *TemplateRenderer) GetPreloadContent() string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	content := r.preloadContent
-	r.preloadContent = ""
-	return content
-}
-
 // Render renders a Jinja2 template with the given data
-func (r *TemplateRenderer) Render(templateContent string, templateName string, data *RenderData) (string, error) {
+func (r *TemplateRenderer) Render(templateContent string, templateName string, data *RenderData, content string) (string, error) {
 	startTime := time.Now()
 
 	// Generate cache key from template content hash
 	hash := md5.Sum([]byte(templateContent))
 	cacheKey := hex.EncodeToString(hash[:])
 
-	// 获取预加载内容并设置到 data.Content（快速渲染和首次渲染都需要）
-	content := r.GetPreloadContent()
+	// 设置 content 到 data.Content
 	if data != nil {
 		data.Content = content
 	}

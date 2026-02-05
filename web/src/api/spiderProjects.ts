@@ -171,13 +171,6 @@ export async function getProjectFile(projectId: number, filename: string): Promi
   return res.data
 }
 
-export function createProjectFile(
-  projectId: number,
-  data: { filename: string; content: string }
-): Promise<MutationResponse> {
-  return request.post(`/spider-projects/${projectId}/files`, data)
-}
-
 export function updateProjectFile(projectId: number, filename: string, content: string): Promise<MutationResponse> {
   return request.put(`/spider-projects/${projectId}/files/${filename}`, { content })
 }
@@ -212,11 +205,16 @@ export async function createProjectItem(
   projectId: number,
   parentPath: string,
   name: string,
-  type: 'file' | 'dir'
+  type: 'file' | 'dir',
+  content?: string
 ): Promise<void> {
   const clean = cleanPath(parentPath)
   const url = clean ? `/spider-projects/${projectId}/files/${clean}` : `/spider-projects/${projectId}/files`
-  await request.post(url, { name, type })
+  const body: { name: string; type: string; content?: string } = { name, type }
+  if (content !== undefined) {
+    body.content = content
+  }
+  await request.post(url, body)
 }
 
 export async function deleteProjectItem(projectId: number, path: string): Promise<void> {
@@ -236,8 +234,8 @@ export function createSpiderEditorApi(projectId: number) {
     getFileTree: () => getProjectFileTree(projectId),
     getFile: (path: string) => getProjectFileByPath(projectId, path),
     saveFile: (path: string, content: string) => saveProjectFileByPath(projectId, path, content),
-    createItem: (parentPath: string, name: string, type: 'file' | 'dir') =>
-      createProjectItem(projectId, parentPath, name, type),
+    createItem: (parentPath: string, name: string, type: 'file' | 'dir', content?: string) =>
+      createProjectItem(projectId, parentPath, name, type, content),
     deleteItem: (path: string) => deleteProjectItem(projectId, path),
     moveItem: (oldPath: string, newPath: string) => moveProjectItem(projectId, oldPath, newPath)
   }

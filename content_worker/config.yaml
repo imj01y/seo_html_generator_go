@@ -1,0 +1,33 @@
+# 注意：此文件在 Docker 环境中会被根目录的 config.yaml 覆盖
+# 请编辑根目录的 config.yaml 来修改配置
+#
+# 本地开发时，此文件作为备用配置
+
+default:
+  database:
+    host: "localhost"
+    port: 3306
+    user: "root"
+    password: ""
+    database: "seo_generator"
+
+  redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    password: null
+
+  queues:
+    pending: "pending:articles"
+    retry: "pending:articles:retry"
+    dead: "pending:articles:dead"
+
+  channels:
+    pool_reload: "pool:reload"
+    spider_commands: "spider:commands"
+    worker_command: "worker:command"
+    processor_commands: "processor:commands"
+
+  intervals:
+    stats_update: 5
+    bloom_save: 300

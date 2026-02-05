@@ -1,282 +1,190 @@
-# 统一实时日志系统设计
+# 统一实时日志系统设计 - loguru sink + contextvars 方案
 
 ## 背景
 
 当前日志系统存在以下问题：
 
-1. **两套日志 API** - `loguru.logger` 和 `RedisLogger` 并存，使用混乱
-2. **冗余判断** - 代码中大量 `if self.log:` 条件判断
-3. **不一致** - 测试模式有 loguru sink 转发，正式运行没有
-4. **命名混淆** - `self.log` 容易和 `logger` 混淆
+1. **两套日志 API** - `loguru.logger` 和 `RealtimeLogger` 并存，使用混乱
+2. **核心模块日志丢失** - queue_consumer、http_client 等使用 loguru，日志不会发送到前端
+3. **手动调用冗余** - 需要显式调用 `log.info()` 而非 `logger.info()`
+4. **上下文传递麻烦** - 需要把 log 实例作为参数层层传递
 
 ## 目标
 
-1. **简单直观** - 像 loguru 一样，实例化后直接调用
+1. **零代码改动** - 核心模块无需修改，所有 `logger.xxx()` 自动发送到 Redis
 2. **双输出** - 控制台 + Redis 实时推送
-3. **实例隔离** - 不同实例对应不同 channel
-4. **无额外语法** - 不需要 async with、装饰器等
+3. **上下文隔离** - 不同任务的日志发送到不同 channel（spider:logs:test_1、processor:logs 等）
+4. **简洁 API** - 使用 `async with` 上下文管理器
 
 ## 设计方案
 
-### 核心类
+### 核心组件
 
 ```python
-class RealtimeLogger:
-    """
-    实时日志器 - 每个实例绑定一个 Redis channel
+# contextvars 实现异步上下文隔离
+_redis_ctx: ContextVar[Optional[Redis]] = ContextVar('_redis_ctx', default=None)
+_channel_ctx: ContextVar[Optional[str]] = ContextVar('_channel_ctx', default=None)
 
-    使用方式：
-        log = RealtimeLogger(redis, "spider:logs:project_1")
-        log.info("爬虫启动")      # → 控制台 + 前端
-        log.warning("重试中")     # → 控制台 + 前端
-        await log.end()           # 发送结束信号
-    """
+# 全局 loguru sink - 自动捕获所有日志
+def _redis_sink(message):
+    redis = _redis_ctx.get()
+    channel = _channel_ctx.get()
+    if redis and channel:
+        # 发送到 Redis
+        asyncio.create_task(redis.publish(channel, ...))
 
-    def __init__(self, redis, channel: str):
-        self.redis = redis
-        self.channel = channel
-        self._loop = None
+# 上下文管理器
+class RealtimeContext:
+    async def __aenter__(self):
+        _redis_ctx.set(self.redis)
+        _channel_ctx.set(self.channel)
 
-    def info(self, msg: str):
-        """INFO 级别日志"""
-        logger.opt(depth=1).info(msg)
-        self._publish("INFO", msg)
-
-    def warning(self, msg: str):
-        """WARNING 级别日志"""
-        logger.opt(depth=1).warning(msg)
-        self._publish("WARNING", msg)
-
-    def error(self, msg: str):
-        """ERROR 级别日志"""
-        logger.opt(depth=1).error(msg)
-        self._publish("ERROR", msg)
-
-    def debug(self, msg: str):
-        """DEBUG 级别日志"""
-        logger.opt(depth=1).debug(msg)
-        self._publish("DEBUG", msg)
-
-    def exception(self, msg: str):
-        """异常日志，自动附带堆栈"""
-        logger.opt(depth=1).exception(msg)
-        # 获取异常堆栈
-        exc_info = sys.exc_info()
-        if exc_info[0]:
-            tb_lines = traceback.format_exception(*exc_info)
-            msg = msg + "\n" + "".join(tb_lines)
-        self._publish("ERROR", msg)
-
-    def _get_loop(self):
-        """获取事件循环"""
-        if self._loop is None:
-            try:
-                self._loop = asyncio.get_running_loop()
-            except RuntimeError:
-                pass
-        return self._loop
-
-    def _publish(self, level: str, msg: str):
-        """同步方法，桥接到异步 Redis publish"""
-        loop = self._get_loop()
-        if not loop or not self.redis:
-            return
-
-        data = {
-            "type": "log",
-            "level": level,
-            "message": msg,
-            "timestamp": datetime.now().isoformat()
-        }
-
-        # 桥接同步到异步
-        loop.call_soon_threadsafe(
-            lambda: asyncio.create_task(
-                self.redis.publish(self.channel, json.dumps(data, ensure_ascii=False))
-            )
-        )
-
-    async def end(self):
-        """发送结束信号"""
-        data = {
-            "type": "end",
-            "timestamp": datetime.now().isoformat()
-        }
-        await self.redis.publish(self.channel, json.dumps(data, ensure_ascii=False))
-
-    async def item(self, data: dict):
-        """发送数据项（用于测试运行时展示数据）"""
-        msg = {
-            "type": "log",
-            "level": "ITEM",
-            "message": json.dumps(data, ensure_ascii=False),
-            "timestamp": datetime.now().isoformat()
-        }
-        await self.redis.publish(self.channel, json.dumps(msg, ensure_ascii=False))
+    async def __aexit__(self, ...):
+        await self.end()  # 自动发送 end 消息
+        # 重置 contextvars
 ```
 
 ### 架构图
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                    log = RealtimeLogger(redis, channel)          │
+│          async with RealtimeContext(redis, channel):             │
+│                    设置 contextvars                               │
 └──────────────────────────────────────────────────────────────────┘
                                   │
                                   ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                         log.info("msg")                          │
-│  ┌────────────────────────┐    ┌────────────────────────────┐   │
-│  │    logger.info(msg)    │    │   self._publish(level, msg) │   │
-│  │      (控制台输出)       │    │   (桥接到异步 Redis)        │   │
-│  └────────────────────────┘    └────────────────────────────┘   │
+│                    logger.info("message")                         │
+│               任何模块、任何深度的调用都会被捕获                     │
 └──────────────────────────────────────────────────────────────────┘
-         │                                    │
-         ▼                                    ▼
-    ┌─────────┐                    ┌───────────────────┐
-    │  控制台  │                    │   Redis Pub/Sub   │
-    └─────────┘                    │  (指定 channel)   │
-                                   └───────────────────┘
-                                             │
-                                             ▼
-                                   ┌───────────────────┐
-                                   │  Go API WebSocket │
-                                   └───────────────────┘
-                                             │
-                                             ▼
-                                   ┌───────────────────┐
-                                   │       前端        │
-                                   └───────────────────┘
+                                  │
+          ┌───────────────────────┴───────────────────────┐
+          ▼                                               ▼
+┌───────────────────┐                    ┌───────────────────────────┐
+│    控制台输出      │                    │     _redis_sink()         │
+│  (loguru 默认)    │                    │  读取 contextvars         │
+└───────────────────┘                    │  发送到 Redis channel     │
+                                         └───────────────────────────┘
+                                                      │
+                                                      ▼
+                                         ┌───────────────────────────┐
+                                         │     Redis Pub/Sub         │
+                                         │   (spider:logs:test_1)    │
+                                         └───────────────────────────┘
+                                                      │
+                                                      ▼
+                                         ┌───────────────────────────┐
+                                         │    Go API WebSocket       │
+                                         └───────────────────────────┘
+                                                      │
+                                                      ▼
+                                         ┌───────────────────────────┐
+                                         │         前端              │
+                                         └───────────────────────────┘
 ```
 
-## 使用方式
+## API 接口
 
-### 爬虫正式运行
+### 1. 初始化（应用启动时调用一次）
 
 ```python
-from core.realtime_logger import RealtimeLogger
+from core.realtime_logger import init_realtime_sink
+
+# 在 start() 中调用
+init_realtime_sink()
+```
+
+### 2. 短期任务（爬虫运行/测试）
+
+```python
+from core.realtime_logger import RealtimeContext
+from loguru import logger
 
 async def run_spider(project_id: int):
-    log = RealtimeLogger(redis, f"spider:logs:project_{project_id}")
+    async with RealtimeContext(redis, f"spider:logs:project_{project_id}"):
+        logger.info("爬虫启动")  # 自动发送到 Redis
 
-    log.info("爬虫启动")
-    log.info(f"并发数: {concurrency}")
+        async for item in runner.run():
+            # queue_consumer、http_client 的日志也会自动发送
+            logger.debug(f"获取: {item['title'][:20]}")
 
-    async for item in runner.run():
-        log.debug(f"获取: {item['title'][:20]}")
-
-    log.info("爬虫完成")
-    await log.end()
+        logger.info("爬虫完成")
+    # 退出时自动发送 end 消息
 ```
+
+### 3. 长期服务（数据加工 processor）
+
+```python
+from core.realtime_logger import set_realtime_context, clear_realtime_context, init_realtime_sink
+from loguru import logger
+
+async def start():
+    init_realtime_sink()
+    set_realtime_context(redis, "processor:logs")  # 设置持久上下文
+
+    logger.info("Processor 启动")  # 自动发送到 processor:logs
+    # ... 长期运行 ...
+
+async def stop():
+    logger.info("Processor 停止")
+    clear_realtime_context()  # 清除上下文
+```
+
+### 4. 发送特殊消息
+
+```python
+from core.realtime_logger import send_end, send_item
+
+# 在上下文外部发送 end（如 stop_test）
+await send_end(redis, f"spider:logs:test_{project_id}")
+
+# 在上下文内部发送数据项
+async with RealtimeContext(redis, channel) as ctx:
+    await ctx.item({"title": "xxx", "content": "xxx"})
+```
+
+## 使用示例
 
 ### 爬虫测试运行
 
 ```python
-async def test_spider(project_id: int):
-    log = RealtimeLogger(redis, f"spider:logs:test_{project_id}")
+async def test_project(self, project_id: int, max_items: int = 0):
+    channel = f"spider:logs:test_{project_id}"
 
-    log.info("开始测试运行")
+    async with RealtimeContext(self.rdb, channel) as ctx:
+        logger.info(f"开始测试运行...")
 
-    async for item in runner.run():
-        log.info(f"获取: {item['title'][:30]}")
-        await log.item(item)  # 发送数据供前端展示
+        # queue_consumer.py 中的 logger.warning() 也会发送到前端
+        # http_client.py 中的 logger.error() 也会发送到前端
 
-    log.info("测试完成")
-    await log.end()
+        async for item in runner.run():
+            logger.info(f"[{items_count}] {item['title'][:50]}")
+            await ctx.item(item)  # 发送数据项
+
+        logger.info(f"测试完成")
+    # 自动发送 end
 ```
 
 ### 数据加工
 
 ```python
-async def process_articles():
-    log = RealtimeLogger(redis, "processor:logs")
+async def start(self):
+    init_realtime_sink()
+    set_realtime_context(self.rdb, "processor:logs")
 
-    log.info("开始处理文章")
-
-    for i, article in enumerate(articles):
-        if i % 100 == 0:
-            log.info(f"已处理 {i} 篇")
-
-    log.info("处理完成")
-    await log.end()
-```
-
-### 异常处理
-
-```python
-async def run_task():
-    log = RealtimeLogger(redis, "task:logs")
-
-    try:
-        log.info("任务开始")
-        # ... 业务逻辑
-    except Exception as e:
-        log.exception(f"任务异常: {e}")  # 自动附带堆栈
-    finally:
-        await log.end()
+    logger.info("数据加工管理器启动")
+    # 所有后续的 logger 调用都会发送到 processor:logs
 ```
 
 ## 文件结构
 
 ```
 content_worker/core/
-├── realtime_logger.py      # 新增：统一实时日志模块
+├── realtime_logger.py      # loguru sink + contextvars 实现
 └── workers/
-    ├── command_listener.py # 修改：使用新日志模块，删除 RedisLogger 类
-    ├── generator_worker.py # 修改：删除 self.log 参数
-    └── logger_protocol.py  # 删除：不再需要
+    ├── command_listener.py # 使用 RealtimeContext
+    └── generator_manager.py # 使用 set_realtime_context
 ```
-
-## 迁移计划
-
-### 1. 新增 realtime_logger.py
-
-创建 `content_worker/core/realtime_logger.py`
-
-### 2. 修改 command_listener.py
-
-**删除：**
-- `RedisLogger` 类定义
-- `test_project()` 中的 `log_sink` 和 `handler_id` 管理
-
-**修改：**
-```python
-# 之前
-log = RedisLogger(self.rdb, project_id, "project")
-await log.info("正在加载项目...")
-
-# 之后
-from core.realtime_logger import RealtimeLogger
-log = RealtimeLogger(self.rdb, f"spider:logs:project_{project_id}")
-log.info("正在加载项目...")
-```
-
-### 3. 修改 project_runner.py
-
-**删除：**
-- `__init__` 中的 `log` 参数
-- `self.log = log`
-- 所有 `if self.log:` 判断
-
-**修改：**
-- 直接使用 `logger.info()` 输出到控制台（不推送到前端）
-- 或者在需要时传入 `RealtimeLogger` 实例
-
-### 4. 修改 queue_consumer.py
-
-**删除：**
-- `__init__` 中的 `log` 参数
-- `self.log = log`
-
-### 5. 修改 generator_worker.py
-
-**删除：**
-- `__init__` 中的 `log` 参数
-- `self.log = log`
-- 所有 `if self.log:` 判断
-
-### 6. 删除 logger_protocol.py
-
-不再需要这个协议定义文件。
 
 ## Redis Channel 规范
 
@@ -319,22 +227,19 @@ log.info("正在加载项目...")
 }
 ```
 
-## Go API 无需修改
+## 与旧方案对比
 
-当前 Go API 的 WebSocket 处理（`websocket.go`）已经通过 `subscribeAndForward` 订阅 Redis channel 并转发到前端，无需修改。
-
-## 与 loguru 的对比
-
-| 特性 | loguru | RealtimeLogger |
-|------|--------|----------------|
-| 实例化 | `from loguru import logger` | `log = RealtimeLogger(redis, channel)` |
-| 调用方式 | `logger.info(msg)` | `log.info(msg)` |
-| 输出目标 | 控制台/文件 | 控制台 + Redis |
-| 实例隔离 | 通过 bind | 通过不同实例 |
+| 特性 | 旧方案 (RealtimeLogger) | 新方案 (loguru sink + contextvars) |
+|------|------------------------|-----------------------------------|
+| 核心模块日志 | ❌ 不发送到前端 | ✅ 自动发送 |
+| 代码改动 | 需要传递 log 实例 | 零改动，使用标准 logger |
+| 深层调用日志 | ❌ 丢失 | ✅ 自动捕获 |
+| 上下文管理 | 手动管理 | 自动管理 |
+| 日志隔离 | 通过实例 | 通过 contextvars |
 
 ## 注意事项
 
-1. **info/warning/error/debug 是同步方法**，内部桥接到异步，可以在任何地方调用
-2. **end() 是异步方法**，需要 `await log.end()`
-3. **item() 是异步方法**，需要 `await log.item(data)`
-4. **logger.opt(depth=1)** 确保控制台日志显示正确的调用位置
+1. **init_realtime_sink() 是幂等的**，可以多次调用
+2. **RealtimeContext 自动发送 end**，退出时无需手动调用
+3. **set_realtime_context 用于长期服务**，不会自动发送 end
+4. **contextvars 在异步任务间自动传播**，子任务会继承父任务的上下文

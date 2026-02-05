@@ -2,14 +2,26 @@
 """
 拼音标注器
 
-实现 IAnnotator 接口，为汉字添加拼音标注。
+为汉字添加拼音标注。
 """
 
 import re
+from abc import ABC, abstractmethod
 from typing import List, Optional
 from loguru import logger
 
-from core.generators.interface import IAnnotator
+
+class IAnnotator(ABC):
+    """拼音标注器接口"""
+
+    @abstractmethod
+    def annotate(self, text: str) -> str:
+        """对文本添加拼音标注"""
+        pass
+
+    def annotate_batch(self, texts: List[str]) -> List[str]:
+        """批量标注"""
+        return [self.annotate(text) for text in texts]
 
 try:
     from pypinyin import pinyin, Style
@@ -108,57 +120,6 @@ class PinyinAnnotator(IAnnotator):
                     result.append(f"({punctuation_names[char]})")
 
         return ''.join(result)
-
-    def annotate_batch(self, texts: List[str]) -> List[str]:
-        """
-        批量标注
-
-        Args:
-            texts: 文本列表
-
-        Returns:
-            标注后的文本列表
-        """
-        return [self.annotate(text) for text in texts]
-
-    def remove_annotations(self, text: str) -> str:
-        """
-        移除拼音标注
-
-        Args:
-            text: 带标注的文本
-
-        Returns:
-            移除标注后的原文
-        """
-        # 移除 (xxx) 格式的标注
-        pattern = re.compile(r'\([a-z]+\)')
-        return pattern.sub('', text)
-
-    def get_pinyin_only(self, text: str) -> str:
-        """
-        只获取拼音（不含汉字）
-
-        Args:
-            text: 原始文本
-
-        Returns:
-            空格分隔的拼音
-        """
-        if pinyin is None or not text:
-            return ""
-
-        result = []
-        for char in text:
-            if self.CHINESE_PATTERN.match(char):
-                try:
-                    py = pinyin(char, style=self.style, heteronym=False)
-                    if py and py[0]:
-                        result.append(py[0][0])
-                except Exception:
-                    pass
-
-        return ' '.join(result)
 
 
 # 全局拼音标注器实例

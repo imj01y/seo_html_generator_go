@@ -32,12 +32,13 @@ type PoolItem struct {
 
 // MemoryPool is a thread-safe FIFO queue for pool items
 type MemoryPool struct {
-	items       []PoolItem
-	mu          sync.RWMutex
-	groupID     int
-	poolType    string // "titles" or "contents"
-	maxSize     int
-	memoryBytes atomic.Int64 // 内存占用追踪
+	items         []PoolItem
+	mu            sync.RWMutex
+	groupID       int
+	poolType      string // "titles" or "contents"
+	maxSize       int
+	memoryBytes   atomic.Int64 // 内存占用追踪
+	consumedCount atomic.Int64 // 被消费的数量（Pop 计数）
 }
 
 // NewMemoryPool creates a new memory pool
@@ -64,6 +65,8 @@ func (p *MemoryPool) Pop() (PoolItem, bool) {
 
 	// 减少内存计数
 	p.memoryBytes.Add(-StringMemorySize(item.Text))
+	// 增加消费计数
+	p.consumedCount.Add(1)
 
 	return item, true
 }
@@ -150,4 +153,9 @@ func (p *MemoryPool) GetMaxSize() int {
 // MemoryBytes returns the memory usage in bytes
 func (p *MemoryPool) MemoryBytes() int64 {
 	return p.memoryBytes.Load()
+}
+
+// ConsumedCount returns the number of items consumed (popped) from the pool
+func (p *MemoryPool) ConsumedCount() int64 {
+	return p.consumedCount.Load()
 }

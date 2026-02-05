@@ -28,12 +28,11 @@ from .spider import Spider
 from .request import Request
 from .response import Response
 from .http_client import AsyncHttpClient
-from .task_lock import DistributedLock, CrawlTaskLock
 from .project_loader import ProjectLoader
-from .project_runner import ProjectRunner, ProjectCodeValidator
+from .project_runner import ProjectRunner
 from .request_queue import RequestQueue, QueueStats
 from .queue_consumer import QueueConsumer
-from .failed_manager import FailedRequestManager, FailedRequest
+from .failed_manager import FailedRequestManager
 
 __all__ = [
     # 核心类（用户使用）
@@ -43,16 +42,11 @@ __all__ = [
     # 项目管理
     'ProjectLoader',
     'ProjectRunner',
-    'ProjectCodeValidator',
     # HTTP
     'AsyncHttpClient',
-    # 分布式锁
-    'DistributedLock',
-    'CrawlTaskLock',
     # 队列模式
     'RequestQueue',
     'QueueStats',
     'QueueConsumer',
     'FailedRequestManager',
-    'FailedRequest',
 ]

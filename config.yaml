@@ -94,6 +94,24 @@ default:
     compress: true
     compress_level: 6
 
+  # Redis 队列配置（Worker 使用）
+  queues:
+    pending: "pending:articles"
+    retry: "pending:articles:retry"
+    dead: "pending:articles:dead"
+
+  # Redis 频道配置（Worker 使用）
+  channels:
+    pool_reload: "pool:reload"
+    spider_commands: "spider:commands"
+    worker_command: "worker:command"
+    processor_commands: "processor:commands"
+
+  # 时间间隔配置（秒）
+  intervals:
+    stats_update: 5
+    bloom_save: 300
+
   # 数据库配置（默认值，可被环境特定配置覆盖）
   database:
     host: "localhost"

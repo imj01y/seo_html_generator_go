@@ -194,7 +194,7 @@ class QueueConsumer:
             if body is None:
                 logger.debug(f"Fetch failed: {request.url}")
                 error_msg = self.http_client.last_error or '未知错误'
-                logger.warning(f"请求失败: {request.url[:80]} - {error_msg}")
+                logger.warning(f"请求失败: {request.url} - {error_msg}")
                 return None
 
             response = Response.from_request(
@@ -343,7 +343,7 @@ class QueueConsumer:
 
         except Exception as e:
             # logger.exception 会输出完整堆栈，全局 sink 会转发到前端
-            logger.exception(f"Callback error for {request.url[:80]}")
+            logger.exception(f"Callback error for {request.url} {e}")
             # 调用 Spider 的异常回调
             self.spider.exception_request(request, response, e)
             # 回调出错，尝试重试
@@ -521,11 +521,6 @@ class QueueConsumer:
                 await asyncio.gather(*workers, return_exceptions=True)
 
             logger.info(f"Consumer finished for project {self.project_id}")
-
-    async def stop(self) -> None:
-        """停止消费器"""
-        self._running = False
-        await self.queue.stop(clear_queue=False)
 
     async def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

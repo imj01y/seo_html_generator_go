@@ -216,7 +216,11 @@ func (h *SpiderFilesHandler) CreateItem(c *gin.Context) {
 	// 创建
 	content := ""
 	if req.Type == "file" {
-		content = "# " + req.Name + "\n"
+		if req.Content != "" {
+			content = req.Content
+		} else {
+			content = "# " + req.Name + "\n"
+		}
 	}
 
 	result, err := sqlxDB.Exec(`

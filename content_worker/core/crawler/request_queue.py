@@ -137,22 +137,6 @@ class RequestQueue:
         logger.debug(f"Request pushed: {request.url}, priority={request.priority}")
         return True
 
-    async def push_many(self, requests: list) -> int:
-        """
-        批量入队
-
-        Args:
-            requests: 请求列表
-
-        Returns:
-            int: 成功入队数量
-        """
-        count = 0
-        for request in requests:
-            if await self.push(request):
-                count += 1
-        return count
-
     async def pop(self) -> Optional[Request]:
         """
         从队列取出一个请求
@@ -426,17 +410,6 @@ class RequestQueue:
         """递增回调请求入队计数，返回新值"""
         return await self.redis.incr(self._key_queued_count)
 
-    async def is_url_completed(self, url: str) -> bool:
-        """检查 URL 是否已完成（用于断点续抓）"""
-        # 创建一个临时 Request 来获取 fingerprint
-        temp_request = Request(url=url)
-        fingerprint = temp_request.fingerprint()
-        return await self.redis.sismember(self._key_completed, fingerprint)
-
     async def get_pending_count(self) -> int:
         """获取待处理请求数量"""
         return await self.redis.zcard(self._key_pending)
-
-    async def get_processing_count(self) -> int:
-        """获取处理中请求数量"""
-        return await self.redis.hlen(self._key_processing)

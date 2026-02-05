@@ -21,6 +21,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 from loguru import logger
 
+from config import settings
 from core.dedup import ContentDeduplicator
 from core.processors import PinyinAnnotator, TextCleaner
 
@@ -37,10 +38,10 @@ class GeneratorWorker:
     5. 失败时放入重试队列，超过重试次数放入死信队列
     """
 
-    # 队列键名
-    QUEUE_PENDING = "pending:articles"
-    QUEUE_RETRY = "pending:articles:retry"
-    QUEUE_DEAD = "pending:articles:dead"
+    # 队列键名（从配置读取）
+    QUEUE_PENDING = settings.queues.pending
+    QUEUE_RETRY = settings.queues.retry
+    QUEUE_DEAD = settings.queues.dead
 
     def __init__(
         self,
@@ -189,14 +190,6 @@ class GeneratorWorker:
         except Exception as e:
             logger.error(f"Failed to pop article from queue: {e}")
             return None
-
-    async def get_pending_count(self) -> int:
-        """获取待处理队列长度"""
-        try:
-            return await self.redis.llen(self.QUEUE_PENDING)
-        except Exception as e:
-            logger.error(f"Failed to get queue size: {e}")
-            return 0
 
     # ============================================
     # 重试逻辑
@@ -523,39 +516,6 @@ class GeneratorWorker:
             if self.on_complete:
                 await self.on_complete()
             return False
-
-    async def run_once(self, count: int = 100) -> int:
-        """
-        执行一次处理
-
-        Args:
-            count: 要处理的文章数量
-
-        Returns:
-            成功处理的数量
-        """
-        await self.start()
-
-        processed = 0
-        try:
-            for _ in range(count):
-                # 从队列取文章ID
-                article_id = await self.pop_article_id(timeout=1)
-                if article_id is None:
-                    # 队列为空，退出
-                    break
-
-                if await self.process_with_retry(article_id):
-                    processed += 1
-
-            # 刷新缓冲区
-            await self._flush_title_buffer()
-            await self._flush_content_buffer()
-
-        finally:
-            await self.stop()
-
-        return processed
 
     async def run_forever(self, wait_interval: float = 5.0, stop_event: Optional[asyncio.Event] = None, group_id: int = 1) -> None:
         """

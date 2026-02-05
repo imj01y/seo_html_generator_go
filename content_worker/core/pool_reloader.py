@@ -14,6 +14,7 @@ from typing import Any, Dict, Optional
 
 from loguru import logger
 
+from config import settings
 from core.redis_client import get_redis_client
 
 
@@ -37,7 +38,7 @@ class PoolReloader:
 
         self._running = True
         self._task = asyncio.create_task(self._listen())
-        logger.info("Pool reloader started, listening on pool:reload channel")
+        logger.info(f"Pool reloader started, listening on {settings.channels.pool_reload} channel")
 
     async def stop(self):
         """停止监听"""
@@ -56,7 +57,7 @@ class PoolReloader:
         pubsub = None
         try:
             pubsub = self._redis.pubsub()
-            await pubsub.subscribe("pool:reload")
+            await pubsub.subscribe(settings.channels.pool_reload)
 
             async for message in pubsub.listen():
                 if not self._running:
@@ -71,7 +72,7 @@ class PoolReloader:
         finally:
             if pubsub:
                 try:
-                    await pubsub.unsubscribe("pool:reload")
+                    await pubsub.unsubscribe(settings.channels.pool_reload)
                 except Exception:
                     pass
 

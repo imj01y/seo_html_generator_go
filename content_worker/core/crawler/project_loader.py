@@ -7,7 +7,6 @@
 
 import sys
 import types
-import importlib.util
 from typing import Dict, Any, Optional
 from loguru import logger
 
@@ -182,19 +181,3 @@ class ProjectLoader:
             raise ValueError(f"语法错误 第 {e.lineno} 行: {e.msg}")
 
         return module
-
-    def get_module(self, name: str) -> Optional[types.ModuleType]:
-        """获取指定名称的模块"""
-        return self._modules.get(name)
-
-    def cleanup(self):
-        """清理加载的模块"""
-        package_name = f"spider_project_{self.project_id}"
-
-        # 从 sys.modules 中移除
-        for module_name in list(self._modules.keys()):
-            full_name = f"{package_name}.{module_name}"
-            sys.modules.pop(full_name, None)
-
-        sys.modules.pop(package_name, None)
-        self._modules.clear()

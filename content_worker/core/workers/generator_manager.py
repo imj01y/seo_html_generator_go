@@ -13,10 +13,11 @@ from typing import Dict, List, Optional
 
 from loguru import logger
 
+from config import settings
 from database.db import fetch_one, fetch_all, get_db_pool
 from core.redis_client import get_redis_client
 from core.workers.generator_worker import GeneratorWorker
-from core.realtime_logger import RealtimeLogger
+from core.realtime_logger import init_realtime_sink, set_realtime_context, clear_realtime_context
 
 
 class GeneratorManager:
@@ -42,8 +43,6 @@ class GeneratorManager:
         # 速度计算
         self._last_processed_count = 0
         self._last_stats_time = None
-        # 日志发布器
-        self.log: Optional[RealtimeLogger] = None
         # 最后错误信息
         self._last_error: Optional[str] = None
 
@@ -91,19 +90,20 @@ class GeneratorManager:
             logger.error("Redis 未初始化，无法启动数据加工管理器")
             return
 
-        # 初始化日志发布器
-        self.log = RealtimeLogger(self.rdb, "processor:logs")
+        # 初始化全局 Redis sink 并设置持久化上下文
+        init_realtime_sink()
+        set_realtime_context(self.rdb, "processor:logs")
 
         if not self.db_pool:
-            self.log.error("数据库未初始化，无法启动数据加工管理器")
+            logger.error("数据库未初始化，无法启动数据加工管理器")
             return
 
         # 加载配置
         self.config = await self.load_config()
-        self.log.info(f"数据加工管理器配置: {self.config}")
+        logger.info(f"数据加工管理器配置: {self.config}")
 
         if not self.config.get('enabled', True):
-            self.log.info("数据加工已禁用，不启动 Worker")
+            logger.info("数据加工已禁用，不启动 Worker")
             # 仍然监听命令，以便可以通过命令启动
             await self.listen_commands()
             return
@@ -120,11 +120,11 @@ class GeneratorManager:
     async def _start_workers(self):
         """启动 Worker 协程"""
         if self.running:
-            self.log.warning("Workers 已在运行中")
+            logger.warning("Workers 已在运行中")
             return
 
         concurrency = self.config.get('concurrency', 3)
-        self.log.info(f"启动 {concurrency} 个数据加工 Worker...")
+        logger.info(f"启动 {concurrency} 个数据加工 Worker...")
 
         self.running = True
         self._stop_event.clear()
@@ -148,7 +148,7 @@ class GeneratorManager:
 
         # 更新状态
         await self._update_status()
-        self.log.info(f"已启动 {len(self.workers)} 个数据加工 Worker")
+        logger.info(f"已启动 {len(self.workers)} 个数据加工 Worker")
 
     async def _run_worker(self, worker: GeneratorWorker, index: int):
         """运行单个 Worker"""
@@ -168,7 +168,7 @@ class GeneratorManager:
         if not self.running:
             return
 
-        self.log.info("正在停止数据加工 Workers...")
+        logger.info("正在停止数据加工 Workers...")
         self.running = False
         self._stop_event.set()
 
@@ -194,20 +194,25 @@ class GeneratorManager:
 
         # 更新状态
         await self._update_status()
-        self.log.info("数据加工 Workers 已停止")
+        logger.info("数据加工 Workers 已停止")
+
+        # 清除持久化上下文
+        clear_realtime_context()
 
     async def reload_config(self):
         """重新加载配置"""
         old_config = self.config.copy()
         self.config = await self.load_config()
 
-        self.log.info(f"配置已重新加载: {self.config}")
+        logger.info(f"配置已重新加载: {self.config}")
 
         # 如果并发数改变，重启 Workers
         if old_config.get('concurrency') != self.config.get('concurrency'):
-            self.log.info("并发数已改变，重启 Workers...")
+            logger.info("并发数已改变，重启 Workers...")
             await self.stop()
             if self.config.get('enabled', True):
+                # 重新设置上下文（stop 中会清除）
+                set_realtime_context(self.rdb, "processor:logs")
                 await self._start_workers()
 
         # 更新 Worker 配置
@@ -224,7 +229,7 @@ class GeneratorManager:
         logger.info("数据加工管理器开始监听命令...")
 
         pubsub = self.rdb.pubsub()
-        await pubsub.subscribe("processor:commands")
+        await pubsub.subscribe(settings.channels.processor_commands)
 
         try:
             async for message in pubsub.listen():
@@ -240,12 +245,12 @@ class GeneratorManager:
         except asyncio.CancelledError:
             pass
         finally:
-            await pubsub.unsubscribe("processor:commands")
+            await pubsub.unsubscribe(settings.channels.processor_commands)
 
     async def handle_command(self, cmd: dict):
         """处理命令"""
         action = cmd.get("action")
-        self.log.info(f"收到数据加工命令: {action}")
+        logger.info(f"收到数据加工命令: {action}")
 
         if action == "start":
             if not self.running:
@@ -254,7 +259,7 @@ class GeneratorManager:
                 if not self._stats_task or self._stats_task.done():
                     self._stats_task = asyncio.create_task(self._update_stats_loop())
             else:
-                self.log.info("Workers 已在运行中")
+                logger.info("Workers 已在运行中")
 
         elif action == "stop":
             await self.stop()
@@ -285,9 +290,9 @@ class GeneratorManager:
 
         try:
             # 查询队列长度
-            queue_pending = await self.rdb.llen("pending:articles")
-            queue_retry = await self.rdb.llen("pending:articles:retry")
-            queue_dead = await self.rdb.llen("pending:articles:dead")
+            queue_pending = await self.rdb.llen(settings.queues.pending)
+            queue_retry = await self.rdb.llen(settings.queues.retry)
+            queue_dead = await self.rdb.llen(settings.queues.dead)
 
             # 汇总所有 Worker 统计
             total_processed = 0
@@ -392,19 +397,11 @@ class GeneratorManager:
                 }
                 await self.rdb.hset("processor:stats", mapping=stats_data)
 
-                # 每 5 秒更新一次
-                await asyncio.sleep(5)
+                # 定期更新
+                await asyncio.sleep(settings.intervals.stats_update)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error(f"更新统计失败: {e}")
-                await asyncio.sleep(5)
-
-    def get_status(self) -> Dict:
-        """获取当前状态"""
-        return {
-            'running': self.running,
-            'workers': len(self.workers),
-            'config': self.config,
-        }
+                await asyncio.sleep(settings.intervals.stats_update)

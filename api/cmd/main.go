@@ -236,7 +236,7 @@ func main() {
 			}
 			// 触发模板编译和快速渲染器初始化
 			_, err := pageHandler.GetTemplateRenderer().Render(
-				tmpl.Content, tmpl.Name, dummyData)
+				tmpl.Content, tmpl.Name, dummyData, "")
 			if err != nil {
 				log.Warn().
 					Err(err).

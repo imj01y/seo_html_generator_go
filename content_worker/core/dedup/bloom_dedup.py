@@ -100,10 +100,6 @@ class BloomDeduplicator:
         self._count += 1
         return True
 
-    def add_if_new(self, content: str) -> bool:
-        """如果不存在则添加，返回是否成功添加（add 的别名）"""
-        return self.add(content)
-
     async def save_to_redis(self):
         """持久化到 Redis"""
         if not self._dirty:
@@ -251,15 +247,6 @@ class ContentDeduplicator:
         self._initialized = False
         logger.info("Content deduplicator cleanup completed")
 
-    def should_crawl(self, url: str) -> bool:
-        """
-        检查 URL 是否应该抓取
-
-        Returns:
-            True=新URL应该抓取，False=已抓取过跳过
-        """
-        return self.url_dedup.add_if_new(url)
-
     def should_save_title(self, title: str) -> bool:
         """
         检查标题是否应该保存
@@ -269,78 +256,7 @@ class ContentDeduplicator:
         """
         if not title or not title.strip():
             return False
-        return self.title_dedup.add_if_new(title)
-
-    async def push_paragraph(self, content: str) -> bool:
-        """
-        段落入队（去重后）
-
-        Returns:
-            True=新段落已入队，False=重复段落已丢弃
-        """
-        if not content or not content.strip():
-            return False
-
-        if self.para_dedup.add_if_new(content):
-            await self.redis.rpush(self.queue_key, content.encode('utf-8'))
-            return True
-        return False
-
-    async def push_paragraphs(self, contents: List[str]) -> int:
-        """
-        批量段落入队
-
-        Returns:
-            成功入队的数量
-        """
-        count = 0
-        for content in contents:
-            if await self.push_paragraph(content):
-                count += 1
-        return count
-
-    async def pop_paragraph(self) -> Optional[str]:
-        """
-        取出一个段落（取出即删除）
-
-        Returns:
-            段落内容，队列为空返回 None
-        """
-        result = await self.redis.lpop(self.queue_key)
-        if result:
-            return result.decode('utf-8') if isinstance(result, bytes) else result
-        return None
-
-    async def pop_paragraphs(self, count: int) -> List[str]:
-        """
-        批量取出段落（取出即删除）
-
-        Args:
-            count: 要取出的数量
-
-        Returns:
-            段落列表
-        """
-        if count <= 0:
-            return []
-
-        # 使用 pipeline 批量操作
-        pipe = self.redis.pipeline()
-        for _ in range(count):
-            pipe.lpop(self.queue_key)
-        results = await pipe.execute()
-
-        paragraphs = []
-        for r in results:
-            if r:
-                text = r.decode('utf-8') if isinstance(r, bytes) else r
-                paragraphs.append(text)
-
-        return paragraphs
-
-    async def get_queue_size(self) -> int:
-        """获取段落队列长度"""
-        return await self.redis.llen(self.queue_key)
+        return self.title_dedup.add(title)
 
     def get_stats(self) -> Dict[str, Any]:
         """获取统计信息"""

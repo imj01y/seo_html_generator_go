@@ -218,7 +218,7 @@ import {
   createProject,
   updateProject,
   getProjectFiles,
-  createProjectFile,
+  createProjectItem,
   updateProjectFile,
   testProject,
   stopTestProject,
@@ -391,13 +391,18 @@ async function saveContentSilently() {
     })
 
     const serverFiles = await getProjectFiles(projectId.value)
-    const serverFileNames = new Set(serverFiles.map(f => f.filename))
+    // API 返回 path 字段（如 "/spider.py"），需要提取文件名
+    const serverFileNames = new Set(serverFiles.map(f => {
+      const path = f.path || f.filename || ''
+      return path.startsWith('/') ? path.slice(1) : path
+    }))
 
     for (const file of files.value) {
       if (serverFileNames.has(file.filename)) {
         await updateProjectFile(projectId.value, file.filename, file.content)
       } else {
-        await createProjectFile(projectId.value, { filename: file.filename, content: file.content })
+        // 创建文件并写入内容
+        await createProjectItem(projectId.value, '/', file.filename, 'file', file.content)
       }
     }
 
@@ -678,7 +683,11 @@ async function handleSave() {
 
       // 获取服务器上已有的文件列表
       const serverFiles = await getProjectFiles(projectId.value!)
-      const serverFileNames = new Set(serverFiles.map(f => f.filename))
+      // API 返回 path 字段（如 "/spider.py"），需要提取文件名
+      const serverFileNames = new Set(serverFiles.map(f => {
+        const path = f.path || f.filename || ''
+        return path.startsWith('/') ? path.slice(1) : path
+      }))
 
       // 更新所有文件
       for (const file of files.value) {
@@ -686,11 +695,8 @@ async function handleSave() {
           // 服务器上已有此文件，更新
           await updateProjectFile(projectId.value!, file.filename, file.content)
         } else {
-          // 服务器上没有此文件，创建
-          await createProjectFile(projectId.value!, {
-            filename: file.filename,
-            content: file.content
-          })
+          // 服务器上没有此文件，创建并写入内容
+          await createProjectItem(projectId.value!, '/', file.filename, 'file', file.content)
         }
       }
 

@@ -125,8 +125,9 @@ type SpiderTreeNode struct {
 
 // SpiderCreateItemRequest 创建文件或目录请求
 type SpiderCreateItemRequest struct {
-	Name string `json:"name" binding:"required"`
-	Type string `json:"type" binding:"required,oneof=file dir"`
+	Name    string `json:"name" binding:"required"`
+	Type    string `json:"type" binding:"required,oneof=file dir"`
+	Content string `json:"content"` // 可选，仅对 file 类型有效
 }
 
 // SpiderMoveRequest 移动/重命名请求

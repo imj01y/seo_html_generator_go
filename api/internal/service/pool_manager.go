@@ -115,7 +115,6 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	}
 
 	for _, gid := range groupIDs {
-		m.getOrCreatePool("titles", gid)
 		m.getOrCreatePool("contents", gid)
 	}
 
@@ -291,11 +290,11 @@ func (m *PoolManager) checkAndRefillAll() {
 }
 
 // refillPool refills a single pool from database
-func (m *PoolManager) refillPool(pool *MemoryPool) {
-	poolType := pool.GetPoolType()
-	groupID := pool.GetGroupID()
-	currentLen := pool.Len()
-	maxSize := pool.GetMaxSize()
+func (m *PoolManager) refillPool(memPool *MemoryPool) {
+	poolType := memPool.GetPoolType()
+	groupID := memPool.GetGroupID()
+	currentLen := memPool.Len()
+	maxSize := memPool.GetMaxSize()
 	need := maxSize - currentLen
 
 	if need <= 0 {
@@ -322,13 +321,30 @@ func (m *PoolManager) refillPool(pool *MemoryPool) {
 	}
 
 	if len(items) > 0 {
-		pool.Push(items)
-		log.Debug().
+		memPool.Push(items)
+
+		// 立即将加载的数据标记为已使用（status=0），防止重复加载
+		if m.batcher != nil {
+			for _, item := range items {
+				m.batcher.Add(pool.UpdateTask{
+					Table: poolType,
+					ID:    item.ID,
+				})
+			}
+		}
+
+		log.Info().
 			Str("type", poolType).
 			Int("group", groupID).
 			Int("added", len(items)).
-			Int("total", pool.Len()).
+			Int("total", memPool.Len()).
 			Msg("Pool refilled")
+	} else {
+		log.Info().
+			Str("type", poolType).
+			Int("group", groupID).
+			Int("need", need).
+			Msg("No items to refill")
 	}
 }
 
@@ -614,11 +630,11 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 
 	// 1. 标题池（改用 TitleGenerator 统计）
 	var titlesCurrent, titlesMax int
-	var titlesMemory int64
+	var titlesMemory, titlesConsumed int64
 	if m.titleGenerator != nil {
-		titlesCurrent, titlesMax, titlesMemory = m.titleGenerator.GetTotalStats()
+		titlesCurrent, titlesMax, titlesMemory, titlesConsumed = m.titleGenerator.GetTotalStats()
 	}
-	titlesUsed := titlesMax - titlesCurrent
+	titlesUsed := int(titlesConsumed) // 已用 = 实际被消费的数量
 	titlesUtil := 0.0
 	if titlesMax > 0 {
 		titlesUtil = float64(titlesCurrent) / float64(titlesMax) * 100
@@ -640,14 +656,16 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 	m.mu.RLock()
 	var contentsMax, contentsCurrent int
 	var contentsMemory int64
+	var contentsConsumed int64
 	for _, pool := range m.contents {
 		contentsMax += pool.GetMaxSize()
 		contentsCurrent += pool.Len()
 		contentsMemory += pool.MemoryBytes()
+		contentsConsumed += pool.ConsumedCount()
 	}
 	m.mu.RUnlock()
 
-	contentsUsed := contentsMax - contentsCurrent
+	contentsUsed := int(contentsConsumed) // 已用 = 实际被消费的数量
 	contentsUtil := 0.0
 	if contentsMax > 0 {
 		contentsUtil = float64(contentsCurrent) / float64(contentsMax) * 100

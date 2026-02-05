@@ -151,8 +151,6 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 	// Build article content using fetched title and content
 	articleContent := core.BuildArticleContentFromSingle(title, content)
 
-	// Pre-load content for template's content() function (use already fetched content)
-	h.templateRenderer.SetPreloadContent(content)
 
 	// Prepare render data
 	analyticsCode := getNullString(site.Analytics)
@@ -182,7 +180,7 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 
 	// Render template
 	t5 := time.Now()
-	html, err := h.templateRenderer.Render(templateData.Content, templateName, renderData)
+	html, err := h.templateRenderer.Render(templateData.Content, templateName, renderData, content)
 	if err != nil {
 		log.Error().Err(err).Str("template", templateName).Msg("Failed to render template")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Render failed"})
