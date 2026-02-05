@@ -18,16 +18,31 @@ import (
 
 // ImagesHandler 图片管理 handler
 type ImagesHandler struct {
-	db          *sqlx.DB
-	poolManager *core.PoolManager
+	db           *sqlx.DB
+	poolManager  *core.PoolManager
+	funcsManager *core.TemplateFuncsManager
 }
 
 // NewImagesHandler 创建 ImagesHandler
-func NewImagesHandler(db *sqlx.DB, poolManager *core.PoolManager) *ImagesHandler {
+func NewImagesHandler(db *sqlx.DB, poolManager *core.PoolManager, funcsManager *core.TemplateFuncsManager) *ImagesHandler {
 	return &ImagesHandler{
-		db:          db,
-		poolManager: poolManager,
+		db:           db,
+		poolManager:  poolManager,
+		funcsManager: funcsManager,
 	}
+}
+
+// asyncReloadImageGroup 异步重载图片分组到 TemplateFuncsManager
+func (h *ImagesHandler) asyncReloadImageGroup(groupID int) {
+	go func() {
+		ctx := context.Background()
+		// 1. 等待 PoolManager 重载完成
+		h.poolManager.ReloadImageGroup(ctx, groupID)
+		// 2. 获取最新数据
+		urls := h.poolManager.GetImages(groupID)
+		// 3. 同步到 TemplateFuncsManager
+		h.funcsManager.ReloadImageGroup(groupID, urls)
+	}()
 }
 
 // ImageGroup 图片分组
@@ -296,7 +311,7 @@ func (h *ImagesHandler) DeleteGroup(c *gin.Context) {
 	}
 
 	if h.poolManager != nil {
-		go h.poolManager.ReloadImageGroup(context.Background(), id)
+		h.asyncReloadImageGroup(id)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -384,6 +399,7 @@ func (h *ImagesHandler) AddURL(c *gin.Context) {
 	// 成功后追加到缓存
 	if h.poolManager != nil {
 		h.poolManager.AppendImages(groupID, []string{req.URL})
+		h.funcsManager.AppendImages(groupID, []string{req.URL})
 	}
 
 	id, _ := result.LastInsertId()
@@ -481,7 +497,7 @@ func (h *ImagesHandler) BatchAddURLs(c *gin.Context) {
 
 	// 成功后重载分组缓存
 	if added > 0 && h.poolManager != nil {
-		h.poolManager.ReloadImageGroup(c.Request.Context(), groupID)
+		h.asyncReloadImageGroup(groupID)
 	}
 
 	core.Success(c, gin.H{
@@ -595,7 +611,7 @@ func (h *ImagesHandler) Upload(c *gin.Context) {
 
 	// 成功后重载分组缓存
 	if added > 0 && h.poolManager != nil {
-		h.poolManager.ReloadImageGroup(c.Request.Context(), groupID)
+		h.asyncReloadImageGroup(groupID)
 	}
 
 	core.Success(c, gin.H{
@@ -695,7 +711,7 @@ func (h *ImagesHandler) DeleteURL(c *gin.Context) {
 
 	// 删除后重载分组缓存
 	if groupID > 0 && h.poolManager != nil {
-		go h.poolManager.ReloadImageGroup(context.Background(), groupID)
+		h.asyncReloadImageGroup(groupID)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -744,7 +760,7 @@ func (h *ImagesHandler) BatchDelete(c *gin.Context) {
 	// 重载涉及的分组缓存
 	if h.poolManager != nil {
 		for _, gid := range groupIDs {
-			go h.poolManager.ReloadImageGroup(context.Background(), gid)
+			h.asyncReloadImageGroup(gid)
 		}
 	}
 
@@ -789,7 +805,7 @@ func (h *ImagesHandler) DeleteAll(c *gin.Context) {
 
 	if h.poolManager != nil {
 		if req.GroupID != nil {
-			go h.poolManager.ReloadImageGroup(context.Background(), *req.GroupID)
+			h.asyncReloadImageGroup(*req.GroupID)
 		} else {
 			go h.poolManager.RefreshData(context.Background(), "images")
 		}
@@ -885,7 +901,7 @@ func (h *ImagesHandler) Reload(c *gin.Context) {
 		if groupIDStr != "" {
 			groupID, _ := strconv.Atoi(groupIDStr)
 			if groupID > 0 {
-				h.poolManager.ReloadImageGroup(c.Request.Context(), groupID)
+				h.asyncReloadImageGroup(groupID)
 			}
 		} else {
 			h.poolManager.RefreshData(c.Request.Context(), "images")

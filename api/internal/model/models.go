@@ -61,11 +61,11 @@ type ArticleGroup struct {
 
 // Admin represents an administrator from the database.
 type Admin struct {
-	ID        int            `db:"id"         json:"id"`
-	Username  string         `db:"username"   json:"username"`
-	Password  string         `db:"password"   json:"-"` // 密码不输出到 JSON
-	LastLogin sql.NullTime   `db:"last_login" json:"last_login"`
-	CreatedAt time.Time      `db:"created_at" json:"created_at"`
+	ID        int          `db:"id"         json:"id"`
+	Username  string       `db:"username"   json:"username"`
+	Password  string       `db:"password"   json:"-"` // 密码不输出到 JSON
+	LastLogin sql.NullTime `db:"last_login" json:"last_login"`
+	CreatedAt time.Time    `db:"created_at" json:"created_at"`
 }
 
 // SystemLog represents a system log entry from the database.
@@ -257,13 +257,13 @@ type DetectionResult struct {
 
 // RenderContext holds all data needed for template rendering.
 type RenderContext struct {
-	SiteID          int
-	Title           string
-	ArticleContent  string
-	AnalyticsCode   string
-	BaiduPushJS     string
-	Now             string
-	Funcs           *TemplateFuncs
+	SiteID         int
+	Title          string
+	ArticleContent string
+	AnalyticsCode  string
+	BaiduPushJS    string
+	Now            string
+	Funcs          *TemplateFuncs
 }
 
 // TemplateFuncs holds function references for template rendering.

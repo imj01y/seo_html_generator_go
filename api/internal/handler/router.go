@@ -12,8 +12,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
-	"seo-generator/api/pkg/config"
 	core "seo-generator/api/internal/service"
+	"seo-generator/api/pkg/config"
 )
 
 // startTime 记录服务启动时间
@@ -125,7 +125,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Images routes (require JWT)
-	imagesHandler := NewImagesHandler(deps.DB, deps.PoolManager)
+	imagesHandler := NewImagesHandler(deps.DB, deps.PoolManager, deps.TemplateFuncs)
 	imagesGroup := r.Group("/api/images")
 	imagesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{
@@ -455,7 +455,7 @@ func poolPresetsHandler(deps *Dependencies) gin.HandlerFunc {
 		// 为每个预设计算池大小和内存估算
 		type presetDetail struct {
 			core.PoolPreset
-			Key            string `json:"key"`
+			Key            string               `json:"key"`
 			PoolSizes      *core.PoolSizeConfig `json:"pool_sizes"`
 			MemoryEstimate int64                `json:"memory_estimate"`
 			MemoryHuman    string               `json:"memory_human"`
@@ -939,10 +939,10 @@ func systemInfoHandler(deps *Dependencies) gin.HandlerFunc {
 		// 构建响应数据
 		info := gin.H{
 			"runtime": gin.H{
-				"go_version":   runtime.Version(),
+				"go_version":    runtime.Version(),
 				"num_goroutine": runtime.NumGoroutine(),
-				"num_cpu":      runtime.NumCPU(),
-				"gomaxprocs":   runtime.GOMAXPROCS(0),
+				"num_cpu":       runtime.NumCPU(),
+				"gomaxprocs":    runtime.GOMAXPROCS(0),
 			},
 			"memory": gin.H{
 				"alloc":       core.FormatMemorySize(int64(mem.Alloc)),
@@ -1018,8 +1018,8 @@ func systemHealthHandler(deps *Dependencies) gin.HandlerFunc {
 				status = "degraded"
 			} else {
 				checks["data_pool"] = gin.H{
-					"status":  "healthy",
-					"message": "数据池正常运行",
+					"status":   "healthy",
+					"message":  "数据池正常运行",
 					"keywords": dataStats.Keywords,
 					"images":   dataStats.Images,
 				}

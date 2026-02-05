@@ -60,11 +60,11 @@ type CacheConfig struct {
 
 // SpiderDetectorConfig holds spider detector configuration
 type SpiderDetectorConfig struct {
-	Enabled                bool     `yaml:"enabled"`
-	Return404ForNonSpider  bool     `yaml:"return_404_for_non_spider"`
-	DNSVerifyEnabled       bool     `yaml:"dns_verify_enabled"`
-	DNSVerifyTypes         []string `yaml:"dns_verify_types"`
-	DNSTimeout             float64  `yaml:"dns_timeout"`
+	Enabled               bool     `yaml:"enabled"`
+	Return404ForNonSpider bool     `yaml:"return_404_for_non_spider"`
+	DNSVerifyEnabled      bool     `yaml:"dns_verify_enabled"`
+	DNSVerifyTypes        []string `yaml:"dns_verify_types"`
+	DNSTimeout            float64  `yaml:"dns_timeout"`
 }
 
 // AuthConfig holds authentication configuration

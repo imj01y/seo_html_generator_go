@@ -16,8 +16,8 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
-	api "seo-generator/api/internal/handler"
 	"seo-generator/api/internal/di"
+	api "seo-generator/api/internal/handler"
 	models "seo-generator/api/internal/model"
 	database "seo-generator/api/internal/repository"
 	core "seo-generator/api/internal/service"
@@ -204,12 +204,20 @@ func main() {
 		log.Info().Msg("Keyword emoji pool initialized")
 	}
 
-	// Load image URLs into funcsManager
-	imageURLs := poolManager.GetImages(1)
-	if len(imageURLs) > 0 {
-		funcsManager.LoadImageURLs(imageURLs)
-		log.Info().Int("count", len(imageURLs)).Msg("Image URLs loaded to funcs manager")
+	// Load all image groups into funcsManager
+	imageGroupIDs := poolManager.GetImageGroupIDs()
+	totalImages := 0
+	for _, groupID := range imageGroupIDs {
+		urls := poolManager.GetImages(groupID)
+		if len(urls) > 0 {
+			funcsManager.LoadImageGroup(groupID, urls)
+			totalImages += len(urls)
+			log.Info().Int("group_id", groupID).Int("count", len(urls)).
+				Msg("Image group loaded to funcs manager")
+		}
 	}
+	log.Info().Int("groups", len(imageGroupIDs)).Int("total_images", totalImages).
+		Msg("All image groups loaded to funcs manager")
 
 	// Create page handler
 	pageHandler := api.NewPageHandler(

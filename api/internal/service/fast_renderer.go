@@ -32,10 +32,10 @@ const (
 
 // Placeholder 占位符信息
 type Placeholder struct {
-	Token    string          // __PH_CLS_0__ 等
-	Type     PlaceholderType // 类型
-	Arg      string          // 参数，如 cls("header") 中的 "header"
-	MinMax   [2]int          // 用于 random_number
+	Token  string          // __PH_CLS_0__ 等
+	Type   PlaceholderType // 类型
+	Arg    string          // 参数，如 cls("header") 中的 "header"
+	MinMax [2]int          // 用于 random_number
 }
 
 // CompiledFastTemplate 预编译的快速模板
@@ -109,7 +109,10 @@ func resolvePlaceholder(p Placeholder, data *RenderData, fm *TemplateFuncsManage
 	case PlaceholderKeywordEmoji:
 		return fm.RandomKeywordEmoji()
 	case PlaceholderImage:
-		return fm.RandomImage()
+		if data != nil {
+			return fm.RandomImage(data.ImageGroupID)
+		}
+		return fm.RandomImage(1) // 默认分组
 	case PlaceholderNumber:
 		return formatInt(fm.RandomNumber(p.MinMax[0], p.MinMax[1]))
 	case PlaceholderNow:

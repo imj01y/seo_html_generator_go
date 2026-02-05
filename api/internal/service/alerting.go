@@ -20,26 +20,26 @@ const (
 
 // Alert 告警记录
 type Alert struct {
-	ID        string     `json:"id"`         // 告警唯一标识
-	Level     AlertLevel `json:"level"`      // 告警级别
-	Type      string     `json:"type"`       // 告警类型
-	Message   string     `json:"message"`    // 告警消息
-	Value     float64    `json:"value"`      // 当前值
-	Threshold float64    `json:"threshold"`  // 阈值
-	Timestamp time.Time  `json:"timestamp"`  // 告警时间
-	Resolved  bool       `json:"resolved"`   // 是否已解决
+	ID        string     `json:"id"`        // 告警唯一标识
+	Level     AlertLevel `json:"level"`     // 告警级别
+	Type      string     `json:"type"`      // 告警类型
+	Message   string     `json:"message"`   // 告警消息
+	Value     float64    `json:"value"`     // 当前值
+	Threshold float64    `json:"threshold"` // 阈值
+	Timestamp time.Time  `json:"timestamp"` // 告警时间
+	Resolved  bool       `json:"resolved"`  // 是否已解决
 }
 
 // AlertRule 告警规则
 type AlertRule struct {
-	Name      string                                  // 规则名称
-	Type      string                                  // 规则类型
-	Condition func(MetricsSnapshot) (bool, float64)  // 条件函数，返回是否触发和当前值
-	Threshold float64                                 // 阈值
-	Level     AlertLevel                              // 告警级别
-	Message   string                                  // 告警消息模板
-	Cooldown  time.Duration                           // 冷却时间
-	lastAlert time.Time                               // 上次告警时间
+	Name      string                                // 规则名称
+	Type      string                                // 规则类型
+	Condition func(MetricsSnapshot) (bool, float64) // 条件函数，返回是否触发和当前值
+	Threshold float64                               // 阈值
+	Level     AlertLevel                            // 告警级别
+	Message   string                                // 告警消息模板
+	Cooldown  time.Duration                         // 冷却时间
+	lastAlert time.Time                             // 上次告警时间
 }
 
 // AlertHandler 告警处理器接口

@@ -471,7 +471,6 @@ func (m *PoolManager) ReloadKeywordGroup(ctx context.Context, groupID int) error
 	return m.poolManager.GetKeywordPool().ReloadGroup(ctx, groupID)
 }
 
-
 // ============================================================
 // Images 方法
 // ============================================================
@@ -496,6 +495,16 @@ func (m *PoolManager) GetRandomImage(groupID int) string {
 // 兼容层: 代理到 pool.ImagePool
 func (m *PoolManager) GetImages(groupID int) []string {
 	return m.poolManager.GetImagePool().GetImages(groupID)
+}
+
+// GetImageGroupIDs 返回所有图片分组ID
+func (m *PoolManager) GetImageGroupIDs() []int {
+	groups := m.poolManager.GetImagePool().GetAllGroups()
+	ids := make([]int, 0, len(groups))
+	for gid := range groups {
+		ids = append(ids, gid)
+	}
+	return ids
 }
 
 // AppendImages 追加图片到内存（新增时调用）
@@ -568,6 +577,7 @@ func (m *PoolManager) discoverImageGroups(ctx context.Context) ([]int, error) {
 	}
 	return groups, nil
 }
+
 // ============================================================
 // 兼容性方法（供 router/websocket 使用）
 // ============================================================

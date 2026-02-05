@@ -25,6 +25,7 @@ type RenderData struct {
 	Title          string        // 静态标题（兼容用途）
 	TitleGenerator func() string // 动态标题生成器
 	SiteID         int
+	ImageGroupID   int // 图片分组ID
 	AnalyticsCode  template.HTML
 	BaiduPushJS    template.HTML
 	ArticleContent template.HTML
@@ -158,44 +159,6 @@ func (r *TemplateRenderer) Render(templateContent string, templateName string, d
 // getPlaceholderValue 获取占位符的实际值（复用公共函数）
 func (r *TemplateRenderer) getPlaceholderValue(p Placeholder, data *RenderData) string {
 	return resolvePlaceholder(p, data, r.funcsManager)
-}
-
-// templateRenderContext is the context passed to templates
-type templateRenderContext struct {
-	Title          string
-	SiteID         int
-	AnalyticsCode  template.HTML
-	BaiduPushJS    template.HTML
-	ArticleContent template.HTML
-	Now            string
-	Content        string
-	funcsManager   *TemplateFuncsManager
-}
-
-// Template function methods - these are called from templates
-
-func (c *templateRenderContext) RandomKeyword() template.HTML {
-	return template.HTML(c.funcsManager.RandomKeyword())
-}
-
-func (c *templateRenderContext) RandomURL() string {
-	return c.funcsManager.RandomURL()
-}
-
-func (c *templateRenderContext) RandomImage() string {
-	return c.funcsManager.RandomImage()
-}
-
-func (c *templateRenderContext) Cls(name string) string {
-	return c.funcsManager.Cls(name)
-}
-
-func (c *templateRenderContext) Encode(text string) template.HTML {
-	return template.HTML(c.funcsManager.Encode(text))
-}
-
-func (c *templateRenderContext) RandomNumber(min, max int) int {
-	return c.funcsManager.RandomNumber(min, max)
 }
 
 // ClearCache clears the compiled template cache and fast template cache

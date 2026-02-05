@@ -47,14 +47,14 @@ const (
 	ErrCacheInvalid    ErrorCode = 3007
 
 	// Template errors (4000-4999)
-	ErrTemplateNotFound   ErrorCode = 4000
-	ErrTemplateParse      ErrorCode = 4001
-	ErrTemplateRender     ErrorCode = 4002
-	ErrTemplateInvalid    ErrorCode = 4003
-	ErrTemplateCompile    ErrorCode = 4004
-	ErrTemplateSyntax     ErrorCode = 4005
-	ErrTemplateExecution  ErrorCode = 4006
-	ErrTemplateDataType   ErrorCode = 4007
+	ErrTemplateNotFound  ErrorCode = 4000
+	ErrTemplateParse     ErrorCode = 4001
+	ErrTemplateRender    ErrorCode = 4002
+	ErrTemplateInvalid   ErrorCode = 4003
+	ErrTemplateCompile   ErrorCode = 4004
+	ErrTemplateSyntax    ErrorCode = 4005
+	ErrTemplateExecution ErrorCode = 4006
+	ErrTemplateDataType  ErrorCode = 4007
 
 	// Pool errors (5000-5999)
 	ErrPoolExhausted ErrorCode = 5000
@@ -66,18 +66,18 @@ const (
 	ErrPoolPutFailed ErrorCode = 5006
 
 	// Site errors (6000-6999)
-	ErrSiteNotFound    ErrorCode = 6000
-	ErrSiteDisabled    ErrorCode = 6001
-	ErrSiteInvalid     ErrorCode = 6002
-	ErrSiteDomain      ErrorCode = 6003
-	ErrSiteConfig      ErrorCode = 6004
-	ErrSiteTemplate    ErrorCode = 6005
-	ErrSiteGroup       ErrorCode = 6006
-	ErrSitePermission  ErrorCode = 6007
+	ErrSiteNotFound   ErrorCode = 6000
+	ErrSiteDisabled   ErrorCode = 6001
+	ErrSiteInvalid    ErrorCode = 6002
+	ErrSiteDomain     ErrorCode = 6003
+	ErrSiteConfig     ErrorCode = 6004
+	ErrSiteTemplate   ErrorCode = 6005
+	ErrSiteGroup      ErrorCode = 6006
+	ErrSitePermission ErrorCode = 6007
 
 	// Scheduler errors (7000-7999)
-	ErrSchedulerNotRunning ErrorCode = 7000
-	ErrSchedulerTaskExist  ErrorCode = 7001
+	ErrSchedulerNotRunning   ErrorCode = 7000
+	ErrSchedulerTaskExist    ErrorCode = 7001
 	ErrSchedulerTaskNotFound ErrorCode = 7002
 	ErrSchedulerInvalidCron  ErrorCode = 7003
 	ErrSchedulerExecFailed   ErrorCode = 7004

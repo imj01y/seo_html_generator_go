@@ -7,8 +7,8 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/redis/go-redis/v9"
 
-	"seo-generator/api/pkg/config"
 	core "seo-generator/api/internal/service"
+	"seo-generator/api/pkg/config"
 )
 
 // AuthMiddleware JWT 认证中间件

@@ -86,4 +86,3 @@ func getRequestIDFromContext(c *gin.Context) string {
 	}
 	return ""
 }
-

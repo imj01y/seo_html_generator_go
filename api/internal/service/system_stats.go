@@ -66,11 +66,11 @@ type DiskStats struct {
 
 // SystemStats 系统统计汇总
 type SystemStats struct {
-	CPU     CPUStats    `json:"cpu"`
-	Memory  MemoryStats `json:"memory"`
-	Load    LoadStats   `json:"load"`
+	CPU     CPUStats     `json:"cpu"`
+	Memory  MemoryStats  `json:"memory"`
+	Load    LoadStats    `json:"load"`
 	Network NetworkStats `json:"network"`
-	Disks   []DiskStats `json:"disks"`
+	Disks   []DiskStats  `json:"disks"`
 }
 
 // SystemStatsCollector 系统统计采集器
