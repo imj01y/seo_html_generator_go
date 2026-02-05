@@ -4,11 +4,17 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/rs/zerolog/log"
 )
+
+// ImageData 图片数据（不可变，通过原子指针替换）
+type ImageData struct {
+	groups map[int][]string // groupID -> urls
+}
 
 // TemplateFuncsManager 模板函数管理器（高并发版）
 type TemplateFuncsManager struct {
@@ -28,10 +34,11 @@ type TemplateFuncsManager struct {
 	rawKeywordIdx int64
 	rawKeywordLen int64
 
-	// 图片URL（原子计数器访问）
-	imageURLs []string
-	imageIdx  int64
-	imageLen  int64
+	// 图片数据（原子指针，支持无锁读取和热更新）
+	imageData atomic.Pointer[ImageData]
+
+	// 分组索引（独立管理，避免数据替换时重置）
+	imageGroupIdx sync.Map // groupID -> *atomic.Int64
 
 	encoder      *HTMLEntityEncoder
 	emojiManager *EmojiManager // emoji 管理器引用
