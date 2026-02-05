@@ -22,7 +22,6 @@ from core.auth import ensure_default_admin
 
 # 全局变量：worker 引用（用于清理）
 _generator_worker = None
-_scheduler_worker = None
 
 
 def get_generator_worker():
@@ -124,8 +123,6 @@ async def init_pool_components():
 
 async def init_background_workers():
     """初始化后台工作线程"""
-    global _scheduler_worker
-
     redis_client = get_redis_client()
     db_pool = get_db_pool()
 
@@ -144,15 +141,7 @@ async def init_background_workers():
         logger.warning(f"Generator worker start failed: {e}")
 
     # 注意：爬虫统计归档已迁移到 Go API 的 StatsArchiver 服务
-
-    # 爬虫定时调度器
-    try:
-        from core.workers.spider_scheduler import SpiderSchedulerWorker
-        _scheduler_worker = SpiderSchedulerWorker(db_pool=db_pool, redis=redis_client)
-        await _scheduler_worker.start()
-        logger.info("Spider scheduler worker started")
-    except Exception as e:
-        logger.warning(f"Spider scheduler worker start failed: {e}")
+    # 注意：爬虫定时调度器已迁移到 Go API 的 Scheduler 服务
 
 
 async def init_components(project_root: Optional[Path] = None):
