@@ -3,10 +3,15 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
+	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
+
+	models "seo-generator/api/internal/model"
 )
 
 // RefreshDataHandler 刷新数据池处理器
@@ -133,8 +138,98 @@ func (h *RefreshTemplateHandler) Handle(task *ScheduledTask) TaskResult {
 	}
 }
 
+// RunSpiderHandler 运行爬虫处理器
+type RunSpiderHandler struct {
+	redis *redis.Client
+	db    *sqlx.DB
+}
+
+// NewRunSpiderHandler 创建运行爬虫处理器
+func NewRunSpiderHandler(rdb *redis.Client, db *sqlx.DB) *RunSpiderHandler {
+	return &RunSpiderHandler{redis: rdb, db: db}
+}
+
+// TaskType 返回任务类型
+func (h *RunSpiderHandler) TaskType() TaskType {
+	return TaskTypeRunSpider
+}
+
+// Handle 执行运行爬虫任务
+func (h *RunSpiderHandler) Handle(task *ScheduledTask) TaskResult {
+	startTime := time.Now()
+	ctx := context.Background()
+
+	params, err := ParseRunSpiderParams(task.Params)
+	if err != nil {
+		return TaskResult{
+			Success:  false,
+			Message:  fmt.Sprintf("parse params failed: %v", err),
+			Duration: time.Since(startTime).Milliseconds(),
+		}
+	}
+
+	log.Info().
+		Int("project_id", params.ProjectID).
+		Str("project_name", params.ProjectName).
+		Msg("Running scheduled spider")
+
+	// 检查项目状态和是否启用
+	var project struct {
+		Status  string `db:"status"`
+		Enabled int    `db:"enabled"`
+	}
+	if err := h.db.Get(&project, "SELECT status, enabled FROM spider_projects WHERE id = ?", params.ProjectID); err != nil {
+		return TaskResult{
+			Success:  false,
+			Message:  "项目不存在",
+			Duration: time.Since(startTime).Milliseconds(),
+		}
+	}
+	if project.Enabled == 0 {
+		return TaskResult{
+			Success:  false,
+			Message:  "项目已禁用，跳过",
+			Duration: time.Since(startTime).Milliseconds(),
+		}
+	}
+	if project.Status == "running" {
+		return TaskResult{
+			Success:  false,
+			Message:  "项目正在运行中，跳过",
+			Duration: time.Since(startTime).Milliseconds(),
+		}
+	}
+
+	// 更新状态为 running
+	h.db.Exec("UPDATE spider_projects SET status = 'running' WHERE id = ?", params.ProjectID)
+
+	// 使用现有的 SpiderCommand 结构体
+	cmd := models.SpiderCommand{
+		Action:    "run",
+		ProjectID: params.ProjectID,
+		Timestamp: time.Now().Unix(),
+	}
+	cmdJSON, _ := json.Marshal(cmd)
+
+	if err := h.redis.Publish(ctx, "spider:commands", cmdJSON).Err(); err != nil {
+		// 回滚状态
+		h.db.Exec("UPDATE spider_projects SET status = 'idle' WHERE id = ?", params.ProjectID)
+		return TaskResult{
+			Success:  false,
+			Message:  fmt.Sprintf("发送命令失败: %v", err),
+			Duration: time.Since(startTime).Milliseconds(),
+		}
+	}
+
+	return TaskResult{
+		Success:  true,
+		Message:  fmt.Sprintf("已触发爬虫: %s (id=%d)", params.ProjectName, params.ProjectID),
+		Duration: time.Since(startTime).Milliseconds(),
+	}
+}
+
 // RegisterAllHandlers 注册所有任务处理器
-func RegisterAllHandlers(scheduler *Scheduler, poolManager *PoolManager, templateCache *TemplateCache) {
+func RegisterAllHandlers(scheduler *Scheduler, poolManager *PoolManager, templateCache *TemplateCache, db *sqlx.DB, rdb *redis.Client) {
 	// 注册刷新数据池处理器
 	if poolManager != nil {
 		scheduler.RegisterHandler(NewRefreshDataHandler(poolManager))
@@ -143,6 +238,11 @@ func RegisterAllHandlers(scheduler *Scheduler, poolManager *PoolManager, templat
 	// 注册刷新模板缓存处理器
 	if templateCache != nil {
 		scheduler.RegisterHandler(NewRefreshTemplateHandler(templateCache))
+	}
+
+	// 注册运行爬虫处理器
+	if rdb != nil && db != nil {
+		scheduler.RegisterHandler(NewRunSpiderHandler(rdb, db))
 	}
 
 	log.Info().Msg("All task handlers registered")
