@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	_ "net/http/pprof" // pprof for CPU profiling
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -34,6 +35,14 @@ func main() {
 		// Fallback: print to stderr and continue
 		fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
 	}
+
+	// Start pprof server for CPU profiling (port 6060)
+	go func() {
+		log.Info().Msg("Starting pprof server on :6060")
+		if err := http.ListenAndServe(":6060", nil); err != nil {
+			log.Error().Err(err).Msg("pprof server failed")
+		}
+	}()
 
 	// Find project root directory
 	projectRoot := findProjectRoot()

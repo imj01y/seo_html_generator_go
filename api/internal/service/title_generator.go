@@ -113,7 +113,8 @@ func (g *TitleGenerator) fillPool(groupID int, pool *TitlePool) {
 	for i := 0; i < need; i++ {
 		title := g.generateTitle(groupID)
 		if title == "" {
-			continue
+			// 关键词池为空，无法生成标题，退出循环避免 CPU 空转
+			break
 		}
 		select {
 		case pool.ch <- title:
@@ -153,6 +154,10 @@ func (g *TitleGenerator) refillWorker(groupID int, pool *TitlePool) {
 		case <-ticker.C:
 			if g.stopped.Load() {
 				return
+			}
+			// 预检查：关键词池为空时跳过填充，避免无效循环
+			if len(g.poolManager.GetRandomKeywords(groupID, 1)) == 0 {
+				continue
 			}
 			// 检查是否需要补充（低于阈值比例时触发）
 			thresholdCount := int(float64(g.config.TitlePoolSize) * g.config.TitleThreshold)

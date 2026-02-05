@@ -63,7 +63,7 @@ func (r *contentRepo) RandomByTemplateID(ctx context.Context, templateID int, ba
 	query := `
 		SELECT id, group_id, content, batch_id
 		FROM contents
-		WHERE group_id = ? AND batch_id = ? AND (used IS NULL OR used = 0)
+		WHERE group_id = ? AND batch_id = ? AND status = 1
 		ORDER BY RAND()
 		LIMIT ?
 	`
@@ -81,7 +81,7 @@ func (r *contentRepo) MarkAsUsed(ctx context.Context, ids []uint64) error {
 		return nil
 	}
 
-	query := fmt.Sprintf("UPDATE contents SET used = 1 WHERE id IN (?%s)", strings.Repeat(",?", len(ids)-1))
+	query := fmt.Sprintf("UPDATE contents SET status = 0 WHERE id IN (?%s)", strings.Repeat(",?", len(ids)-1))
 	args := make([]interface{}, len(ids))
 	for i, id := range ids {
 		args[i] = id
@@ -96,7 +96,7 @@ func (r *contentRepo) MarkAsUsed(ctx context.Context, ids []uint64) error {
 }
 
 func (r *contentRepo) CountByTemplateID(ctx context.Context, templateID int) (int64, error) {
-	query := `SELECT COUNT(*) FROM contents WHERE group_id = ? AND (used IS NULL OR used = 0)`
+	query := `SELECT COUNT(*) FROM contents WHERE group_id = ? AND status = 1`
 
 	var count int64
 	if err := r.db.GetContext(ctx, &count, query, templateID); err != nil {

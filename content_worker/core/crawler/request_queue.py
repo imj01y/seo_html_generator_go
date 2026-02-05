@@ -315,10 +315,11 @@ class RequestQueue:
         Args:
             clear_queue: 是否清空队列数据
         """
-        await self.set_state(self.STATE_STOPPED)
-
         if clear_queue:
             await self.clear()
+
+        # 必须在 clear() 之后设置状态，因为 clear() 会删除状态键
+        await self.set_state(self.STATE_STOPPED)
 
     async def clear(self) -> None:
         """清空所有队列数据"""

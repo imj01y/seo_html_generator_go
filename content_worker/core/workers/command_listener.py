@@ -35,19 +35,19 @@ class RedisLogger:
 
     async def info(self, msg: str):
         await self._publish("INFO", msg)
-        logger.info(msg)
+        logger.bind(from_redis_logger=True).info(msg)
 
     async def warning(self, msg: str):
         await self._publish("WARNING", msg)
-        logger.warning(msg)
+        logger.bind(from_redis_logger=True).warning(msg)
 
     async def error(self, msg: str):
         await self._publish("ERROR", msg)
-        logger.error(msg)
+        logger.bind(from_redis_logger=True).error(msg)
 
     async def debug(self, msg: str):
         await self._publish("DEBUG", msg)
-        logger.debug(msg)
+        logger.bind(from_redis_logger=True).debug(msg)
 
     async def item(self, data: dict):
         """发送数据项，前端会解析并展示"""
@@ -388,6 +388,30 @@ class CommandListener:
         from core.crawler.request_queue import RequestQueue
 
         log = RedisLogger(self.rdb, project_id, "test")
+        loop = asyncio.get_running_loop()
+
+        # 临时 handler：捕获用户代码中的 logger 调用，转发到前端
+        def log_sink(message):
+            import traceback as tb
+            # 跳过已通过 RedisLogger._publish 发送的日志（避免重复）
+            if message.record["extra"].get("from_redis_logger"):
+                return
+            level = message.record["level"].name
+            msg = message.record["message"]
+
+            # 处理异常堆栈（logger.exception() 调用时）
+            exc_info = message.record["exception"]
+            if exc_info:
+                # 格式化完整堆栈跟踪，和 PyCharm 显示一致
+                exc_lines = tb.format_exception(exc_info.type, exc_info.value, exc_info.traceback)
+                msg = msg + "\n" + "".join(exc_lines)
+
+            # 桥接同步 sink 到异步 Redis publish
+            loop.call_soon_threadsafe(
+                lambda l=level, m=msg: asyncio.create_task(log._publish(l, m))
+            )
+
+        handler_id = logger.add(log_sink, format="{message}", level="DEBUG")
 
         try:
             limit_text = f"最多 {max_items} 条" if max_items > 0 else "不限制条数"
@@ -432,7 +456,7 @@ class CommandListener:
                     break
 
                 if not item.get('title') or not item.get('content'):
-                    await log.warning(f"数据缺少必填字段，已跳过")
+                    await log.warning(f"数据缺少必填字段(title 或 content)，已跳过")
                     continue
 
                 items_count += 1
@@ -462,6 +486,7 @@ class CommandListener:
             await log.end()
 
         finally:
+            logger.remove(handler_id)  # 移除临时 handler
             self.running_tasks.pop(project_id, None)
 
     async def stop_project(self, project_id: int):

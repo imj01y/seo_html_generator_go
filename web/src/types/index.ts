@@ -316,31 +316,11 @@ export interface DailyStats {
 }
 
 // 仪表盘
-export interface GroupStats {
-  total: number
-  cursor: number
-  remaining: number
-  loaded: boolean
-  // 滑动窗口图片管理器新增字段
-  pool_start?: number
-  pool_end?: number
-  pool_size?: number
-  pool_ahead?: number
-  refilling?: boolean
-  mysql_total?: number           // MySQL 总数
-  redis_pool_size?: number       // Redis 缓存池计划大小（图片）
-  redis_pool_count?: number      // Redis 缓存池实际数量（图片）
-  redis_url_hash_count?: number  // Redis URL去重集合数量（图片）
-  redis_cache_count?: number     // Redis 缓存数量（关键词/文章）
-}
-
 export interface DashboardStats {
   sites_count: number
   keywords_total: number
   images_total: number
   articles_total: number
-  keyword_group_stats: GroupStats
-  image_group_stats: GroupStats
 }
 
 // 分组选项（用于站点绑定）
@@ -362,8 +342,6 @@ export interface Setting {
 export interface CacheStats {
   keyword_cache_size: number
   image_cache_size: number
-  keyword_group_stats: GroupStats
-  image_group_stats: GroupStats
   html_cache_entries?: number
   html_cache_memory_mb?: number
 }

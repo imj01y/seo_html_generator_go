@@ -358,9 +358,8 @@ class QueueConsumer:
             raise
 
         except Exception as e:
+            # logger.exception 会输出完整堆栈，全局 sink 会转发到前端
             logger.exception(f"Callback error for {request.url}")
-            if self.log:
-                await self.log.error(f"解析出错: {str(e)[:100]}")
             # 调用 Spider 的异常回调
             self.spider.exception_request(request, response, e)
             # 回调出错，尝试重试

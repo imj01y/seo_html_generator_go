@@ -63,7 +63,7 @@ func (r *titleRepo) RandomByTemplateID(ctx context.Context, templateID int, batc
 	query := `
 		SELECT id, group_id, title, batch_id
 		FROM titles
-		WHERE group_id = ? AND batch_id = ? AND (used IS NULL OR used = 0)
+		WHERE group_id = ? AND batch_id = ? AND status = 1
 		ORDER BY RAND()
 		LIMIT ?
 	`
@@ -81,7 +81,7 @@ func (r *titleRepo) MarkAsUsed(ctx context.Context, ids []uint64) error {
 		return nil
 	}
 
-	query := fmt.Sprintf("UPDATE titles SET used = 1 WHERE id IN (?%s)", strings.Repeat(",?", len(ids)-1))
+	query := fmt.Sprintf("UPDATE titles SET status = 0 WHERE id IN (?%s)", strings.Repeat(",?", len(ids)-1))
 	args := make([]interface{}, len(ids))
 	for i, id := range ids {
 		args[i] = id
@@ -96,7 +96,7 @@ func (r *titleRepo) MarkAsUsed(ctx context.Context, ids []uint64) error {
 }
 
 func (r *titleRepo) CountByTemplateID(ctx context.Context, templateID int) (int64, error) {
-	query := `SELECT COUNT(*) FROM titles WHERE group_id = ? AND (used IS NULL OR used = 0)`
+	query := `SELECT COUNT(*) FROM titles WHERE group_id = ? AND status = 1`
 
 	var count int64
 	if err := r.db.GetContext(ctx, &count, query, templateID); err != nil {

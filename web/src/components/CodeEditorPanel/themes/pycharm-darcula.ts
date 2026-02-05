@@ -16,6 +16,36 @@ export function registerPythonPyCharm() {
     aliases: ['Python (PyCharm)']
   })
 
+  // 注册语言配置（支持 Ctrl+/ 注释等功能）
+  monaco.languages.setLanguageConfiguration('python-pycharm', {
+    comments: {
+      lineComment: '#'
+    },
+    brackets: [
+      ['{', '}'],
+      ['[', ']'],
+      ['(', ')']
+    ],
+    autoClosingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"', notIn: ['string'] },
+      { open: "'", close: "'", notIn: ['string'] }
+    ],
+    surroundingPairs: [
+      { open: '{', close: '}' },
+      { open: '[', close: ']' },
+      { open: '(', close: ')' },
+      { open: '"', close: '"' },
+      { open: "'", close: "'" }
+    ],
+    indentationRules: {
+      increaseIndentPattern: /^\s*(?:def|class|if|elif|else|for|while|try|except|finally|with|async)\b.*:\s*$/,
+      decreaseIndentPattern: /^\s*(?:elif|else|except|finally)\b.*:\s*$/
+    }
+  })
+
   // 注册 tokenizer
   monaco.languages.setMonarchTokensProvider('python-pycharm', {
     defaultToken: 'identifier',

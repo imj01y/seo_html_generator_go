@@ -3,8 +3,129 @@ package models
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
+
+// ============================================
+// 站群和分组相关
+// ============================================
+
+// SiteGroup represents a site group from the database.
+type SiteGroup struct {
+	ID          int            `db:"id"          json:"id"`
+	Name        string         `db:"name"        json:"name"`
+	Description sql.NullString `db:"description" json:"description"`
+	IsDefault   int            `db:"is_default"  json:"is_default"`
+	Status      int            `db:"status"      json:"status"`
+	CreatedAt   time.Time      `db:"created_at"  json:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at"  json:"updated_at"`
+}
+
+// KeywordGroup represents a keyword group from the database.
+type KeywordGroup struct {
+	ID          int            `db:"id"           json:"id"`
+	SiteGroupID int            `db:"site_group_id" json:"site_group_id"`
+	Name        string         `db:"name"         json:"name"`
+	Description sql.NullString `db:"description"  json:"description"`
+	IsDefault   int            `db:"is_default"   json:"is_default"`
+	Status      int            `db:"status"       json:"status"`
+	CreatedAt   time.Time      `db:"created_at"   json:"created_at"`
+}
+
+// ImageGroup represents an image group from the database.
+type ImageGroup struct {
+	ID          int            `db:"id"           json:"id"`
+	SiteGroupID int            `db:"site_group_id" json:"site_group_id"`
+	Name        string         `db:"name"         json:"name"`
+	Description sql.NullString `db:"description"  json:"description"`
+	IsDefault   int            `db:"is_default"   json:"is_default"`
+	Status      int            `db:"status"       json:"status"`
+	CreatedAt   time.Time      `db:"created_at"   json:"created_at"`
+}
+
+// ArticleGroup represents an article group from the database.
+type ArticleGroup struct {
+	ID          int            `db:"id"           json:"id"`
+	SiteGroupID int            `db:"site_group_id" json:"site_group_id"`
+	Name        string         `db:"name"         json:"name"`
+	Description sql.NullString `db:"description"  json:"description"`
+	IsDefault   int            `db:"is_default"   json:"is_default"`
+	Status      int            `db:"status"       json:"status"`
+	CreatedAt   time.Time      `db:"created_at"   json:"created_at"`
+}
+
+// ============================================
+// 管理员和系统相关
+// ============================================
+
+// Admin represents an administrator from the database.
+type Admin struct {
+	ID        int            `db:"id"         json:"id"`
+	Username  string         `db:"username"   json:"username"`
+	Password  string         `db:"password"   json:"-"` // 密码不输出到 JSON
+	LastLogin sql.NullTime   `db:"last_login" json:"last_login"`
+	CreatedAt time.Time      `db:"created_at" json:"created_at"`
+}
+
+// SystemLog represents a system log entry from the database.
+type SystemLog struct {
+	ID              int64           `db:"id"                json:"id"`
+	Level           string          `db:"level"             json:"level"`
+	Module          sql.NullString  `db:"module"            json:"module"`
+	SpiderProjectID sql.NullInt64   `db:"spider_project_id" json:"spider_project_id"`
+	Message         string          `db:"message"           json:"message"`
+	Extra           json.RawMessage `db:"extra"             json:"extra"`
+	CreatedAt       time.Time       `db:"created_at"        json:"created_at"`
+}
+
+// ContentGenerator represents a content generator from the database.
+type ContentGenerator struct {
+	ID          int            `db:"id"           json:"id"`
+	Name        string         `db:"name"         json:"name"`
+	DisplayName string         `db:"display_name" json:"display_name"`
+	Description sql.NullString `db:"description"  json:"description"`
+	Code        string         `db:"code"         json:"code"`
+	Enabled     int            `db:"enabled"      json:"enabled"`
+	IsDefault   int            `db:"is_default"   json:"is_default"`
+	Version     int            `db:"version"      json:"version"`
+	CreatedAt   time.Time      `db:"created_at"   json:"created_at"`
+	UpdatedAt   time.Time      `db:"updated_at"   json:"updated_at"`
+}
+
+// ============================================
+// 定时任务相关
+// ============================================
+
+// ScheduledTask represents a scheduled task from the database.
+type ScheduledTask struct {
+	ID        int             `db:"id"          json:"id"`
+	Name      string          `db:"name"        json:"name"`
+	TaskType  string          `db:"task_type"   json:"task_type"`
+	CronExpr  string          `db:"cron_expr"   json:"cron_expr"`
+	Params    json.RawMessage `db:"params"      json:"params"`
+	Enabled   int             `db:"enabled"     json:"enabled"`
+	LastRunAt sql.NullTime    `db:"last_run_at" json:"last_run_at"`
+	NextRunAt sql.NullTime    `db:"next_run_at" json:"next_run_at"`
+	CreatedAt time.Time       `db:"created_at"  json:"created_at"`
+	UpdatedAt time.Time       `db:"updated_at"  json:"updated_at"`
+}
+
+// TaskLog represents a task execution log from the database.
+type TaskLog struct {
+	ID        int64          `db:"id"         json:"id"`
+	TaskID    int            `db:"task_id"    json:"task_id"`
+	Status    string         `db:"status"     json:"status"`
+	Message   sql.NullString `db:"message"    json:"message"`
+	Duration  sql.NullInt64  `db:"duration"   json:"duration"`
+	StartedAt time.Time      `db:"started_at" json:"started_at"`
+	EndedAt   sql.NullTime   `db:"ended_at"   json:"ended_at"`
+	CreatedAt time.Time      `db:"created_at" json:"created_at"`
+}
+
+// ============================================
+// 站点和模板相关
+// ============================================
 
 // Site represents a site configuration from the database.
 // Fields are grouped by: identifiers, configuration, optional relations, metadata, timestamps.
@@ -82,6 +203,7 @@ type Title struct {
 	GroupID   int       `db:"group_id"   json:"group_id"`
 	Title     string    `db:"title"      json:"title"`
 	BatchID   int       `db:"batch_id"   json:"batch_id"`
+	Status    int       `db:"status"     json:"status"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
@@ -91,6 +213,7 @@ type Content struct {
 	GroupID   int       `db:"group_id"   json:"group_id"`
 	Content   string    `db:"content"    json:"content"`
 	BatchID   int       `db:"batch_id"   json:"batch_id"`
+	Status    int       `db:"status"     json:"status"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 

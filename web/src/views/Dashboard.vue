@@ -81,9 +81,7 @@ const stats = reactive<DashboardStats>({
   sites_count: 0,
   keywords_total: 0,
   images_total: 0,
-  articles_total: 0,
-  keyword_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false },
-  image_group_stats: { total: 0, cursor: 0, remaining: 0, loaded: false }
+  articles_total: 0
 })
 
 const systemStats = ref<SystemStats | null>(null)

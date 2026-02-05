@@ -242,17 +242,26 @@ const loadLogs = async () => {
   }
 }
 
+const periodLabels: Record<string, string> = {
+  minute: '分钟',
+  hour: '小时',
+  day: '天',
+  month: '月'
+}
+
 const loadChart = async () => {
   if (!chartRef.value) return
 
   chart = chart || echarts.init(chartRef.value)
 
   try {
+    const requestedPeriod = periodType.value
     const response = await getSpiderTrend({ period: periodType.value, limit: 100 })
     const trendData = response.items || []
 
     // 根据实际返回的 period 更新（可能发生了回退）
-    if (response.period !== periodType.value) {
+    if (response.period !== requestedPeriod) {
+      ElMessage.info(`暂无${periodLabels[requestedPeriod]}数据，已回退到${periodLabels[response.period]}`)
       periodType.value = response.period as typeof periodType.value
     }
 

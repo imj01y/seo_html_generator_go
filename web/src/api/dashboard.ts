@@ -13,11 +13,6 @@ interface BackendDashboardStats {
   template_count: number
 }
 
-interface GroupStatsResponse {
-  total: number
-  groups?: Array<{ group_id: number; group_name: string; count: number }>
-}
-
 // ============================================
 // Dashboard API
 // ============================================
@@ -25,38 +20,10 @@ interface GroupStatsResponse {
 export async function getDashboardStats(): Promise<DashboardStats> {
   const res: BackendDashboardStats = await request.get('/dashboard/stats')
 
-  const defaultStats = {
-    total: 0,
-    cursor: 0,
-    remaining: 0,
-    loaded: false
-  }
-
-  let keywordStats = { ...defaultStats, total: res.keyword_count, remaining: res.keyword_count, loaded: res.keyword_count > 0 }
-  let imageStats = { ...defaultStats, total: res.image_count, remaining: res.image_count, loaded: res.image_count > 0 }
-
-  try {
-    const [kStats, iStats] = await Promise.all([
-      request.get('/keywords/stats').catch(() => null) as Promise<GroupStatsResponse | null>,
-      request.get('/images/urls/stats').catch(() => null) as Promise<GroupStatsResponse | null>
-    ])
-
-    if (kStats) {
-      keywordStats = { ...defaultStats, total: kStats.total, remaining: kStats.total, loaded: kStats.total > 0 }
-    }
-    if (iStats) {
-      imageStats = { ...defaultStats, total: iStats.total, remaining: iStats.total, loaded: iStats.total > 0 }
-    }
-  } catch {
-    // 静默处理，使用默认值
-  }
-
   return {
     sites_count: res.site_count,
     keywords_total: res.keyword_count,
     images_total: res.image_count,
-    articles_total: res.article_count,
-    keyword_group_stats: keywordStats,
-    image_group_stats: imageStats
+    articles_total: res.article_count
   }
 }

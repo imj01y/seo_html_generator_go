@@ -134,7 +134,7 @@ type SpiderMoveRequest struct {
 	NewPath string `json:"new_path" binding:"required"`
 }
 
-// StatsChartPoint 统计图表数据点
+// StatsChartPoint 统计图表数据点（用于 API 响应，time 字段通过 SQL AS 别名映射）
 type StatsChartPoint struct {
 	Time      time.Time `db:"time" json:"time"`
 	Total     int       `db:"total" json:"total"`
@@ -142,4 +142,18 @@ type StatsChartPoint struct {
 	Failed    int       `db:"failed" json:"failed"`
 	Retried   int       `db:"retried" json:"retried"`
 	AvgSpeed  float64   `db:"avg_speed" json:"avg_speed"`
+}
+
+// SpiderStatsHistory 爬虫统计历史记录（对应 spider_stats_history 表）
+type SpiderStatsHistory struct {
+	ID          int       `db:"id"           json:"id"`
+	ProjectID   int       `db:"project_id"   json:"project_id"`
+	PeriodType  string    `db:"period_type"  json:"period_type"`
+	PeriodStart time.Time `db:"period_start" json:"period_start"`
+	Total       int       `db:"total"        json:"total"`
+	Completed   int       `db:"completed"    json:"completed"`
+	Failed      int       `db:"failed"       json:"failed"`
+	Retried     int       `db:"retried"      json:"retried"`
+	AvgSpeed    *float64  `db:"avg_speed"    json:"avg_speed"`
+	CreatedAt   time.Time `db:"created_at"   json:"created_at"`
 }
