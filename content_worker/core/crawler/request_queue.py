@@ -130,8 +130,9 @@ class RequestQueue:
         request_data = request.to_json()
         await self.redis.zadd(self._key_pending, {request_data: score})
 
-        # 更新统计
-        await self.redis.hincrby(self._key_stats, 'total', 1)
+        # 更新统计（只统计详情页）
+        if request.callback_name == 'parse_detail':
+            await self.redis.hincrby(self._key_stats, 'total', 1)
 
         logger.debug(f"Request pushed: {request.url[:50]}, priority={request.priority}")
         return True
@@ -215,10 +216,14 @@ class RequestQueue:
         if success:
             # 加入 completed 集合
             await self.redis.sadd(self._key_completed, fingerprint)
-            await self.redis.hincrby(self._key_stats, 'completed', 1)
+            # 只统计详情页
+            if request.callback_name == 'parse_detail':
+                await self.redis.hincrby(self._key_stats, 'completed', 1)
             logger.debug(f"Request completed: {request.url[:50]}")
         else:
-            await self.redis.hincrby(self._key_stats, 'failed', 1)
+            # 只统计详情页
+            if request.callback_name == 'parse_detail':
+                await self.redis.hincrby(self._key_stats, 'failed', 1)
             logger.debug(f"Request failed: {request.url[:50]}")
 
     async def retry(self, request: Request) -> bool:
@@ -247,7 +252,9 @@ class RequestQueue:
         # 重新入队（强制入队，不检查去重）
         score = -new_request.priority + time.time() / 1e10
         await self.redis.zadd(self._key_pending, {new_request.to_json(): score})
-        await self.redis.hincrby(self._key_stats, 'retried', 1)
+        # 只统计详情页
+        if request.callback_name == 'parse_detail':
+            await self.redis.hincrby(self._key_stats, 'retried', 1)
 
         logger.debug(f"Request retry {new_request.retry_count}/{new_request.max_retries}: {request.url[:50]}")
         return True
@@ -365,11 +372,15 @@ class RequestQueue:
                     if new_request.retry_count <= new_request.max_retries:
                         score = -new_request.priority + time.time() / 1e10
                         await self.redis.zadd(self._key_pending, {new_request.to_json(): score})
-                        await self.redis.hincrby(self._key_stats, 'retried', 1)
+                        # 只统计详情页
+                        if request.callback_name == 'parse_detail':
+                            await self.redis.hincrby(self._key_stats, 'retried', 1)
                         recovered += 1
                         logger.info(f"Recovered timeout request: {request.url[:50]}")
                     else:
-                        await self.redis.hincrby(self._key_stats, 'failed', 1)
+                        # 只统计详情页
+                        if request.callback_name == 'parse_detail':
+                            await self.redis.hincrby(self._key_stats, 'failed', 1)
                         logger.warning(f"Timeout request exceeded max retries: {request.url[:50]}")
 
                     # 从 processing 移除
