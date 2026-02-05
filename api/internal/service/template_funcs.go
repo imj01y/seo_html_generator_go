@@ -208,22 +208,6 @@ func (m *TemplateFuncsManager) LoadKeywords(keywords []string) int {
 	return len(encoded)
 }
 
-// LoadImageURLs 加载图片URL
-func (m *TemplateFuncsManager) LoadImageURLs(urls []string) int {
-	copied := make([]string, len(urls))
-	copy(copied, urls)
-
-	rand.Shuffle(len(copied), func(i, j int) {
-		copied[i], copied[j] = copied[j], copied[i]
-	})
-
-	m.imageURLs = copied
-	atomic.StoreInt64(&m.imageLen, int64(len(copied)))
-	atomic.StoreInt64(&m.imageIdx, 0)
-
-	return len(copied)
-}
-
 // ========== 模板函数（全部无锁，O(1)） ==========
 
 // Cls 从池中获取随机class
@@ -263,14 +247,27 @@ func (m *TemplateFuncsManager) RandomKeywordEmoji() string {
 	return m.generateKeywordWithEmoji()
 }
 
-// RandomImage 获取随机图片URL（原子操作）
-func (m *TemplateFuncsManager) RandomImage() string {
-	length := atomic.LoadInt64(&m.imageLen)
-	if length == 0 {
+// RandomImage 获取随机图片URL（支持分组）
+func (m *TemplateFuncsManager) RandomImage(groupID int) string {
+	data := m.imageData.Load()
+	if data == nil {
 		return ""
 	}
-	idx := atomic.AddInt64(&m.imageIdx, 1) - 1
-	return m.imageURLs[idx%length]
+
+	urls := data.groups[groupID]
+	if len(urls) == 0 {
+		// 降级到默认分组
+		urls = data.groups[1]
+		if len(urls) == 0 {
+			return ""
+		}
+	}
+
+	// 获取或创建该分组的索引
+	idxPtr, _ := m.imageGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
+	idx := idxPtr.(*atomic.Int64).Add(1) - 1
+
+	return urls[idx%int64(len(urls))]
 }
 
 // RandomNumber 获取随机数
@@ -323,9 +320,8 @@ func generateRandomURL() string {
 func (m *TemplateFuncsManager) GetStats() map[string]interface{} {
 	stats := map[string]interface{}{
 		"keywords_count": atomic.LoadInt64(&m.keywordLen),
-		"images_count":   atomic.LoadInt64(&m.imageLen),
 		"keyword_idx":    atomic.LoadInt64(&m.keywordIdx),
-		"image_idx":      atomic.LoadInt64(&m.imageIdx),
+		"image_groups":   m.GetImageStats(),
 	}
 
 	if m.clsPool != nil {
@@ -487,5 +483,112 @@ func (m *TemplateFuncsManager) GetPoolStats() map[string]interface{} {
 		stats["keyword_emoji"] = m.keywordEmojiPool.Stats()
 	}
 
+	return stats
+}
+
+// ============ 图片分组管理方法 ============
+
+// LoadImageGroup 加载指定分组的图片（初始化时使用）
+func (m *TemplateFuncsManager) LoadImageGroup(groupID int, urls []string) {
+	for {
+		old := m.imageData.Load()
+
+		var newGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups)+1)
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+		}
+
+		// 复制 urls 避免外部修改
+		copied := make([]string, len(urls))
+		copy(copied, urls)
+		newGroups[groupID] = copied
+
+		newData := &ImageData{groups: newGroups}
+		if m.imageData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// AppendImages 追加图片到指定分组（添加图片时使用）
+func (m *TemplateFuncsManager) AppendImages(groupID int, urls []string) {
+	if len(urls) == 0 {
+		return
+	}
+
+	for {
+		old := m.imageData.Load()
+
+		var newGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups)+1)
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+		}
+
+		// 追加到目标分组（显式复制避免并发问题）
+		oldUrls := newGroups[groupID]
+		newUrls := make([]string, len(oldUrls)+len(urls))
+		copy(newUrls, oldUrls)
+		copy(newUrls[len(oldUrls):], urls)
+		newGroups[groupID] = newUrls
+
+		newData := &ImageData{groups: newGroups}
+		if m.imageData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// ReloadImageGroup 重载指定分组（删除后异步调用）
+func (m *TemplateFuncsManager) ReloadImageGroup(groupID int, urls []string) {
+	for {
+		old := m.imageData.Load()
+
+		var newGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups))
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+		}
+
+		// 复制 urls 避免外部修改
+		if len(urls) > 0 {
+			copied := make([]string, len(urls))
+			copy(copied, urls)
+			newGroups[groupID] = copied
+		} else {
+			delete(newGroups, groupID)
+		}
+
+		newData := &ImageData{groups: newGroups}
+		if m.imageData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// GetImageStats 获取图片统计信息
+func (m *TemplateFuncsManager) GetImageStats() map[int]int {
+	data := m.imageData.Load()
+	if data == nil {
+		return make(map[int]int)
+	}
+
+	stats := make(map[int]int, len(data.groups))
+	for gid, urls := range data.groups {
+		stats[gid] = len(urls)
+	}
 	return stats
 }
