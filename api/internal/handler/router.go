@@ -125,7 +125,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Images routes (require JWT)
-	imagesHandler := NewImagesHandler(deps.DB, deps.PoolManager)
+	imagesHandler := NewImagesHandler(deps.DB, deps.PoolManager, deps.TemplateFuncs)
 	imagesGroup := r.Group("/api/images")
 	imagesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{

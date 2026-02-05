@@ -18,16 +18,31 @@ import (
 
 // ImagesHandler 图片管理 handler
 type ImagesHandler struct {
-	db          *sqlx.DB
-	poolManager *core.PoolManager
+	db           *sqlx.DB
+	poolManager  *core.PoolManager
+	funcsManager *core.TemplateFuncsManager
 }
 
 // NewImagesHandler 创建 ImagesHandler
-func NewImagesHandler(db *sqlx.DB, poolManager *core.PoolManager) *ImagesHandler {
+func NewImagesHandler(db *sqlx.DB, poolManager *core.PoolManager, funcsManager *core.TemplateFuncsManager) *ImagesHandler {
 	return &ImagesHandler{
-		db:          db,
-		poolManager: poolManager,
+		db:           db,
+		poolManager:  poolManager,
+		funcsManager: funcsManager,
 	}
+}
+
+// asyncReloadImageGroup 异步重载图片分组到 TemplateFuncsManager
+func (h *ImagesHandler) asyncReloadImageGroup(groupID int) {
+	go func() {
+		ctx := context.Background()
+		// 1. 等待 PoolManager 重载完成
+		h.poolManager.ReloadImageGroup(ctx, groupID)
+		// 2. 获取最新数据
+		urls := h.poolManager.GetImages(groupID)
+		// 3. 同步到 TemplateFuncsManager
+		h.funcsManager.ReloadImageGroup(groupID, urls)
+	}()
 }
 
 // ImageGroup 图片分组
