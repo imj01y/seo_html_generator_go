@@ -1,13 +1,17 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
-	"seo-generator/api/internal/model"
+	"github.com/rs/zerolog/log"
+
+	models "seo-generator/api/internal/model"
+	core "seo-generator/api/internal/service"
 )
 
 // SpiderProjectsHandler 爬虫项目处理器
@@ -269,6 +273,15 @@ func (h *SpiderProjectsHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// 同步定时任务配置
+	if scheduler, exists := c.Get("scheduler"); exists && req.Schedule != nil && *req.Schedule != "" {
+		s := scheduler.(*core.Scheduler)
+		ctx := context.Background()
+		if err := core.SyncSpiderSchedule(ctx, sqlxDB, s, int(projectID), req.Name, req.Schedule, req.Enabled); err != nil {
+			log.Warn().Err(err).Int64("project_id", projectID).Msg("Failed to sync spider schedule")
+		}
+	}
+
 	c.JSON(200, gin.H{"success": true, "id": projectID, "message": "创建成功"})
 }
 
@@ -363,6 +376,22 @@ func (h *SpiderProjectsHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// 同步定时任务配置（如果 schedule 或 enabled 有变更）
+	if scheduler, exists := c.Get("scheduler"); exists && (req.Schedule != nil || req.Enabled != nil) {
+		s := scheduler.(*core.Scheduler)
+		var project struct {
+			Name     string  `db:"name"`
+			Schedule *string `db:"schedule"`
+			Enabled  int     `db:"enabled"`
+		}
+		if err := sqlxDB.Get(&project, "SELECT name, schedule, enabled FROM spider_projects WHERE id = ?", id); err == nil {
+			ctx := context.Background()
+			if syncErr := core.SyncSpiderSchedule(ctx, sqlxDB, s, id, project.Name, project.Schedule, project.Enabled); syncErr != nil {
+				log.Warn().Err(syncErr).Int("project_id", id).Msg("Failed to sync spider schedule")
+			}
+		}
+	}
+
 	c.JSON(200, gin.H{"success": true, "message": "更新成功"})
 }
 
@@ -390,6 +419,15 @@ func (h *SpiderProjectsHandler) Delete(c *gin.Context) {
 	if status == "running" {
 		c.JSON(400, gin.H{"success": false, "message": "项目正在运行中，无法删除"})
 		return
+	}
+
+	// 删除定时任务
+	if scheduler, exists := c.Get("scheduler"); exists {
+		s := scheduler.(*core.Scheduler)
+		ctx := context.Background()
+		if err := core.DeleteSpiderSchedule(ctx, sqlxDB, s, id); err != nil {
+			log.Warn().Err(err).Int("project_id", id).Msg("Failed to delete spider schedule")
+		}
 	}
 
 	sqlxDB.Exec("DELETE FROM spider_project_files WHERE project_id = ?", id)
@@ -422,6 +460,21 @@ func (h *SpiderProjectsHandler) Toggle(c *gin.Context) {
 
 	newEnabled := 1 - enabled
 	sqlxDB.Exec("UPDATE spider_projects SET enabled = ? WHERE id = ?", newEnabled, id)
+
+	// 同步定时任务状态
+	if scheduler, exists := c.Get("scheduler"); exists {
+		s := scheduler.(*core.Scheduler)
+		var project struct {
+			Name     string  `db:"name"`
+			Schedule *string `db:"schedule"`
+		}
+		if err := sqlxDB.Get(&project, "SELECT name, schedule FROM spider_projects WHERE id = ?", id); err == nil {
+			ctx := context.Background()
+			if syncErr := core.SyncSpiderSchedule(ctx, sqlxDB, s, id, project.Name, project.Schedule, newEnabled); syncErr != nil {
+				log.Warn().Err(syncErr).Int("project_id", id).Msg("Failed to sync spider schedule")
+			}
+		}
+	}
 
 	message := "已启用"
 	if newEnabled == 0 {
