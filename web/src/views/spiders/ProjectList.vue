@@ -519,7 +519,7 @@ async function handleStop(row: SpiderProject) {
 async function confirmResetProject(row: SpiderProject) {
   try {
     await ElMessageBox.confirm(
-      `确定要重置项目「${row.name}」吗？\n\n此操作将清空：\n• 待抓取队列\n• 已抓取URL记录（去重队列）\n• 失败请求记录\n• 统计数据\n\n重置后项目将从头开始抓取。`,
+      `确定要重置项目「${row.name}」吗？\n\n此操作将清空：\n• 待抓取队列\n• 已抓取URL记录（去重队列）\n• 统计数据\n\n重置后项目将从头开始抓取。`,
       '重置确认',
       {
         confirmButtonText: '确定重置',

@@ -133,52 +133,6 @@ func (h *SpiderStatsHandler) ClearQueue(c *gin.Context) {
 	c.JSON(200, gin.H{"success": true, "message": "队列已清空"})
 }
 
-// Reset 重置项目
-func (h *SpiderStatsHandler) Reset(c *gin.Context) {
-	db, exists := c.Get("db")
-	if !exists {
-		c.JSON(500, gin.H{"success": false, "message": "数据库未连接"})
-		return
-	}
-	sqlxDB := db.(*sqlx.DB)
-
-	rdb, exists := c.Get("redis")
-	if !exists {
-		c.JSON(500, gin.H{"success": false, "message": "Redis未连接"})
-		return
-	}
-	redisClient := rdb.(*redis.Client)
-
-	id, _ := strconv.Atoi(c.Param("id"))
-
-	var status string
-	err := sqlxDB.Get(&status, "SELECT status FROM spider_projects WHERE id = ?", id)
-	if err != nil {
-		c.JSON(404, gin.H{"success": false, "message": "项目不存在"})
-		return
-	}
-	if status == "running" {
-		c.JSON(400, gin.H{"success": false, "message": "项目正在运行中，请先停止"})
-		return
-	}
-
-	ctx := context.Background()
-	keys := []string{
-		fmt.Sprintf("spider:queue:%d", id),
-		fmt.Sprintf("spider:seen:%d", id),
-		fmt.Sprintf("spider:stats:%d", id),
-	}
-	redisClient.Del(ctx, keys...)
-
-	result, _ := sqlxDB.Exec("DELETE FROM spider_failed_requests WHERE project_id = ?", id)
-	affected, _ := result.RowsAffected()
-
-	c.JSON(200, gin.H{
-		"success": true,
-		"message": fmt.Sprintf("项目已重置，清空了 %d 条失败记录", affected),
-	})
-}
-
 // ListFailed 获取失败请求列表
 func (h *SpiderStatsHandler) ListFailed(c *gin.Context) {
 	db, exists := c.Get("db")

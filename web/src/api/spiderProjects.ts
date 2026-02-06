@@ -146,7 +146,7 @@ export function stopProject(id: number): Promise<MutationResponse> {
 }
 
 export function resetProject(id: number): Promise<MutationResponse> {
-  return request.post(`/spider-projects/${id}/reset`)
+  return request.post(`/spider-projects/${id}/queue/clear`)
 }
 
 export function testProject(id: number, maxItems: number = 0): Promise<TestStartResponse> {

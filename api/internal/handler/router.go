@@ -249,7 +249,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 
 		// 队列管理
 		spiderRoutes.POST("/:id/queue/clear", spiderProjectStatsHandler.ClearQueue)
-		spiderRoutes.POST("/:id/reset", spiderProjectStatsHandler.Reset)
 
 		// 失败请求
 		spiderRoutes.GET("/:id/failed", spiderProjectStatsHandler.ListFailed)
