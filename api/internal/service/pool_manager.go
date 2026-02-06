@@ -781,6 +781,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 			Count: count,
 		})
 	}
+	sort.Slice(keywordGroups, func(i, j int) bool { return keywordGroups[i].ID < keywordGroups[j].ID })
 	// 获取内存统计
 	kwStats := m.poolManager.GetKeywordPool().GetStats(0)
 	keywordsMemory := kwStats.MemoryBytes
@@ -815,6 +816,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 			Count: count,
 		})
 	}
+	sort.Slice(imageGroups, func(i, j int) bool { return imageGroups[i].ID < imageGroups[j].ID })
 	// 获取内存统计
 	imgStats := m.poolManager.GetImagePool().GetStats(0)
 	imagesMemory := imgStats.MemoryBytes
