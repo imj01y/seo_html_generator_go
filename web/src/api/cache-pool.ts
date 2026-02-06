@@ -14,6 +14,12 @@ export interface PoolGroupInfo {
   id: number
   name: string
   count: number
+  // 消费型池分组扩展字段
+  size?: number
+  available?: number
+  used?: number
+  utilization?: number
+  memory_bytes?: number
 }
 
 /** 池状态 */

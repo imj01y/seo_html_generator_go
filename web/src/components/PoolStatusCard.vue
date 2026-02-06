@@ -46,6 +46,31 @@
           <span class="stat-value">{{ formatBytes(pool.memory_bytes) }}</span>
         </div>
       </div>
+
+      <!-- 消费型池分组详情 -->
+      <el-collapse v-if="pool.groups && pool.groups.length > 1" class="groups-collapse">
+        <el-collapse-item :title="`分组详情 (${pool.groups.length} 个分组)`">
+          <div class="consumable-groups-list">
+            <div v-for="group in pool.groups" :key="group.id" class="consumable-group-item">
+              <div class="group-header">
+                <span class="group-name">{{ group.name }}</span>
+                <span class="group-util">{{ (group.utilization || 0).toFixed(0) }}%</span>
+              </div>
+              <el-progress
+                :percentage="group.utilization || 0"
+                :color="getGroupColor(group.utilization || 0)"
+                :stroke-width="8"
+                :show-text="false"
+              />
+              <div class="group-stats">
+                <span>{{ formatNumber(group.available ?? 0) }}/{{ formatNumber(group.size ?? 0) }}</span>
+                <span>已用: {{ formatNumber(group.used ?? 0) }}</span>
+                <span>{{ formatBytes(group.memory_bytes) }}</span>
+              </div>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
     </template>
 
     <!-- 复用型池：显示总数和分组 -->
@@ -127,6 +152,13 @@ const progressColor = computed(() => {
   if (util > 10) return '#E6A23C'      // 橙色 - 偏低
   return '#F56C6C'                     // 红色 - 紧张
 })
+
+const getGroupColor = (util: number): string => {
+  if (util > 70) return '#67C23A'
+  if (util > 30) return '#409EFF'
+  if (util > 10) return '#E6A23C'
+  return '#F56C6C'
+}
 
 const handleReload = () => {
   emit('reload')
@@ -250,6 +282,49 @@ const formatTime = (time: string | null): string => {
         font-size: 14px;
         font-weight: 500;
         color: #303133;
+      }
+    }
+  }
+
+  .consumable-groups-list {
+    .consumable-group-item {
+      padding: 8px 12px;
+      background: var(--el-fill-color-light);
+      border-radius: 4px;
+      margin-bottom: 6px;
+
+      &:last-child {
+        margin-bottom: 0;
+      }
+
+      .group-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+
+        .group-name {
+          font-size: 13px;
+          color: var(--el-text-color-regular);
+          font-weight: 500;
+        }
+
+        .group-util {
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--el-text-color-secondary);
+        }
+      }
+
+      :deep(.el-progress) {
+        margin-bottom: 4px;
+      }
+
+      .group-stats {
+        display: flex;
+        justify-content: space-between;
+        font-size: 12px;
+        color: var(--el-text-color-secondary);
       }
     }
   }
