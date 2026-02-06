@@ -36,10 +36,14 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Failed to setup logger: %v\n", err)
 	}
 
-	// Start pprof server for CPU profiling (port 6060)
+	// Start pprof server for CPU profiling
 	go func() {
-		log.Info().Msg("Starting pprof server on :6060")
-		if err := http.ListenAndServe(":6060", nil); err != nil {
+		pprofPort := os.Getenv("PPROF_PORT")
+		if pprofPort == "" {
+			pprofPort = "6060"
+		}
+		log.Info().Str("port", pprofPort).Msg("Starting pprof server")
+		if err := http.ListenAndServe(":"+pprofPort, nil); err != nil {
 			log.Error().Err(err).Msg("pprof server failed")
 		}
 	}()
