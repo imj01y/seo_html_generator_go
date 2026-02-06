@@ -208,18 +208,15 @@ func (g *TitleGenerator) Reload(config *CachePoolConfig) {
 	oldConfig := g.config
 	g.config = config
 	needRestart := config.TitlePoolSize != oldConfig.TitlePoolSize
-
-	// 获取当前所有 groupID（在持有锁时）
-	var groupIDs []int
-	if needRestart {
-		groupIDs = make([]int, 0, len(g.pools))
-		for gid := range g.pools {
-			groupIDs = append(groupIDs, gid)
-		}
-	}
 	g.mu.Unlock()
 
-	if needRestart && len(groupIDs) > 0 {
+	if needRestart {
+		// 从关键词池获取最新分组（而非复用旧分组）
+		groupIDs := g.poolManager.GetKeywordGroupIDs()
+		if len(groupIDs) == 0 {
+			groupIDs = []int{1}
+		}
+
 		log.Info().
 			Int("old_size", oldConfig.TitlePoolSize).
 			Int("new_size", config.TitlePoolSize).
@@ -240,8 +237,36 @@ func (g *TitleGenerator) Reload(config *CachePoolConfig) {
 		g.pools = make(map[int]*TitlePool)
 		g.mu.Unlock()
 
-		// 4. 重新启动（会创建新池并启动 worker）
+		// 4. 重新启动（使用最新分组）
 		g.Start(groupIDs)
+	}
+}
+
+// SyncGroups 同步分组：为新增的关键词分组创建标题池和 worker
+func (g *TitleGenerator) SyncGroups(groupIDs []int) {
+	if g.stopped.Load() {
+		return
+	}
+
+	g.mu.RLock()
+	// 找出需要新增的分组
+	var toAdd []int
+	for _, gid := range groupIDs {
+		if _, exists := g.pools[gid]; !exists {
+			toAdd = append(toAdd, gid)
+		}
+	}
+	g.mu.RUnlock()
+
+	// 为新分组创建池和启动 worker
+	for _, gid := range toAdd {
+		pool := g.getOrCreatePool(gid)
+		g.fillPool(gid, pool)
+		for i := 0; i < g.config.TitleWorkers; i++ {
+			g.wg.Add(1)
+			go g.refillWorker(gid, pool)
+		}
+		log.Info().Int("group_id", gid).Msg("TitleGenerator: added new group")
 	}
 }
 

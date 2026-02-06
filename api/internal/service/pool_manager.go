@@ -465,7 +465,14 @@ func (m *PoolManager) AppendKeywords(groupID int, keywords []string) {
 // ReloadKeywordGroup 重载指定分组的关键词缓存（删除时调用）
 // 兼容层: 代理到 pool.KeywordPool
 func (m *PoolManager) ReloadKeywordGroup(ctx context.Context, groupID int) error {
-	return m.poolManager.GetKeywordPool().ReloadGroup(ctx, groupID)
+	if err := m.poolManager.GetKeywordPool().ReloadGroup(ctx, groupID); err != nil {
+		return err
+	}
+	// 同步 TitleGenerator 分组
+	if m.titleGenerator != nil {
+		m.titleGenerator.SyncGroups(m.GetKeywordGroupIDs())
+	}
+	return nil
 }
 
 // GetKeywordGroupIDs 返回所有关键词分组ID
@@ -867,6 +874,9 @@ func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
 		if err := m.poolManager.GetKeywordPool().Reload(ctx, groupIDs); err != nil {
 			return fmt.Errorf("reload keywords: %w", err)
 		}
+		if m.titleGenerator != nil {
+			m.titleGenerator.SyncGroups(m.GetKeywordGroupIDs())
+		}
 	case "images":
 		groupIDs, _ := m.discoverImageGroups(ctx)
 		if err := m.poolManager.GetImagePool().Reload(ctx, groupIDs); err != nil {
@@ -875,6 +885,9 @@ func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
 	case "all":
 		if err := m.poolManager.ReloadAll(ctx); err != nil {
 			return fmt.Errorf("reload all pools: %w", err)
+		}
+		if m.titleGenerator != nil {
+			m.titleGenerator.SyncGroups(m.GetKeywordGroupIDs())
 		}
 	}
 
