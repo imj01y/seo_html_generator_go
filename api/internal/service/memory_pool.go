@@ -37,17 +37,19 @@ type MemoryPool struct {
 	groupID       int
 	poolType      string // "titles" or "contents"
 	maxSize       int
-	memoryBytes   atomic.Int64 // 内存占用追踪
-	consumedCount atomic.Int64 // 被消费的数量（Pop 计数）
+	memoryBytes   atomic.Int64          // 内存占用追踪
+	consumedCount atomic.Int64          // 被消费的数量（Pop 计数）
+	loadedIDs     map[int64]struct{}    // 已加载的 ID 集合，用于去重
 }
 
 // NewMemoryPool creates a new memory pool
 func NewMemoryPool(groupID int, poolType string, maxSize int) *MemoryPool {
 	return &MemoryPool{
-		items:    make([]PoolItem, 0, maxSize),
-		groupID:  groupID,
-		poolType: poolType,
-		maxSize:  maxSize,
+		items:     make([]PoolItem, 0, maxSize),
+		groupID:   groupID,
+		poolType:  poolType,
+		maxSize:   maxSize,
+		loadedIDs: make(map[int64]struct{}),
 	}
 }
 
@@ -71,7 +73,7 @@ func (p *MemoryPool) Pop() (PoolItem, bool) {
 	return item, true
 }
 
-// Push adds items to the end of the pool
+// Push adds items to the end of the pool, skipping items with duplicate IDs
 func (p *MemoryPool) Push(items []PoolItem) {
 	if len(items) == 0 {
 		return
@@ -80,23 +82,26 @@ func (p *MemoryPool) Push(items []PoolItem) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// Respect max size
 	available := p.maxSize - len(p.items)
 	if available <= 0 {
 		return
 	}
-	if len(items) > available {
-		items = items[:available]
-	}
 
-	// 增加内存计数
 	var addedMem int64
+	added := 0
 	for _, item := range items {
+		if added >= available {
+			break
+		}
+		if _, exists := p.loadedIDs[item.ID]; exists {
+			continue
+		}
+		p.loadedIDs[item.ID] = struct{}{}
+		p.items = append(p.items, item)
 		addedMem += StringMemorySize(item.Text)
+		added++
 	}
 	p.memoryBytes.Add(addedMem)
-
-	p.items = append(p.items, items...)
 }
 
 // Len returns the current number of items in the pool
@@ -106,11 +111,12 @@ func (p *MemoryPool) Len() int {
 	return len(p.items)
 }
 
-// Clear removes all items from the pool
+// Clear removes all items from the pool and resets loaded ID tracking
 func (p *MemoryPool) Clear() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.items = p.items[:0]
+	p.loadedIDs = make(map[int64]struct{})
 	p.memoryBytes.Store(0)
 }
 
