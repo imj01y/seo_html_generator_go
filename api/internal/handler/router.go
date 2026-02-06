@@ -728,6 +728,20 @@ func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 			} else {
 				deps.PoolManager.RefreshData(ctx, "images")
 			}
+		case "titles":
+			if req.GroupID != nil {
+				if tg := deps.PoolManager.GetTitleGenerator(); tg != nil {
+					tg.ReloadGroup(*req.GroupID)
+				}
+			} else {
+				deps.PoolManager.RefreshData(ctx, "titles")
+			}
+		case "contents":
+			if req.GroupID != nil {
+				deps.PoolManager.ReloadContentGroup(ctx, *req.GroupID)
+			} else {
+				deps.PoolManager.RefreshData(ctx, "contents")
+			}
 		case "emojis":
 			deps.PoolManager.ReloadEmojis("data/emojis.json")
 		default:
