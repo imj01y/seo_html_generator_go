@@ -94,7 +94,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Keywords routes (require JWT)
-	keywordsHandler := NewKeywordsHandler(deps.DB, deps.PoolManager)
+	keywordsHandler := NewKeywordsHandler(deps.DB, deps.PoolManager, deps.TemplateFuncs)
 	keywordsGroup := r.Group("/api/keywords")
 	keywordsGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{

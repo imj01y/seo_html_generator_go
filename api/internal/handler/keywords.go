@@ -19,16 +19,38 @@ import (
 
 // KeywordsHandler 关键词管理 handler
 type KeywordsHandler struct {
-	db          *sqlx.DB
-	poolManager *core.PoolManager
+	db           *sqlx.DB
+	poolManager  *core.PoolManager
+	funcsManager *core.TemplateFuncsManager
 }
 
 // NewKeywordsHandler 创建 KeywordsHandler
-func NewKeywordsHandler(db *sqlx.DB, poolManager *core.PoolManager) *KeywordsHandler {
+func NewKeywordsHandler(db *sqlx.DB, poolManager *core.PoolManager, funcsManager *core.TemplateFuncsManager) *KeywordsHandler {
 	return &KeywordsHandler{
-		db:          db,
-		poolManager: poolManager,
+		db:           db,
+		poolManager:  poolManager,
+		funcsManager: funcsManager,
 	}
+}
+
+// asyncReloadKeywordGroup 异步重载关键词分组到 TemplateFuncsManager
+func (h *KeywordsHandler) asyncReloadKeywordGroup(groupID int) {
+	go func() {
+		ctx := context.Background()
+		// 1. 等待 PoolManager 重载完成
+		if err := h.poolManager.ReloadKeywordGroup(ctx, groupID); err != nil {
+			log.Error().Err(err).Int("group_id", groupID).
+				Msg("Failed to reload keyword group from pool manager")
+			return
+		}
+		// 2. 获取最新数据
+		keywords := h.poolManager.GetKeywords(groupID)
+		rawKeywords := h.poolManager.GetAllRawKeywords(groupID)
+		// 3. 同步到 TemplateFuncsManager
+		if h.funcsManager != nil {
+			h.funcsManager.ReloadKeywordGroup(groupID, keywords, rawKeywords)
+		}
+	}()
 }
 
 // KeywordGroup 关键词分组
@@ -311,7 +333,7 @@ func (h *KeywordsHandler) DeleteGroup(c *gin.Context) {
 
 	// 删除后重载缓存（分组已删除，清除该分组的缓存）
 	if h.poolManager != nil {
-		go h.poolManager.ReloadKeywordGroup(context.Background(), id)
+		h.asyncReloadKeywordGroup(id)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -453,7 +475,7 @@ func (h *KeywordsHandler) Delete(c *gin.Context) {
 
 	// 删除后重载分组缓存
 	if groupID > 0 && h.poolManager != nil {
-		go h.poolManager.ReloadKeywordGroup(context.Background(), groupID)
+		h.asyncReloadKeywordGroup(groupID)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -502,7 +524,7 @@ func (h *KeywordsHandler) BatchDelete(c *gin.Context) {
 	// 重载涉及的分组缓存
 	if h.poolManager != nil {
 		for _, gid := range groupIDs {
-			go h.poolManager.ReloadKeywordGroup(context.Background(), gid)
+			h.asyncReloadKeywordGroup(gid)
 		}
 	}
 
@@ -547,11 +569,21 @@ func (h *KeywordsHandler) DeleteAll(c *gin.Context) {
 
 	// 删除后重载缓存
 	if h.poolManager != nil {
+		ctx := context.Background()
 		if req.GroupID != nil {
-			go h.poolManager.ReloadKeywordGroup(context.Background(), *req.GroupID)
+			h.asyncReloadKeywordGroup(*req.GroupID)
 		} else {
 			// 全部删除，需要重载所有分组
-			go h.poolManager.RefreshData(context.Background(), "keywords")
+			h.poolManager.RefreshData(ctx, "keywords")
+			// 全部删除后，需要重载所有分组到 TemplateFuncsManager
+			if h.funcsManager != nil {
+				groupIDs := h.poolManager.GetKeywordGroupIDs()
+				for _, gid := range groupIDs {
+					keywords := h.poolManager.GetKeywords(gid)
+					rawKeywords := h.poolManager.GetAllRawKeywords(gid)
+					h.funcsManager.ReloadKeywordGroup(gid, keywords, rawKeywords)
+				}
+			}
 		}
 	}
 
@@ -585,10 +617,23 @@ func (h *KeywordsHandler) BatchUpdateStatus(c *gin.Context) {
 		args = append(args, id)
 	}
 
+	// 查询涉及的分组
+	idArgs := make([]interface{}, len(req.IDs))
+	for i, id := range req.IDs {
+		idArgs[i] = id
+	}
+	var groupIDs []int
+	h.db.Select(&groupIDs, fmt.Sprintf("SELECT DISTINCT group_id FROM keywords WHERE id IN (%s)", placeholders), idArgs...)
+
 	query := fmt.Sprintf("UPDATE keywords SET status = ? WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "updated": 0})
 		return
+	}
+
+	// 批量更新状态后重载涉及的分组
+	for _, gid := range groupIDs {
+		h.asyncReloadKeywordGroup(gid)
 	}
 
 	core.Success(c, gin.H{"success": true, "updated": len(req.IDs)})
@@ -623,6 +668,14 @@ func (h *KeywordsHandler) BatchMove(c *gin.Context) {
 	placeholders := strings.Repeat("?,", len(req.IDs))
 	placeholders = placeholders[:len(placeholders)-1]
 
+	// 查询源分组
+	idArgs := make([]interface{}, len(req.IDs))
+	for i, id := range req.IDs {
+		idArgs[i] = id
+	}
+	var sourceGroupIDs []int
+	h.db.Select(&sourceGroupIDs, fmt.Sprintf("SELECT DISTINCT group_id FROM keywords WHERE id IN (%s)", placeholders), idArgs...)
+
 	args := []interface{}{req.GroupID}
 	for _, id := range req.IDs {
 		args = append(args, id)
@@ -633,6 +686,12 @@ func (h *KeywordsHandler) BatchMove(c *gin.Context) {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "moved": 0})
 		return
 	}
+
+	// 移动后需要重载源分组和目标分组
+	for _, gid := range sourceGroupIDs {
+		h.asyncReloadKeywordGroup(gid)
+	}
+	h.asyncReloadKeywordGroup(req.GroupID)
 
 	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
 }
@@ -698,6 +757,12 @@ func (h *KeywordsHandler) BatchAdd(c *gin.Context) {
 	// 成功后追加到缓存
 	if len(addedKeywords) > 0 && h.poolManager != nil {
 		h.poolManager.AppendKeywords(groupID, addedKeywords)
+		// 同步到 TemplateFuncsManager（需要重新获取完整数据）
+		if h.funcsManager != nil {
+			encodedKeywords := h.poolManager.GetKeywords(groupID)
+			rawKeywords := h.poolManager.GetAllRawKeywords(groupID)
+			h.funcsManager.ReloadKeywordGroup(groupID, encodedKeywords, rawKeywords)
+		}
 	}
 
 	core.Success(c, gin.H{
@@ -747,6 +812,12 @@ func (h *KeywordsHandler) Add(c *gin.Context) {
 	// 成功后追加到缓存
 	if h.poolManager != nil {
 		h.poolManager.AppendKeywords(groupID, []string{req.Keyword})
+		// 同步到 TemplateFuncsManager
+		if h.funcsManager != nil {
+			encodedKeywords := h.poolManager.GetKeywords(groupID)
+			rawKeywords := h.poolManager.GetAllRawKeywords(groupID)
+			h.funcsManager.ReloadKeywordGroup(groupID, encodedKeywords, rawKeywords)
+		}
 	}
 
 	core.Success(c, gin.H{"success": true, "id": id})
@@ -856,6 +927,12 @@ func (h *KeywordsHandler) Upload(c *gin.Context) {
 	// 成功后重载该分组缓存（批量上传难以追踪具体成功的）
 	if added > 0 && h.poolManager != nil {
 		h.poolManager.ReloadKeywordGroup(c.Request.Context(), groupID)
+		// 同步到 TemplateFuncsManager
+		if h.funcsManager != nil {
+			keywords := h.poolManager.GetKeywords(groupID)
+			rawKeywords := h.poolManager.GetAllRawKeywords(groupID)
+			h.funcsManager.ReloadKeywordGroup(groupID, keywords, rawKeywords)
+		}
 	}
 
 	core.Success(c, gin.H{
@@ -880,6 +957,26 @@ func (h *KeywordsHandler) Reload(c *gin.Context) {
 			}
 		} else {
 			h.poolManager.RefreshData(c.Request.Context(), "keywords")
+		}
+	}
+
+	// 同步到 TemplateFuncsManager
+	if h.funcsManager != nil {
+		if groupIDStr != "" {
+			groupID, _ := strconv.Atoi(groupIDStr)
+			if groupID > 0 {
+				keywords := h.poolManager.GetKeywords(groupID)
+				rawKeywords := h.poolManager.GetAllRawKeywords(groupID)
+				h.funcsManager.ReloadKeywordGroup(groupID, keywords, rawKeywords)
+			}
+		} else {
+			// 重载所有分组
+			groupIDs := h.poolManager.GetKeywordGroupIDs()
+			for _, gid := range groupIDs {
+				keywords := h.poolManager.GetKeywords(gid)
+				rawKeywords := h.poolManager.GetAllRawKeywords(gid)
+				h.funcsManager.ReloadKeywordGroup(gid, keywords, rawKeywords)
+			}
 		}
 	}
 

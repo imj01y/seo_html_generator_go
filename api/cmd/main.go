@@ -192,17 +192,21 @@ func main() {
 	funcsManager.SetEmojiManager(emojiManager)
 
 	// Note: keywords/images are now loaded by PoolManager.Start()
-	// Load data into funcsManager for template rendering
-	rawKeywords := poolManager.GetRawKeywords(1, 50000)
-	if len(rawKeywords) > 0 {
-		funcsManager.LoadKeywords(rawKeywords)
-		log.Info().Int("count", len(rawKeywords)).Msg("Keywords loaded to funcs manager")
-
-		// Initialize keyword+emoji pool (requires keywords and emojiManager)
-		log.Info().Msg("Initializing keyword emoji pool...")
-		funcsManager.InitKeywordEmojiPool(poolManager.GetConfig())
-		log.Info().Msg("Keyword emoji pool initialized")
+	// 初始化 TemplateFuncsManager 的关键词数据
+	keywordGroupIDs := poolManager.GetKeywordGroupIDs()
+	totalKeywords := 0
+	for _, groupID := range keywordGroupIDs {
+		keywords := poolManager.GetKeywords(groupID)
+		rawKeywords := poolManager.GetAllRawKeywords(groupID)
+		if len(keywords) > 0 {
+			funcsManager.LoadKeywordGroup(groupID, keywords, rawKeywords)
+			totalKeywords += len(keywords)
+			log.Info().Int("group_id", groupID).Int("count", len(keywords)).
+				Msg("Keyword group loaded to funcs manager")
+		}
 	}
+	log.Info().Int("groups", len(keywordGroupIDs)).Int("total_keywords", totalKeywords).
+		Msg("All keyword groups loaded to funcs manager")
 
 	// Load all image groups into funcsManager
 	imageGroupIDs := poolManager.GetImageGroupIDs()

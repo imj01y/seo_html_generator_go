@@ -16,23 +16,25 @@ type ImageData struct {
 	groups map[int][]string // groupID -> urls
 }
 
+// KeywordData 关键词数据（不可变，通过原子指针替换）
+type KeywordData struct {
+	groups    map[int][]string // groupID -> encoded keywords
+	rawGroups map[int][]string // groupID -> raw keywords
+}
+
 // TemplateFuncsManager 模板函数管理器（高并发版）
 type TemplateFuncsManager struct {
 	// 预生成池
-	clsPool          *ObjectPool[string]
-	urlPool          *ObjectPool[string]
-	keywordEmojiPool *ObjectPool[string] // 带 emoji 的关键词池
-	numberPool       *NumberPool
+	clsPool    *ObjectPool[string]
+	urlPool    *ObjectPool[string]
+	numberPool *NumberPool
 
-	// 关键词（原子计数器访问）
-	keywords   []string
-	keywordIdx int64
-	keywordLen int64
+	// 关键词数据（原子指针，支持无锁读取和热更新）
+	keywordData atomic.Pointer[KeywordData]
 
-	// 原始关键词（未编码，用于生成带 emoji 的关键词）
-	rawKeywords   []string
-	rawKeywordIdx int64
-	rawKeywordLen int64
+	// 分组索引（独立管理，避免数据替换时重置）
+	keywordGroupIdx    sync.Map // groupID -> *atomic.Int64
+	rawKeywordGroupIdx sync.Map // groupID -> *atomic.Int64
 
 	// 图片数据（原子指针，支持无锁读取和热更新）
 	imageData atomic.Pointer[ImageData]
@@ -95,53 +97,27 @@ func (m *TemplateFuncsManager) InitPools(config *CachePoolConfig) {
 	m.numberPool.Start()
 }
 
-// InitKeywordEmojiPool 初始化带 emoji 的关键词池（从配置读取）
-func (m *TemplateFuncsManager) InitKeywordEmojiPool(config *CachePoolConfig) {
-	if m.emojiManager == nil || atomic.LoadInt64(&m.rawKeywordLen) == 0 {
-		return
-	}
-
-	m.keywordEmojiPool = NewObjectPool[string](PoolConfig{
-		Name:          "keyword_emoji",
-		Size:          config.KeywordEmojiPoolSize,
-		Threshold:     config.KeywordEmojiThreshold,
-		NumWorkers:    config.KeywordEmojiWorkers,
-		CheckInterval: config.KeywordEmojiRefillInterval(),
-		MemorySizer:   stringMemorySizer,
-	}, m.generateKeywordWithEmoji)
-
-	m.keywordEmojiPool.Start()
-}
-
-// generateKeywordWithEmoji 生成带 emoji 的关键词
-func (m *TemplateFuncsManager) generateKeywordWithEmoji() string {
-	// 1. 获取原始关键词
-	length := atomic.LoadInt64(&m.rawKeywordLen)
-	if length == 0 {
-		return ""
-	}
-	idx := atomic.AddInt64(&m.rawKeywordIdx, 1) - 1
-	keyword := m.rawKeywords[idx%length]
-
-	// 2. 如果 emojiManager 为 nil，直接返回关键词
+// generateKeywordWithEmojiFromRaw 从原始关键词生成带 emoji 的版本
+func (m *TemplateFuncsManager) generateKeywordWithEmojiFromRaw(keyword string) string {
+	// 如果 emojiManager 为 nil，直接返回编码后的关键词
 	if m.emojiManager == nil {
 		return m.encoder.EncodeText(keyword)
 	}
 
-	// 3. 随机决定插入 1 或 2 个 emoji（50% 概率）
+	// 随机决定插入 1 或 2 个 emoji（50% 概率）
 	emojiCount := 1
 	if rand.Float64() < 0.5 {
 		emojiCount = 2
 	}
 
-	// 4. 转换为 rune 切片处理中文
+	// 转换为 rune 切片处理中文
 	runes := []rune(keyword)
 	runeLen := len(runes)
 	if runeLen == 0 {
 		return m.encoder.EncodeText(keyword)
 	}
 
-	// 5. 插入 emoji
+	// 插入 emoji
 	exclude := make(map[string]bool)
 	for i := 0; i < emojiCount; i++ {
 		pos := rand.IntN(runeLen + 1) // 0 到 len，包含首尾
@@ -158,7 +134,7 @@ func (m *TemplateFuncsManager) generateKeywordWithEmoji() string {
 		}
 	}
 
-	// 6. 编码并返回
+	// 编码并返回
 	return m.encoder.EncodeText(string(runes))
 }
 
@@ -170,42 +146,9 @@ func (m *TemplateFuncsManager) StopPools() {
 	if m.urlPool != nil {
 		m.urlPool.Stop()
 	}
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Stop()
-	}
 	if m.numberPool != nil {
 		m.numberPool.Stop()
 	}
-}
-
-// LoadKeywords 加载关键词
-func (m *TemplateFuncsManager) LoadKeywords(keywords []string) int {
-	// 预编码
-	encoded := make([]string, len(keywords))
-	for i, kw := range keywords {
-		encoded[i] = m.encoder.EncodeText(kw)
-	}
-
-	// 洗牌
-	rand.Shuffle(len(encoded), func(i, j int) {
-		encoded[i], encoded[j] = encoded[j], encoded[i]
-	})
-
-	m.keywords = encoded
-	atomic.StoreInt64(&m.keywordLen, int64(len(encoded)))
-	atomic.StoreInt64(&m.keywordIdx, 0)
-
-	// 存储原始关键词（未编码，用于生成带 emoji 的关键词）
-	rawCopy := make([]string, len(keywords))
-	copy(rawCopy, keywords)
-	rand.Shuffle(len(rawCopy), func(i, j int) {
-		rawCopy[i], rawCopy[j] = rawCopy[j], rawCopy[i]
-	})
-	m.rawKeywords = rawCopy
-	atomic.StoreInt64(&m.rawKeywordLen, int64(len(rawCopy)))
-	atomic.StoreInt64(&m.rawKeywordIdx, 0)
-
-	return len(encoded)
 }
 
 // ========== 模板函数（全部无锁，O(1)） ==========
@@ -228,23 +171,51 @@ func (m *TemplateFuncsManager) RandomURL() string {
 	return generateRandomURL()
 }
 
-// RandomKeyword 获取随机关键词（原子操作）
-func (m *TemplateFuncsManager) RandomKeyword() string {
-	length := atomic.LoadInt64(&m.keywordLen)
-	if length == 0 {
+// RandomKeyword 获取随机关键词（支持分组）
+func (m *TemplateFuncsManager) RandomKeyword(groupID int) string {
+	data := m.keywordData.Load()
+	if data == nil {
 		return ""
 	}
-	idx := atomic.AddInt64(&m.keywordIdx, 1) - 1
-	return m.keywords[idx%length]
+
+	keywords := data.groups[groupID]
+	if len(keywords) == 0 {
+		// 降级到默认分组
+		keywords = data.groups[1]
+		if len(keywords) == 0 {
+			return ""
+		}
+	}
+
+	// 获取或创建该分组的索引
+	idxPtr, _ := m.keywordGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
+	idx := idxPtr.(*atomic.Int64).Add(1) - 1
+
+	return keywords[idx%int64(len(keywords))]
 }
 
-// RandomKeywordEmoji 从池中获取带 emoji 的随机关键词
-func (m *TemplateFuncsManager) RandomKeywordEmoji() string {
-	if m.keywordEmojiPool != nil {
-		return m.keywordEmojiPool.Get()
+// RandomKeywordEmoji 获取带 emoji 的随机关键词（支持分组，实时生成）
+func (m *TemplateFuncsManager) RandomKeywordEmoji(groupID int) string {
+	data := m.keywordData.Load()
+	if data == nil {
+		return ""
 	}
-	// 降级：实时生成
-	return m.generateKeywordWithEmoji()
+
+	rawKeywords := data.rawGroups[groupID]
+	if len(rawKeywords) == 0 {
+		// 降级到默认分组
+		rawKeywords = data.rawGroups[1]
+		if len(rawKeywords) == 0 {
+			return ""
+		}
+	}
+
+	// 获取或创建该分组的索引
+	idxPtr, _ := m.rawKeywordGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
+	idx := idxPtr.(*atomic.Int64).Add(1) - 1
+
+	keyword := rawKeywords[idx%int64(len(rawKeywords))]
+	return m.generateKeywordWithEmojiFromRaw(keyword)
 }
 
 // RandomImage 获取随机图片URL（支持分组）
@@ -319,8 +290,7 @@ func generateRandomURL() string {
 // GetStats returns statistics about loaded data
 func (m *TemplateFuncsManager) GetStats() map[string]interface{} {
 	stats := map[string]interface{}{
-		"keywords_count": atomic.LoadInt64(&m.keywordLen),
-		"keyword_idx":    atomic.LoadInt64(&m.keywordIdx),
+		"keyword_groups": m.GetKeywordStats(),
 		"image_groups":   m.GetImageStats(),
 	}
 
@@ -329,9 +299,6 @@ func (m *TemplateFuncsManager) GetStats() map[string]interface{} {
 	}
 	if m.urlPool != nil {
 		stats["url_pool"] = m.urlPool.Stats()
-	}
-	if m.keywordEmojiPool != nil {
-		stats["keyword_emoji_pool"] = m.keywordEmojiPool.Stats()
 	}
 	if m.numberPool != nil {
 		stats["number_pools"] = m.numberPool.Stats()
@@ -420,19 +387,9 @@ func (m *TemplateFuncsManager) ReloadPools(config *CachePoolConfig) {
 		)
 	}
 
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.UpdateConfig(
-			config.KeywordEmojiPoolSize,
-			config.KeywordEmojiThreshold,
-			config.KeywordEmojiWorkers,
-			config.KeywordEmojiRefillInterval(),
-		)
-	}
-
 	log.Info().
 		Int("cls_size", config.ClsPoolSize).
 		Int("url_size", config.UrlPoolSize).
-		Int("keyword_emoji_size", config.KeywordEmojiPoolSize).
 		Msg("TemplateFuncsManager pools reloaded")
 }
 
@@ -444,14 +401,10 @@ func (m *TemplateFuncsManager) ResizePools(config *PoolSizeConfig) {
 	if config.URLPoolSize > 0 && m.urlPool != nil {
 		m.urlPool.Resize(config.URLPoolSize)
 	}
-	if config.KeywordEmojiPoolSize > 0 && m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Resize(config.KeywordEmojiPoolSize)
-	}
 
 	log.Info().
 		Int("cls", config.ClsPoolSize).
 		Int("url", config.URLPoolSize).
-		Int("keyword_emoji", config.KeywordEmojiPoolSize).
 		Msg("Pools resized")
 }
 
@@ -462,9 +415,6 @@ func (m *TemplateFuncsManager) ClearPools() {
 	}
 	if m.urlPool != nil {
 		m.urlPool.Clear()
-	}
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Clear()
 	}
 	log.Info().Msg("All pools cleared")
 }
@@ -478,9 +428,6 @@ func (m *TemplateFuncsManager) GetPoolStats() map[string]interface{} {
 	}
 	if m.urlPool != nil {
 		stats["url"] = m.urlPool.Stats()
-	}
-	if m.keywordEmojiPool != nil {
-		stats["keyword_emoji"] = m.keywordEmojiPool.Stats()
 	}
 
 	return stats
@@ -589,6 +536,146 @@ func (m *TemplateFuncsManager) GetImageStats() map[int]int {
 	stats := make(map[int]int, len(data.groups))
 	for gid, urls := range data.groups {
 		stats[gid] = len(urls)
+	}
+	return stats
+}
+
+// ============ 关键词分组管理方法 ============
+
+// LoadKeywordGroup 加载指定分组的关键词（初始化时使用）
+func (m *TemplateFuncsManager) LoadKeywordGroup(groupID int, keywords, rawKeywords []string) {
+	for {
+		old := m.keywordData.Load()
+
+		var newGroups map[int][]string
+		var newRawGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+			newRawGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups)+1)
+			newRawGroups = make(map[int][]string, len(old.rawGroups)+1)
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+			for k, v := range old.rawGroups {
+				newRawGroups[k] = v
+			}
+		}
+
+		// 复制数据避免外部修改
+		copiedKeywords := make([]string, len(keywords))
+		copy(copiedKeywords, keywords)
+		newGroups[groupID] = copiedKeywords
+
+		copiedRaw := make([]string, len(rawKeywords))
+		copy(copiedRaw, rawKeywords)
+		newRawGroups[groupID] = copiedRaw
+
+		newData := &KeywordData{groups: newGroups, rawGroups: newRawGroups}
+		if m.keywordData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// AppendKeywords 追加关键词到指定分组（添加关键词时使用）
+func (m *TemplateFuncsManager) AppendKeywords(groupID int, keywords, rawKeywords []string) {
+	if len(keywords) == 0 {
+		return
+	}
+
+	for {
+		old := m.keywordData.Load()
+
+		var newGroups map[int][]string
+		var newRawGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+			newRawGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups)+1)
+			newRawGroups = make(map[int][]string, len(old.rawGroups)+1)
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+			for k, v := range old.rawGroups {
+				newRawGroups[k] = v
+			}
+		}
+
+		// 追加到目标分组（显式复制避免并发问题）
+		oldKeywords := newGroups[groupID]
+		newKeywords := make([]string, len(oldKeywords)+len(keywords))
+		copy(newKeywords, oldKeywords)
+		copy(newKeywords[len(oldKeywords):], keywords)
+		newGroups[groupID] = newKeywords
+
+		oldRaw := newRawGroups[groupID]
+		newRaw := make([]string, len(oldRaw)+len(rawKeywords))
+		copy(newRaw, oldRaw)
+		copy(newRaw[len(oldRaw):], rawKeywords)
+		newRawGroups[groupID] = newRaw
+
+		newData := &KeywordData{groups: newGroups, rawGroups: newRawGroups}
+		if m.keywordData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// ReloadKeywordGroup 重载指定分组（删除后异步调用）
+func (m *TemplateFuncsManager) ReloadKeywordGroup(groupID int, keywords, rawKeywords []string) {
+	for {
+		old := m.keywordData.Load()
+
+		var newGroups map[int][]string
+		var newRawGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+			newRawGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups))
+			newRawGroups = make(map[int][]string, len(old.rawGroups))
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+			for k, v := range old.rawGroups {
+				newRawGroups[k] = v
+			}
+		}
+
+		// 替换或删除分组
+		if len(keywords) > 0 {
+			copiedKeywords := make([]string, len(keywords))
+			copy(copiedKeywords, keywords)
+			newGroups[groupID] = copiedKeywords
+
+			copiedRaw := make([]string, len(rawKeywords))
+			copy(copiedRaw, rawKeywords)
+			newRawGroups[groupID] = copiedRaw
+		} else {
+			delete(newGroups, groupID)
+			delete(newRawGroups, groupID)
+		}
+
+		newData := &KeywordData{groups: newGroups, rawGroups: newRawGroups}
+		if m.keywordData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// GetKeywordStats 获取关键词统计信息
+func (m *TemplateFuncsManager) GetKeywordStats() map[int]int {
+	data := m.keywordData.Load()
+	if data == nil {
+		return make(map[int]int)
+	}
+
+	stats := make(map[int]int, len(data.groups))
+	for gid, keywords := range data.groups {
+		stats[gid] = len(keywords)
 	}
 	return stats
 }
