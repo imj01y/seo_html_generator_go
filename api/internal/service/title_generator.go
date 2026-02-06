@@ -275,3 +275,30 @@ func (g *TitleGenerator) GetTotalStats() (current, maxSize int, memoryBytes, con
 	}
 	return
 }
+
+// GetGroupStats 获取按分组的统计信息（用于前端分组详情展示）
+func (g *TitleGenerator) GetGroupStats() []PoolGroupInfo {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+
+	groups := make([]PoolGroupInfo, 0, len(g.pools))
+	for gid, pool := range g.pools {
+		current := len(pool.ch)
+		maxSize := g.config.TitlePoolSize
+		consumed := int(pool.consumedCount.Load())
+		util := 0.0
+		if maxSize > 0 {
+			util = float64(current) / float64(maxSize) * 100
+		}
+		groups = append(groups, PoolGroupInfo{
+			ID:          gid,
+			Count:       current,
+			Size:        maxSize,
+			Available:   current,
+			Used:        consumed,
+			Utilization: util,
+			MemoryBytes: pool.memoryBytes.Load(),
+		})
+	}
+	return groups
+}

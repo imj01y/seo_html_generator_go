@@ -53,9 +53,14 @@ type PoolManager struct {
 
 // PoolGroupInfo 分组详情
 type PoolGroupInfo struct {
-	ID    int    `json:"id"`
-	Name  string `json:"name"`
-	Count int    `json:"count"`
+	ID          int     `json:"id"`
+	Name        string  `json:"name"`
+	Count       int     `json:"count"`
+	Size        int     `json:"size,omitempty"`
+	Available   int     `json:"available,omitempty"`
+	Used        int     `json:"used,omitempty"`
+	Utilization float64 `json:"utilization,omitempty"`
+	MemoryBytes int64   `json:"memory_bytes,omitempty"`
 }
 
 // PoolStatusStats 数据池运行状态统计（用于前端显示）
@@ -630,6 +635,12 @@ func (m *PoolManager) getImageGroupNames() map[int]string {
 	return names
 }
 
+// getContentGroupNames 获取正文/标题分组名称映射
+// 标题和正文的 group_id 对应 keyword_groups 表的 id
+func (m *PoolManager) getContentGroupNames() map[int]string {
+	return m.getKeywordGroupNames()
+}
+
 // GetDataPoolsStats 返回数据池运行状态统计（与前端展示格式一致）
 // 返回全部 5 个池：标题、正文、关键词、图片、表情
 func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
@@ -651,12 +662,24 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 	pools := []PoolStatusStats{}
 
 	// 1. 标题池（改用 TitleGenerator 统计）
+	groupNames := m.getContentGroupNames()
+
 	var titlesCurrent, titlesMax int
 	var titlesMemory, titlesConsumed int64
+	var titleGroups []PoolGroupInfo
 	if m.titleGenerator != nil {
 		titlesCurrent, titlesMax, titlesMemory, titlesConsumed = m.titleGenerator.GetTotalStats()
+		titleGroups = m.titleGenerator.GetGroupStats()
+		// 填充分组名称
+		for i := range titleGroups {
+			if name, ok := groupNames[titleGroups[i].ID]; ok {
+				titleGroups[i].Name = name
+			} else {
+				titleGroups[i].Name = fmt.Sprintf("分组%d", titleGroups[i].ID)
+			}
+		}
 	}
-	titlesUsed := int(titlesConsumed) // 已用 = 实际被消费的数量
+	titlesUsed := int(titlesConsumed)
 	titlesUtil := 0.0
 	if titlesMax > 0 {
 		titlesUtil = float64(titlesCurrent) / float64(titlesMax) * 100
@@ -672,22 +695,48 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		LastRefresh: lastRefreshPtr,
 		MemoryBytes: titlesMemory,
 		PoolType:    "consumable",
+		Groups:      titleGroups,
 	})
 
-	// 2. 正文池（消费型，汇总所有分组）
+	// 2. 正文池（消费型，汇总所有分组 + 分组详情）
 	m.mu.RLock()
 	var contentsMax, contentsCurrent int
 	var contentsMemory int64
 	var contentsConsumed int64
-	for _, pool := range m.contents {
-		contentsMax += pool.GetMaxSize()
-		contentsCurrent += pool.Len()
-		contentsMemory += pool.MemoryBytes()
+	contentGroups := make([]PoolGroupInfo, 0, len(m.contents))
+	for gid, pool := range m.contents {
+		current := pool.Len()
+		maxSize := pool.GetMaxSize()
+		consumed := int(pool.ConsumedCount())
+		mem := pool.MemoryBytes()
+
+		contentsMax += maxSize
+		contentsCurrent += current
+		contentsMemory += mem
 		contentsConsumed += pool.ConsumedCount()
+
+		util := 0.0
+		if maxSize > 0 {
+			util = float64(current) / float64(maxSize) * 100
+		}
+		name := groupNames[gid]
+		if name == "" {
+			name = fmt.Sprintf("分组%d", gid)
+		}
+		contentGroups = append(contentGroups, PoolGroupInfo{
+			ID:          gid,
+			Name:        name,
+			Count:       current,
+			Size:        maxSize,
+			Available:   current,
+			Used:        consumed,
+			Utilization: util,
+			MemoryBytes: mem,
+		})
 	}
 	m.mu.RUnlock()
 
-	contentsUsed := int(contentsConsumed) // 已用 = 实际被消费的数量
+	contentsUsed := int(contentsConsumed)
 	contentsUtil := 0.0
 	if contentsMax > 0 {
 		contentsUtil = float64(contentsCurrent) / float64(contentsMax) * 100
@@ -703,6 +752,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		LastRefresh: lastRefreshPtr,
 		MemoryBytes: contentsMemory,
 		PoolType:    "consumable",
+		Groups:      contentGroups,
 	})
 
 	// 3. 关键词（复用型，增加分组详情）
