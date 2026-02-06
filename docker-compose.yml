@@ -18,7 +18,7 @@ services:
   # ========================================
   nginx:
     image: openresty/openresty:1.25.3.1-alpine
-    entrypoint: ["/bin/sh", "/etc/nginx/entrypoint.sh"]
+    entrypoint: ["/bin/sh", "-c", "sed 's/\\r$//' /etc/nginx/entrypoint.sh > /tmp/entrypoint.sh && sh /tmp/entrypoint.sh"]
     restart: unless-stopped
     environment:
       - PAGE_PORT=${PAGE_PORT:-8009}
