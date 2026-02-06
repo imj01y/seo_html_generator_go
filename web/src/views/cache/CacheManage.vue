@@ -45,6 +45,8 @@
                     v-for="pool in consumablePoolStats"
                     :key="pool.name"
                     :pool="pool"
+                    @reload="handlePoolReload(pool.name)"
+                    @reload-group="(groupId: number) => handlePoolReloadGroup(pool.name, groupId)"
                   />
                   <el-empty v-if="consumablePoolStats.length === 0" description="连接中..." />
                 </div>
@@ -693,7 +695,9 @@ const handlePoolReload = async (poolName: string) => {
     const poolMap: Record<string, string> = {
       '关键词': 'keywords',
       '图片': 'images',
-      '表情': 'emojis'
+      '表情': 'emojis',
+      '标题': 'titles',
+      '正文': 'contents'
     }
     const pool = poolMap[poolName]
     if (pool) {
@@ -712,7 +716,9 @@ const handlePoolReloadGroup = async (poolName: string, groupId: number) => {
   try {
     const poolMap: Record<string, string> = {
       '关键词': 'keywords',
-      '图片': 'images'
+      '图片': 'images',
+      '标题': 'titles',
+      '正文': 'contents'
     }
     const pool = poolMap[poolName]
     if (pool) {
