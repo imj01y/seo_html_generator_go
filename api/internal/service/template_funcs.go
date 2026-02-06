@@ -115,35 +115,27 @@ func (m *TemplateFuncsManager) InitKeywordEmojiPool(config *CachePoolConfig) {
 	m.keywordEmojiPool.Start()
 }
 
-// generateKeywordWithEmoji 生成带 emoji 的关键词
-func (m *TemplateFuncsManager) generateKeywordWithEmoji() string {
-	// 1. 获取原始关键词
-	length := atomic.LoadInt64(&m.rawKeywordLen)
-	if length == 0 {
-		return ""
-	}
-	idx := atomic.AddInt64(&m.rawKeywordIdx, 1) - 1
-	keyword := m.rawKeywords[idx%length]
-
-	// 2. 如果 emojiManager 为 nil，直接返回关键词
+// generateKeywordWithEmojiFromRaw 从原始关键词生成带 emoji 的版本
+func (m *TemplateFuncsManager) generateKeywordWithEmojiFromRaw(keyword string) string {
+	// 如果 emojiManager 为 nil，直接返回编码后的关键词
 	if m.emojiManager == nil {
 		return m.encoder.EncodeText(keyword)
 	}
 
-	// 3. 随机决定插入 1 或 2 个 emoji（50% 概率）
+	// 随机决定插入 1 或 2 个 emoji（50% 概率）
 	emojiCount := 1
 	if rand.Float64() < 0.5 {
 		emojiCount = 2
 	}
 
-	// 4. 转换为 rune 切片处理中文
+	// 转换为 rune 切片处理中文
 	runes := []rune(keyword)
 	runeLen := len(runes)
 	if runeLen == 0 {
 		return m.encoder.EncodeText(keyword)
 	}
 
-	// 5. 插入 emoji
+	// 插入 emoji
 	exclude := make(map[string]bool)
 	for i := 0; i < emojiCount; i++ {
 		pos := rand.IntN(runeLen + 1) // 0 到 len，包含首尾
@@ -160,7 +152,7 @@ func (m *TemplateFuncsManager) generateKeywordWithEmoji() string {
 		}
 	}
 
-	// 6. 编码并返回
+	// 编码并返回
 	return m.encoder.EncodeText(string(runes))
 }
 
@@ -253,13 +245,28 @@ func (m *TemplateFuncsManager) RandomKeyword(groupID int) string {
 	return keywords[idx%int64(len(keywords))]
 }
 
-// RandomKeywordEmoji 从池中获取带 emoji 的随机关键词
-func (m *TemplateFuncsManager) RandomKeywordEmoji() string {
-	if m.keywordEmojiPool != nil {
-		return m.keywordEmojiPool.Get()
+// RandomKeywordEmoji 获取带 emoji 的随机关键词（支持分组，实时生成）
+func (m *TemplateFuncsManager) RandomKeywordEmoji(groupID int) string {
+	data := m.keywordData.Load()
+	if data == nil {
+		return ""
 	}
-	// 降级：实时生成
-	return m.generateKeywordWithEmoji()
+
+	rawKeywords := data.rawGroups[groupID]
+	if len(rawKeywords) == 0 {
+		// 降级到默认分组
+		rawKeywords = data.rawGroups[1]
+		if len(rawKeywords) == 0 {
+			return ""
+		}
+	}
+
+	// 获取或创建该分组的索引
+	idxPtr, _ := m.rawKeywordGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
+	idx := idxPtr.(*atomic.Int64).Add(1) - 1
+
+	keyword := rawKeywords[idx%int64(len(rawKeywords))]
+	return m.generateKeywordWithEmojiFromRaw(keyword)
 }
 
 // RandomImage 获取随机图片URL（支持分组）
