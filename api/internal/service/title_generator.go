@@ -243,6 +243,64 @@ func (g *TitleGenerator) Reload(config *CachePoolConfig) {
 	}
 }
 
+// ForceReload 强制重载所有标题池（不依赖配置变化）
+func (g *TitleGenerator) ForceReload() {
+	groupIDs := g.poolManager.GetKeywordGroupIDs()
+	if len(groupIDs) == 0 {
+		groupIDs = []int{1}
+	}
+
+	log.Info().Ints("group_ids", groupIDs).Msg("TitleGenerator: force reloading all pools")
+
+	// 1. 停止旧 worker
+	g.stopped.Store(true)
+	g.cancel()
+	g.wg.Wait()
+
+	// 2. 重置状态
+	g.stopped.Store(false)
+	g.ctx, g.cancel = context.WithCancel(context.Background())
+
+	// 3. 清空旧池
+	g.mu.Lock()
+	g.pools = make(map[int]*TitlePool)
+	g.mu.Unlock()
+
+	// 4. 重新启动
+	g.Start(groupIDs)
+}
+
+// ReloadGroup 重载指定分组的标题池（清空并重新填充，不重启 worker）
+func (g *TitleGenerator) ReloadGroup(groupID int) {
+	if g.stopped.Load() {
+		return
+	}
+
+	pool := g.getOrCreatePool(groupID)
+
+	// 排空 channel 中的旧数据
+	drained := 0
+	var drainedMem int64
+	for {
+		select {
+		case title := <-pool.ch:
+			drained++
+			drainedMem += StringMemorySize(title)
+		default:
+			goto done
+		}
+	}
+done:
+	if drainedMem > 0 {
+		pool.memoryBytes.Add(-drainedMem)
+	}
+
+	// 重新填充
+	g.fillPool(groupID, pool)
+
+	log.Info().Int("group_id", groupID).Int("drained", drained).Msg("TitleGenerator: reloaded group")
+}
+
 // SyncGroups 同步分组：为新增的关键词分组创建标题池和 worker
 func (g *TitleGenerator) SyncGroups(groupIDs []int) {
 	if g.stopped.Load() {
