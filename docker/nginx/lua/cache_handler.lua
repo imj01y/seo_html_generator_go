@@ -99,7 +99,7 @@ function _M.log_spider_async(domain, path, ua, ip, cache_hit, resp_time)
         local httpc = http.new()
         httpc:set_timeouts(3000, 5000, 5000)  -- connect, send, read (ms)
 
-        local ok, err = httpc:connect(server_ip, 8080)
+        local ok, err = httpc:connect(server_ip, tonumber(os.getenv("API_PORT") or "8080"))
         if not ok then
             ngx.log(ngx.WARN, "log spider connect failed: ", err)
             return
