@@ -614,3 +614,143 @@ func (m *TemplateFuncsManager) GetImageStats() map[int]int {
 	}
 	return stats
 }
+
+// ============ 关键词分组管理方法 ============
+
+// LoadKeywordGroup 加载指定分组的关键词（初始化时使用）
+func (m *TemplateFuncsManager) LoadKeywordGroup(groupID int, keywords, rawKeywords []string) {
+	for {
+		old := m.keywordData.Load()
+
+		var newGroups map[int][]string
+		var newRawGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+			newRawGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups)+1)
+			newRawGroups = make(map[int][]string, len(old.rawGroups)+1)
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+			for k, v := range old.rawGroups {
+				newRawGroups[k] = v
+			}
+		}
+
+		// 复制数据避免外部修改
+		copiedKeywords := make([]string, len(keywords))
+		copy(copiedKeywords, keywords)
+		newGroups[groupID] = copiedKeywords
+
+		copiedRaw := make([]string, len(rawKeywords))
+		copy(copiedRaw, rawKeywords)
+		newRawGroups[groupID] = copiedRaw
+
+		newData := &KeywordData{groups: newGroups, rawGroups: newRawGroups}
+		if m.keywordData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// AppendKeywords 追加关键词到指定分组（添加关键词时使用）
+func (m *TemplateFuncsManager) AppendKeywords(groupID int, keywords, rawKeywords []string) {
+	if len(keywords) == 0 {
+		return
+	}
+
+	for {
+		old := m.keywordData.Load()
+
+		var newGroups map[int][]string
+		var newRawGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+			newRawGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups)+1)
+			newRawGroups = make(map[int][]string, len(old.rawGroups)+1)
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+			for k, v := range old.rawGroups {
+				newRawGroups[k] = v
+			}
+		}
+
+		// 追加到目标分组（显式复制避免并发问题）
+		oldKeywords := newGroups[groupID]
+		newKeywords := make([]string, len(oldKeywords)+len(keywords))
+		copy(newKeywords, oldKeywords)
+		copy(newKeywords[len(oldKeywords):], keywords)
+		newGroups[groupID] = newKeywords
+
+		oldRaw := newRawGroups[groupID]
+		newRaw := make([]string, len(oldRaw)+len(rawKeywords))
+		copy(newRaw, oldRaw)
+		copy(newRaw[len(oldRaw):], rawKeywords)
+		newRawGroups[groupID] = newRaw
+
+		newData := &KeywordData{groups: newGroups, rawGroups: newRawGroups}
+		if m.keywordData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// ReloadKeywordGroup 重载指定分组（删除后异步调用）
+func (m *TemplateFuncsManager) ReloadKeywordGroup(groupID int, keywords, rawKeywords []string) {
+	for {
+		old := m.keywordData.Load()
+
+		var newGroups map[int][]string
+		var newRawGroups map[int][]string
+		if old == nil {
+			newGroups = make(map[int][]string)
+			newRawGroups = make(map[int][]string)
+		} else {
+			newGroups = make(map[int][]string, len(old.groups))
+			newRawGroups = make(map[int][]string, len(old.rawGroups))
+			for k, v := range old.groups {
+				newGroups[k] = v
+			}
+			for k, v := range old.rawGroups {
+				newRawGroups[k] = v
+			}
+		}
+
+		// 替换或删除分组
+		if len(keywords) > 0 {
+			copiedKeywords := make([]string, len(keywords))
+			copy(copiedKeywords, keywords)
+			newGroups[groupID] = copiedKeywords
+
+			copiedRaw := make([]string, len(rawKeywords))
+			copy(copiedRaw, rawKeywords)
+			newRawGroups[groupID] = copiedRaw
+		} else {
+			delete(newGroups, groupID)
+			delete(newRawGroups, groupID)
+		}
+
+		newData := &KeywordData{groups: newGroups, rawGroups: newRawGroups}
+		if m.keywordData.CompareAndSwap(old, newData) {
+			return
+		}
+	}
+}
+
+// GetKeywordStats 获取关键词统计信息
+func (m *TemplateFuncsManager) GetKeywordStats() map[int]int {
+	data := m.keywordData.Load()
+	if data == nil {
+		return make(map[int]int)
+	}
+
+	stats := make(map[int]int, len(data.groups))
+	for gid, keywords := range data.groups {
+		stats[gid] = len(keywords)
+	}
+	return stats
+}
