@@ -8,13 +8,15 @@
         </el-button>
       </template>
       <template v-else>
-        <span :class="['status-badge', `status-${pool.status}`]">
-          <span class="status-icon">{{ statusIcon }}</span>
-          {{ statusText }}
-        </span>
-        <el-button size="small" @click="handleReload">
-          重载
-        </el-button>
+        <div class="header-actions">
+          <el-button size="small" @click="handleReload">
+            重载
+          </el-button>
+          <span :class="['status-badge', `status-${pool.status}`]">
+            <span class="status-icon">{{ statusIcon }}</span>
+            {{ statusText }}
+          </span>
+        </div>
       </template>
     </div>
 
@@ -51,7 +53,7 @@
       </div>
 
       <!-- 消费型池分组详情 -->
-      <el-collapse v-if="pool.groups && pool.groups.length > 1" class="groups-collapse">
+      <el-collapse v-if="pool.groups && pool.groups.length > 0" class="groups-collapse">
         <el-collapse-item :title="`分组详情 (${pool.groups.length} 个分组)`">
           <div class="consumable-groups-list">
             <div v-for="group in pool.groups" :key="group.id" class="consumable-group-item">
@@ -217,6 +219,12 @@ const formatTime = (time: string | null): string => {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
 
     .pool-name {
       font-size: 14px;

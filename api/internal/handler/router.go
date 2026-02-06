@@ -40,6 +40,9 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	// 供使用 c.Get("db")、c.Get("redis")、c.Get("config") 和 c.Get("scheduler") 的 Handler 使用
 	r.Use(DependencyInjectionMiddleware(deps.DB, deps.Redis, deps.Config, deps.Scheduler))
 
+	// 双轨认证中间件（JWT 或 API Token），用于外部可调用的添加接口
+	dualAuth := DualAuthMiddleware(deps.Config.Auth.SecretKey, deps.DB)
+
 	// Auth routes (public - no middleware required)
 	authGroup := r.Group("/api/auth")
 	{
@@ -115,14 +118,20 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		keywordsGroup.DELETE("/delete-all", keywordsHandler.DeleteAll)
 		keywordsGroup.PUT("/batch/status", keywordsHandler.BatchUpdateStatus)
 		keywordsGroup.PUT("/batch/move", keywordsHandler.BatchMove)
-		keywordsGroup.POST("/batch", keywordsHandler.BatchAdd)
 
-		// 添加和上传
-		keywordsGroup.POST("/add", keywordsHandler.Add)
+		// 上传
 		keywordsGroup.POST("/upload", keywordsHandler.Upload)
 
 		// 辅助功能
 		keywordsGroup.POST("/reload", keywordsHandler.Reload)
+	}
+
+	// Keywords 添加接口（支持 JWT 或 API Token 双轨认证）
+	keywordsDual := r.Group("/api/keywords")
+	keywordsDual.Use(dualAuth)
+	{
+		keywordsDual.POST("/add", keywordsHandler.Add)
+		keywordsDual.POST("/batch", keywordsHandler.BatchAdd)
 	}
 
 	// Images routes (require JWT)
@@ -138,8 +147,6 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 
 		// 图片URL管理
 		imagesGroup.GET("/urls/list", imagesHandler.ListURLs)
-		imagesGroup.POST("/urls/add", imagesHandler.AddURL)
-		imagesGroup.POST("/urls/batch", imagesHandler.BatchAddURLs)
 		imagesGroup.POST("/upload", imagesHandler.Upload)
 		imagesGroup.PUT("/urls/:id", imagesHandler.UpdateURL)
 		imagesGroup.DELETE("/urls/:id", imagesHandler.DeleteURL)
@@ -154,8 +161,16 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		imagesGroup.POST("/urls/reload", imagesHandler.Reload)
 	}
 
+	// Images 添加接口（支持 JWT 或 API Token 双轨认证）
+	imagesDual := r.Group("/api/images")
+	imagesDual.Use(dualAuth)
+	{
+		imagesDual.POST("/urls/add", imagesHandler.AddURL)
+		imagesDual.POST("/urls/batch", imagesHandler.BatchAddURLs)
+	}
+
 	// Articles routes (require JWT)
-	articlesHandler := NewArticlesHandler(deps.DB)
+	articlesHandler := NewArticlesHandler(deps.DB, deps.Redis)
 	articlesGroup := r.Group("/api/articles")
 	articlesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{
@@ -176,10 +191,14 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 		articlesGroup.DELETE("/delete-all", articlesHandler.DeleteAll)
 		articlesGroup.PUT("/batch/status", articlesHandler.BatchUpdateStatus)
 		articlesGroup.PUT("/batch/move", articlesHandler.BatchMove)
+	}
 
-		// 添加文章
-		articlesGroup.POST("/add", articlesHandler.Add)
-		articlesGroup.POST("/batch", articlesHandler.BatchAdd)
+	// Articles 添加接口（支持 JWT 或 API Token 双轨认证）
+	articlesDual := r.Group("/api/articles")
+	articlesDual.Use(dualAuth)
+	{
+		articlesDual.POST("/add", articlesHandler.Add)
+		articlesDual.POST("/batch", articlesHandler.BatchAdd)
 	}
 
 	// Sites routes (require JWT)

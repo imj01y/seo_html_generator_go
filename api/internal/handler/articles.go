@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"strconv"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/jmoiron/sqlx"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
 	core "seo-generator/api/internal/service"
@@ -16,12 +18,13 @@ import (
 
 // ArticlesHandler 文章管理 handler
 type ArticlesHandler struct {
-	db *sqlx.DB
+	db  *sqlx.DB
+	rdb *redis.Client
 }
 
 // NewArticlesHandler 创建 ArticlesHandler
-func NewArticlesHandler(db *sqlx.DB) *ArticlesHandler {
-	return &ArticlesHandler{db: db}
+func NewArticlesHandler(db *sqlx.DB, rdb *redis.Client) *ArticlesHandler {
+	return &ArticlesHandler{db: db, rdb: rdb}
 }
 
 // ArticleGroup 文章分组
@@ -701,6 +704,10 @@ func (h *ArticlesHandler) Add(c *gin.Context) {
 	}
 
 	id, _ := result.LastInsertId()
+
+	// 推入待处理队列，由 Python Worker 加工
+	h.pushToProcessQueue(c, id)
+
 	core.Success(c, gin.H{"success": true, "id": id})
 }
 
@@ -730,6 +737,7 @@ func (h *ArticlesHandler) BatchAdd(c *gin.Context) {
 
 	added := 0
 	skipped := 0
+	var addedIDs []int64
 
 	for _, article := range req.Articles {
 		if article.Title == "" || article.Content == "" {
@@ -753,10 +761,16 @@ func (h *ArticlesHandler) BatchAdd(c *gin.Context) {
 		affected, _ := result.RowsAffected()
 		if affected > 0 {
 			added++
+			if id, err := result.LastInsertId(); err == nil {
+				addedIDs = append(addedIDs, id)
+			}
 		} else {
 			skipped++
 		}
 	}
+
+	// 批量推入待处理队列，由 Python Worker 加工
+	h.pushBatchToProcessQueue(c, addedIDs)
 
 	core.Success(c, gin.H{
 		"success": true,
@@ -764,4 +778,30 @@ func (h *ArticlesHandler) BatchAdd(c *gin.Context) {
 		"skipped": skipped,
 		"total":   len(req.Articles),
 	})
+}
+
+const articlePendingQueue = "pending:articles"
+
+// pushToProcessQueue 将单个文章 ID 推入待处理队列
+func (h *ArticlesHandler) pushToProcessQueue(c *gin.Context, id int64) {
+	if h.rdb == nil {
+		return
+	}
+	if err := h.rdb.LPush(context.Background(), articlePendingQueue, id).Err(); err != nil {
+		log.Warn().Err(err).Int64("article_id", id).Msg("推送文章到待处理队列失败")
+	}
+}
+
+// pushBatchToProcessQueue 将多个文章 ID 批量推入待处理队列
+func (h *ArticlesHandler) pushBatchToProcessQueue(c *gin.Context, ids []int64) {
+	if h.rdb == nil || len(ids) == 0 {
+		return
+	}
+	vals := make([]interface{}, len(ids))
+	for i, id := range ids {
+		vals[i] = id
+	}
+	if err := h.rdb.LPush(context.Background(), articlePendingQueue, vals...).Err(); err != nil {
+		log.Warn().Err(err).Int("count", len(ids)).Msg("批量推送文章到待处理队列失败")
+	}
 }

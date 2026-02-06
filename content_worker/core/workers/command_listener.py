@@ -190,6 +190,9 @@ class CommandListener:
 
         async with RealtimeContext(self.rdb, channel) as ctx:
             items_count = 0
+            last_error = None
+            final_status = "idle"
+            pre_count = 0
 
             try:
                 # 更新状态
@@ -198,6 +201,13 @@ class CommandListener:
                     json.dumps({"status": "running", "started_at": datetime.now().isoformat()})
                 )
 
+                # 记录运行前的数据量，用于计算本次增量
+                pre_count_row = await fetch_one(
+                    "SELECT COUNT(*) as cnt FROM original_articles WHERE source_id = %s",
+                    (project_id,)
+                )
+                pre_count = pre_count_row['cnt'] if pre_count_row else 0
+
                 # 加载项目
                 project = await self._load_project(project_id)
                 if not project:
@@ -205,41 +215,49 @@ class CommandListener:
 
                 # 执行并处理数据
                 items_count = await self._run_and_process(project)
-
-                # 更新成功统计
-                await execute_query(
-                    """
-                    UPDATE spider_projects SET
-                        status = 'idle',
-                        last_run_at = NOW(),
-                        last_run_items = %s,
-                        last_error = NULL,
-                        total_runs = total_runs + 1,
-                        total_items = total_items + %s
-                    WHERE id = %s
-                    """,
-                    (items_count, items_count, project_id),
-                    commit=True
-                )
                 logger.info(f"任务完成：共 {items_count} 条数据")
 
             except asyncio.CancelledError:
                 logger.info("任务已被取消")
-                await execute_query(
-                    "UPDATE spider_projects SET status = 'idle', last_error = %s WHERE id = %s",
-                    ("任务被取消", project_id),
-                    commit=True
+                last_error = "任务被取消"
+                # 从数据库计算实际保存的数据量
+                post_count_row = await fetch_one(
+                    "SELECT COUNT(*) as cnt FROM original_articles WHERE source_id = %s",
+                    (project_id,)
                 )
+                items_count = (post_count_row['cnt'] if post_count_row else 0) - pre_count
 
             except Exception as e:
                 logger.error(f"任务异常: {str(e)}")
-                await execute_query(
-                    "UPDATE spider_projects SET status = 'error', last_error = %s WHERE id = %s",
-                    (str(e), project_id),
-                    commit=True
+                last_error = str(e)
+                final_status = "error"
+                # 从数据库计算实际保存的数据量
+                post_count_row = await fetch_one(
+                    "SELECT COUNT(*) as cnt FROM original_articles WHERE source_id = %s",
+                    (project_id,)
                 )
+                items_count = (post_count_row['cnt'] if post_count_row else 0) - pre_count
 
             finally:
+                # 统一更新统计（无论成功、取消还是异常，只要有数据就记录）
+                try:
+                    await execute_query(
+                        """
+                        UPDATE spider_projects SET
+                            status = %s,
+                            last_run_at = NOW(),
+                            last_run_items = %s,
+                            last_error = %s,
+                            total_runs = total_runs + 1,
+                            total_items = total_items + %s
+                        WHERE id = %s
+                        """,
+                        (final_status, items_count, last_error, items_count, project_id),
+                        commit=True
+                    )
+                except Exception:
+                    pass
+
                 await self.rdb.set(
                     f"spider:status:{project_id}",
                     json.dumps({"status": "idle"})

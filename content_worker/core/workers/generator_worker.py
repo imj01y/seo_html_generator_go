@@ -543,7 +543,9 @@ class GeneratorWorker:
                     if article_id is not None:
                         await self.process_with_retry(article_id)
                     else:
-                        # 超时，队列为空
+                        # 超时，队列为空 → 刷新缓冲区，避免数据滞留内存
+                        await self._flush_title_buffer()
+                        await self._flush_content_buffer()
                         logger.debug("Waiting for articles (queue empty)")
 
                 except asyncio.CancelledError:

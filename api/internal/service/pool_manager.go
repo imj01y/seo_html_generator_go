@@ -185,15 +185,9 @@ func (m *PoolManager) Stop() {
 	log.Info().Msg("PoolManager stopped")
 }
 
-// discoverGroups finds all active group IDs
+// discoverGroups finds all active article group IDs from article_groups config table
 func (m *PoolManager) discoverGroups(ctx context.Context) ([]int, error) {
-	query := `
-		SELECT DISTINCT group_id FROM (
-			SELECT group_id FROM titles WHERE status = 1
-			UNION
-			SELECT group_id FROM contents WHERE status = 1
-		) t
-	`
+	query := `SELECT id FROM article_groups WHERE status = 1`
 	var groupIDs []int
 	err := m.db.SelectContext(ctx, &groupIDs, query)
 	if err != nil {
@@ -338,7 +332,7 @@ func (m *PoolManager) refillPool(memPool *MemoryPool) {
 				Msg("Pool refilled")
 		}
 	} else {
-		log.Info().
+		log.Debug().
 			Str("type", poolType).
 			Int("group", groupID).
 			Int("need", need).
@@ -643,10 +637,23 @@ func (m *PoolManager) getImageGroupNames() map[int]string {
 	return names
 }
 
-// getContentGroupNames 获取正文/标题分组名称映射
-// 标题和正文的 group_id 对应 keyword_groups 表的 id
+// getContentGroupNames 获取正文分组名称映射
+// 正文的 group_id 对应 article_groups 表的 id
 func (m *PoolManager) getContentGroupNames() map[int]string {
-	return m.getKeywordGroupNames()
+	names := make(map[int]string)
+	rows, err := m.db.QueryContext(m.ctx, "SELECT id, name FROM article_groups WHERE status = 1")
+	if err != nil {
+		return names
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var name string
+		if err := rows.Scan(&id, &name); err == nil {
+			names[id] = name
+		}
+	}
+	return names
 }
 
 // GetDataPoolsStats 返回数据池运行状态统计（与前端展示格式一致）
@@ -670,7 +677,8 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 	pools := []PoolStatusStats{}
 
 	// 1. 标题池（改用 TitleGenerator 统计）
-	groupNames := m.getContentGroupNames()
+	titleGroupNames := m.getKeywordGroupNames()
+	contentGroupNames := m.getContentGroupNames()
 
 	var titlesCurrent, titlesMax int
 	var titlesMemory, titlesConsumed int64
@@ -680,7 +688,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		titleGroups = m.titleGenerator.GetGroupStats()
 		// 填充分组名称
 		for i := range titleGroups {
-			if name, ok := groupNames[titleGroups[i].ID]; ok {
+			if name, ok := titleGroupNames[titleGroups[i].ID]; ok {
 				titleGroups[i].Name = name
 			} else {
 				titleGroups[i].Name = fmt.Sprintf("分组%d", titleGroups[i].ID)
@@ -727,7 +735,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		if maxSize > 0 {
 			util = float64(current) / float64(maxSize) * 100
 		}
-		name := groupNames[gid]
+		name := contentGroupNames[gid]
 		if name == "" {
 			name = fmt.Sprintf("分组%d", gid)
 		}
