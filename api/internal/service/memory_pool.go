@@ -73,10 +73,11 @@ func (p *MemoryPool) Pop() (PoolItem, bool) {
 	return item, true
 }
 
-// Push adds items to the end of the pool, skipping items with duplicate IDs
-func (p *MemoryPool) Push(items []PoolItem) {
+// Push adds items to the end of the pool, skipping items with duplicate IDs.
+// Returns the number of items actually added.
+func (p *MemoryPool) Push(items []PoolItem) int {
 	if len(items) == 0 {
-		return
+		return 0
 	}
 
 	p.mu.Lock()
@@ -84,7 +85,7 @@ func (p *MemoryPool) Push(items []PoolItem) {
 
 	available := p.maxSize - len(p.items)
 	if available <= 0 {
-		return
+		return 0
 	}
 
 	var addedMem int64
@@ -102,6 +103,7 @@ func (p *MemoryPool) Push(items []PoolItem) {
 		added++
 	}
 	p.memoryBytes.Add(addedMem)
+	return added
 }
 
 // Len returns the current number of items in the pool

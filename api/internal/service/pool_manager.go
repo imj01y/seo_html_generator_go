@@ -321,14 +321,16 @@ func (m *PoolManager) refillPool(memPool *MemoryPool) {
 	}
 
 	if len(items) > 0 {
-		memPool.Push(items)
+		added := memPool.Push(items)
 
-		log.Info().
-			Str("type", poolType).
-			Int("group", groupID).
-			Int("added", len(items)).
-			Int("total", memPool.Len()).
-			Msg("Pool refilled")
+		if added > 0 {
+			log.Info().
+				Str("type", poolType).
+				Int("group", groupID).
+				Int("added", added).
+				Int("total", memPool.Len()).
+				Msg("Pool refilled")
+		}
 	} else {
 		log.Info().
 			Str("type", poolType).
