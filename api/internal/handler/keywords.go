@@ -38,7 +38,11 @@ func (h *KeywordsHandler) asyncReloadKeywordGroup(groupID int) {
 	go func() {
 		ctx := context.Background()
 		// 1. 等待 PoolManager 重载完成
-		h.poolManager.ReloadKeywordGroup(ctx, groupID)
+		if err := h.poolManager.ReloadKeywordGroup(ctx, groupID); err != nil {
+			log.Error().Err(err).Int("group_id", groupID).
+				Msg("Failed to reload keyword group from pool manager")
+			return
+		}
 		// 2. 获取最新数据
 		keywords := h.poolManager.GetKeywords(groupID)
 		rawKeywords := h.poolManager.GetAllRawKeywords(groupID)
@@ -613,10 +617,23 @@ func (h *KeywordsHandler) BatchUpdateStatus(c *gin.Context) {
 		args = append(args, id)
 	}
 
+	// 查询涉及的分组
+	idArgs := make([]interface{}, len(req.IDs))
+	for i, id := range req.IDs {
+		idArgs[i] = id
+	}
+	var groupIDs []int
+	h.db.Select(&groupIDs, fmt.Sprintf("SELECT DISTINCT group_id FROM keywords WHERE id IN (%s)", placeholders), idArgs...)
+
 	query := fmt.Sprintf("UPDATE keywords SET status = ? WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "updated": 0})
 		return
+	}
+
+	// 批量更新状态后重载涉及的分组
+	for _, gid := range groupIDs {
+		h.asyncReloadKeywordGroup(gid)
 	}
 
 	core.Success(c, gin.H{"success": true, "updated": len(req.IDs)})
@@ -651,6 +668,14 @@ func (h *KeywordsHandler) BatchMove(c *gin.Context) {
 	placeholders := strings.Repeat("?,", len(req.IDs))
 	placeholders = placeholders[:len(placeholders)-1]
 
+	// 查询源分组
+	idArgs := make([]interface{}, len(req.IDs))
+	for i, id := range req.IDs {
+		idArgs[i] = id
+	}
+	var sourceGroupIDs []int
+	h.db.Select(&sourceGroupIDs, fmt.Sprintf("SELECT DISTINCT group_id FROM keywords WHERE id IN (%s)", placeholders), idArgs...)
+
 	args := []interface{}{req.GroupID}
 	for _, id := range req.IDs {
 		args = append(args, id)
@@ -661,6 +686,12 @@ func (h *KeywordsHandler) BatchMove(c *gin.Context) {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "moved": 0})
 		return
 	}
+
+	// 移动后需要重载源分组和目标分组
+	for _, gid := range sourceGroupIDs {
+		h.asyncReloadKeywordGroup(gid)
+	}
+	h.asyncReloadKeywordGroup(req.GroupID)
 
 	core.Success(c, gin.H{"success": true, "moved": len(req.IDs)})
 }
