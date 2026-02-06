@@ -323,16 +323,6 @@ func (m *PoolManager) refillPool(memPool *MemoryPool) {
 	if len(items) > 0 {
 		memPool.Push(items)
 
-		// 立即将加载的数据标记为已使用（status=0），防止重复加载
-		if m.batcher != nil {
-			for _, item := range items {
-				m.batcher.Add(pool.UpdateTask{
-					Table: poolType,
-					ID:    item.ID,
-				})
-			}
-		}
-
 		log.Info().
 			Str("type", poolType).
 			Int("group", groupID).
