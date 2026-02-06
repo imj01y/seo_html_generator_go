@@ -312,6 +312,34 @@ func (p *KeywordPool) GetAllGroups() map[int]int {
 	return groups
 }
 
+// GetKeywords 返回指定分组的所有编码关键词
+func (p *KeywordPool) GetKeywords(groupID int) []string {
+	p.mu.RLock()
+	items := p.data[groupID]
+	if len(items) == 0 {
+		items = p.data[1] // fallback to default group
+	}
+	// 复制避免外部修改
+	result := make([]string, len(items))
+	copy(result, items)
+	p.mu.RUnlock()
+	return result
+}
+
+// GetAllRawKeywords 返回指定分组的所有原始关键词
+func (p *KeywordPool) GetAllRawKeywords(groupID int) []string {
+	p.mu.RLock()
+	items := p.rawData[groupID]
+	if len(items) == 0 {
+		items = p.rawData[1] // fallback to default group
+	}
+	// 复制避免外部修改
+	result := make([]string, len(items))
+	copy(result, items)
+	p.mu.RUnlock()
+	return result
+}
+
 // getRandomItems 从切片中随机选取指定数量的元素(Fisher-Yates 部分洗牌)
 func getRandomItems(items []string, count int) []string {
 	n := len(items)
