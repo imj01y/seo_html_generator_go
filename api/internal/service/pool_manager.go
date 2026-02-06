@@ -869,6 +869,37 @@ func (m *PoolManager) GetPoolStatsSimple() SimplePoolStats {
 	}
 }
 
+// GetTitleGenerator 返回 TitleGenerator 实例
+func (m *PoolManager) GetTitleGenerator() *TitleGenerator {
+	return m.titleGenerator
+}
+
+// RefreshContents 重载所有正文缓存池（清空并重新从数据库加载）
+func (m *PoolManager) RefreshContents(ctx context.Context) {
+	m.mu.RLock()
+	pools := make([]*MemoryPool, 0, len(m.contents))
+	for _, p := range m.contents {
+		pools = append(pools, p)
+	}
+	m.mu.RUnlock()
+
+	for _, p := range pools {
+		p.Clear()
+		m.refillPool(p)
+	}
+
+	log.Info().Int("groups", len(pools)).Msg("All content pools reloaded")
+}
+
+// ReloadContentGroup 重载指定分组的正文缓存池
+func (m *PoolManager) ReloadContentGroup(ctx context.Context, groupID int) {
+	memPool := m.getOrCreatePool("contents", groupID)
+	memPool.Clear()
+	m.refillPool(memPool)
+
+	log.Info().Int("group_id", groupID).Msg("Content pool group reloaded")
+}
+
 // RefreshData 手动刷新指定数据池
 // 兼容层: 使用池管理器重新加载
 func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
@@ -886,6 +917,12 @@ func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
 		if err := m.poolManager.GetImagePool().Reload(ctx, groupIDs); err != nil {
 			return fmt.Errorf("reload images: %w", err)
 		}
+	case "titles":
+		if m.titleGenerator != nil {
+			m.titleGenerator.ForceReload()
+		}
+	case "contents":
+		m.RefreshContents(ctx)
 	case "all":
 		if err := m.poolManager.ReloadAll(ctx); err != nil {
 			return fmt.Errorf("reload all pools: %w", err)
@@ -893,6 +930,7 @@ func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
 		if m.titleGenerator != nil {
 			m.titleGenerator.SyncGroups(m.GetKeywordGroupIDs())
 		}
+		m.RefreshContents(ctx)
 	}
 
 	m.mu.Lock()
