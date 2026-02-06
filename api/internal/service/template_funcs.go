@@ -230,14 +230,27 @@ func (m *TemplateFuncsManager) RandomURL() string {
 	return generateRandomURL()
 }
 
-// RandomKeyword 获取随机关键词（原子操作）
-func (m *TemplateFuncsManager) RandomKeyword() string {
-	length := atomic.LoadInt64(&m.keywordLen)
-	if length == 0 {
+// RandomKeyword 获取随机关键词（支持分组）
+func (m *TemplateFuncsManager) RandomKeyword(groupID int) string {
+	data := m.keywordData.Load()
+	if data == nil {
 		return ""
 	}
-	idx := atomic.AddInt64(&m.keywordIdx, 1) - 1
-	return m.keywords[idx%length]
+
+	keywords := data.groups[groupID]
+	if len(keywords) == 0 {
+		// 降级到默认分组
+		keywords = data.groups[1]
+		if len(keywords) == 0 {
+			return ""
+		}
+	}
+
+	// 获取或创建该分组的索引
+	idxPtr, _ := m.keywordGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
+	idx := idxPtr.(*atomic.Int64).Add(1) - 1
+
+	return keywords[idx%int64(len(keywords))]
 }
 
 // RandomKeywordEmoji 从池中获取带 emoji 的随机关键词
