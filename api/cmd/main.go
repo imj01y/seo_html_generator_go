@@ -354,6 +354,7 @@ func main() {
 		Monitor:          monitor,
 		PoolManager:      poolManager,
 		SystemStats:      systemStats,
+		SiteCache:        siteCache,
 	}
 	api.SetupRouter(r, deps)
 

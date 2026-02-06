@@ -2,10 +2,16 @@
   <div class="group-list-page site-list">
     <div class="page-header">
       <h2 class="title">站点管理</h2>
-      <el-button type="primary" @click="handleAdd">
-        <el-icon><Plus /></el-icon>
-        新增站点
-      </el-button>
+      <div class="header-actions">
+        <el-button :loading="reloadCacheLoading" @click="handleReloadCache">
+          <el-icon><Refresh /></el-icon>
+          刷新缓存
+        </el-button>
+        <el-button type="primary" @click="handleAdd">
+          <el-icon><Plus /></el-icon>
+          新增站点
+        </el-button>
+      </div>
     </div>
 
     <div class="page-container">
@@ -302,9 +308,9 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus'
-import { Plus, Search, Folder, Delete, Check, Close, Edit, Star } from '@element-plus/icons-vue'
+import { Plus, Search, Folder, Delete, Check, Close, Edit, Star, Refresh } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
-import { getSites, createSite, updateSite, deleteSite, getGroupOptions, batchDeleteSites, batchUpdateSiteStatus } from '@/api/sites'
+import { getSites, createSite, updateSite, deleteSite, getGroupOptions, batchDeleteSites, batchUpdateSiteStatus, reloadSiteCache } from '@/api/sites'
 import { getTemplateOptions } from '@/api/templates'
 import { getSiteGroups, createSiteGroup, updateSiteGroup, deleteSiteGroup } from '@/api/site-groups'
 import { getArticleGroups } from '@/api/articles'
@@ -314,6 +320,7 @@ import type { Site, TemplateOption, GroupOption, SiteGroup, ArticleGroup, SiteGr
 const loading = ref(false)
 const submitLoading = ref(false)
 const groupSubmitLoading = ref(false)
+const reloadCacheLoading = ref(false)
 const dialogVisible = ref(false)
 const groupDialogVisible = ref(false)
 const isEdit = ref(false)
@@ -621,6 +628,20 @@ const handleBatchDisable = async () => {
   }
 }
 
+// 刷新缓存
+const handleReloadCache = async () => {
+  reloadCacheLoading.value = true
+  try {
+    await reloadSiteCache()
+    ElMessage.success('站点缓存已刷新')
+    await loadSites()
+  } catch (e: any) {
+    ElMessage.error(e.message || '刷新缓存失败')
+  } finally {
+    reloadCacheLoading.value = false
+  }
+}
+
 // 站点操作
 const handleAdd = async () => {
   isEdit.value = false
@@ -758,6 +779,11 @@ onUnmounted(() => {
       font-size: 20px;
       font-weight: 600;
       color: #303133;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 8px;
     }
   }
 

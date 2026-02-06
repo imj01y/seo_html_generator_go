@@ -17,12 +17,13 @@ import (
 
 // SitesHandler 站点管理 handler
 type SitesHandler struct {
-	db *sqlx.DB
+	db        *sqlx.DB
+	siteCache *core.SiteCache
 }
 
 // NewSitesHandler 创建 SitesHandler
-func NewSitesHandler(db *sqlx.DB) *SitesHandler {
-	return &SitesHandler{db: db}
+func NewSitesHandler(db *sqlx.DB, siteCache *core.SiteCache) *SitesHandler {
+	return &SitesHandler{db: db, siteCache: siteCache}
 }
 
 // Site 站点
@@ -252,6 +253,14 @@ func (h *SitesHandler) Create(c *gin.Context) {
 	}
 
 	id, _ := result.LastInsertId()
+
+	// 同步站点缓存（覆盖可能存在的负缓存）
+	if h.siteCache != nil {
+		if err := h.siteCache.Reload(c.Request.Context(), req.Domain); err != nil {
+			log.Warn().Err(err).Str("domain", req.Domain).Msg("Failed to reload site cache after create")
+		}
+	}
+
 	core.Success(c, gin.H{"success": true, "id": id})
 }
 
@@ -376,6 +385,16 @@ func (h *SitesHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// 同步站点缓存
+	if h.siteCache != nil {
+		var domain string
+		if err := h.db.Get(&domain, "SELECT domain FROM sites WHERE id = ?", id); err == nil {
+			if err := h.siteCache.Reload(c.Request.Context(), domain); err != nil {
+				log.Warn().Err(err).Str("domain", domain).Msg("Failed to reload site cache after update")
+			}
+		}
+	}
+
 	core.Success(c, gin.H{"success": true})
 }
 
@@ -393,10 +412,21 @@ func (h *SitesHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// 删除前查询域名（用于缓存失效）
+	var domain string
+	if h.siteCache != nil {
+		h.db.Get(&domain, "SELECT domain FROM sites WHERE id = ?", id)
+	}
+
 	// 物理删除
 	if _, err := h.db.Exec("DELETE FROM sites WHERE id = ?", id); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error()})
 		return
+	}
+
+	// 失效站点缓存
+	if h.siteCache != nil && domain != "" {
+		h.siteCache.Invalidate(domain)
 	}
 
 	core.Success(c, gin.H{"success": true})
@@ -431,11 +461,25 @@ func (h *SitesHandler) BatchDelete(c *gin.Context) {
 		args[i] = id
 	}
 
+	// 删除前查询域名（用于缓存失效）
+	var domains []string
+	if h.siteCache != nil {
+		domainQuery := fmt.Sprintf("SELECT domain FROM sites WHERE id IN (%s)", placeholders)
+		h.db.Select(&domains, domainQuery, args...)
+	}
+
 	// 物理删除
 	query := fmt.Sprintf("DELETE FROM sites WHERE id IN (%s)", placeholders)
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "deleted": 0})
 		return
+	}
+
+	// 逐个失效站点缓存
+	if h.siteCache != nil {
+		for _, domain := range domains {
+			h.siteCache.Invalidate(domain)
+		}
 	}
 
 	core.Success(c, gin.H{"success": true, "deleted": len(req.IDs)})
@@ -472,6 +516,25 @@ func (h *SitesHandler) BatchUpdateStatus(c *gin.Context) {
 	if _, err := h.db.Exec(query, args...); err != nil {
 		core.Success(c, gin.H{"success": false, "message": err.Error(), "updated": 0})
 		return
+	}
+
+	// 同步站点缓存（Reload 会自动处理 status=0 的移除）
+	if h.siteCache != nil {
+		idPlaceholders := strings.Repeat("?,", len(req.IDs))
+		idPlaceholders = idPlaceholders[:len(idPlaceholders)-1]
+		idArgs := make([]interface{}, len(req.IDs))
+		for i, id := range req.IDs {
+			idArgs[i] = id
+		}
+		var domains []string
+		domainQuery := fmt.Sprintf("SELECT domain FROM sites WHERE id IN (%s)", idPlaceholders)
+		if err := h.db.Select(&domains, domainQuery, idArgs...); err == nil {
+			for _, domain := range domains {
+				if err := h.siteCache.Reload(c.Request.Context(), domain); err != nil {
+					log.Warn().Err(err).Str("domain", domain).Msg("Failed to reload site cache after batch status update")
+				}
+			}
+		}
 	}
 
 	core.Success(c, gin.H{"success": true, "updated": len(req.IDs)})

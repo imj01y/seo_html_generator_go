@@ -31,6 +31,7 @@ type Dependencies struct {
 	Monitor          *core.Monitor
 	PoolManager      *core.PoolManager
 	SystemStats      *core.SystemStatsCollector
+	SiteCache        *core.SiteCache
 }
 
 // SetupRouter configures all API routes
@@ -182,7 +183,7 @@ func SetupRouter(r *gin.Engine, deps *Dependencies) {
 	}
 
 	// Sites routes (require JWT)
-	sitesHandler := NewSitesHandler(deps.DB)
+	sitesHandler := NewSitesHandler(deps.DB, deps.SiteCache)
 	sitesGroup := r.Group("/api/sites")
 	sitesGroup.Use(AuthMiddleware(deps.Config.Auth.SecretKey))
 	{

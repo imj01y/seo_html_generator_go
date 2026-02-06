@@ -163,3 +163,11 @@ export async function batchUpdateSiteStatus(ids: number[], status: number): Prom
   assertSuccess(res, '批量更新状态失败')
   return { updated: res.updated! }
 }
+
+// ============================================
+// 缓存操作 API
+// ============================================
+
+export async function reloadSiteCache(): Promise<void> {
+  await request.post('/cache/site/reload')
+}
