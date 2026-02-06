@@ -1,3 +1,5 @@
+env API_PORT;
+
 # ==============================================
 # SEO HTML Generator - Nginx 主配置
 # ==============================================
@@ -90,7 +92,7 @@ http {
 
     # 上游服务定义
     upstream api_backend {
-        server api:8080;
+        server api:${API_PORT};
         keepalive 32;
     }
 

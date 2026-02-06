@@ -1,9 +1,9 @@
 # ==============================================
-# 管理后台 - 独立端口 8008
+# 管理后台 - 独立端口 ${ADMIN_PORT}
 # ==============================================
 
 server {
-    listen 8008;
+    listen ${ADMIN_PORT};
     server_name _;
 
     # 文件上传大小限制
@@ -44,7 +44,7 @@ server {
     location /api/ {
         # 使用 Docker 内置 DNS，容器重建后自动解析新 IP
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_app api:8080;
+        set $upstream_app api:${API_PORT};
         proxy_pass http://$upstream_app;
         proxy_http_version 1.1;
 
@@ -69,7 +69,7 @@ server {
     # /ws/ 路径的 WebSocket（爬虫日志等）
     location /ws/ {
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_app api:8080;
+        set $upstream_app api:${API_PORT};
         proxy_pass http://$upstream_app;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -83,7 +83,7 @@ server {
     # /api/.../ws 路径的 WebSocket（系统日志等）
     location ~* ^/api/.*/ws$ {
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_app api:8080;
+        set $upstream_app api:${API_PORT};
         proxy_pass http://$upstream_app;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
@@ -97,7 +97,7 @@ server {
     # ==========================================
     location ~ ^/go/(.*)$ {
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_go api:8080;
+        set $upstream_go api:${API_PORT};
         proxy_pass http://$upstream_go/$1$is_args$args;
         proxy_http_version 1.1;
 

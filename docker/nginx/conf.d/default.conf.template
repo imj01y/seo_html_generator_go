@@ -3,8 +3,8 @@
 # ==============================================
 
 server {
-    listen 8009 default_server;
-    listen [::]:8009 default_server;
+    listen ${PAGE_PORT} default_server;
+    listen [::]:${PAGE_PORT} default_server;
     server_name _;
 
     # 日志
@@ -140,7 +140,7 @@ server {
     location /_go_backend {
         internal;
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_go api:8080;
+        set $upstream_go api:${API_PORT};
         proxy_pass http://$upstream_go/page$is_args$args;
         proxy_http_version 1.1;
 
@@ -163,7 +163,7 @@ server {
     location /_log_spider {
         internal;
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_go api:8080;
+        set $upstream_go api:${API_PORT};
         proxy_pass http://$upstream_go/api/log/spider$is_args$args;
         proxy_http_version 1.1;
 
@@ -179,7 +179,7 @@ server {
     # ==========================================
     location /api/ {
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_app api:8080;
+        set $upstream_app api:${API_PORT};
         proxy_pass http://$upstream_app;
         proxy_http_version 1.1;
 
@@ -208,7 +208,7 @@ server {
     # ==========================================
     location ~ ^/go/(.*)$ {
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_go api:8080;
+        set $upstream_go api:${API_PORT};
         proxy_pass http://$upstream_go/$1$is_args$args;
         proxy_http_version 1.1;
 
@@ -255,7 +255,7 @@ server {
     # ==========================================
     location @api_backend {
         resolver 127.0.0.11 valid=10s ipv6=off;
-        set $upstream_app api:8080;
+        set $upstream_app api:${API_PORT};
         proxy_pass http://$upstream_app;
         proxy_http_version 1.1;
 
