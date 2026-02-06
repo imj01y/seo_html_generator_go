@@ -105,9 +105,15 @@ func resolvePlaceholder(p Placeholder, data *RenderData, fm *TemplateFuncsManage
 	case PlaceholderURL:
 		return fm.RandomURL()
 	case PlaceholderKeyword:
-		return fm.RandomKeyword()
+		if data != nil {
+			return fm.RandomKeyword(data.KeywordGroupID)
+		}
+		return fm.RandomKeyword(1)
 	case PlaceholderKeywordEmoji:
-		return fm.RandomKeywordEmoji()
+		if data != nil {
+			return fm.RandomKeywordEmoji(data.KeywordGroupID)
+		}
+		return fm.RandomKeywordEmoji(1)
 	case PlaceholderImage:
 		if data != nil {
 			return fm.RandomImage(data.ImageGroupID)

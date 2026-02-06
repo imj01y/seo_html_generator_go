@@ -26,6 +26,7 @@ type RenderData struct {
 	TitleGenerator func() string // 动态标题生成器
 	SiteID         int
 	ImageGroupID   int // 图片分组ID
+	KeywordGroupID int // 关键词分组ID
 	AnalyticsCode  template.HTML
 	BaiduPushJS    template.HTML
 	ArticleContent template.HTML
