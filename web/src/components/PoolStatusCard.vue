@@ -81,7 +81,7 @@
         <span class="memory-info">内存: {{ formatBytes(pool.memory_bytes) }}</span>
       </div>
       <el-collapse v-if="pool.groups && pool.groups.length > 0" class="groups-collapse">
-        <el-collapse-item title="分组详情">
+        <el-collapse-item :title="`分组详情 (${pool.groups.length} 个分组)`">
           <div class="groups-list">
             <div v-for="group in pool.groups" :key="group.id" class="group-item">
               <span class="group-name">{{ group.name }}</span>
