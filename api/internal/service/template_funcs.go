@@ -97,24 +97,6 @@ func (m *TemplateFuncsManager) InitPools(config *CachePoolConfig) {
 	m.numberPool.Start()
 }
 
-// InitKeywordEmojiPool 初始化带 emoji 的关键词池（从配置读取）
-func (m *TemplateFuncsManager) InitKeywordEmojiPool(config *CachePoolConfig) {
-	if m.emojiManager == nil || atomic.LoadInt64(&m.rawKeywordLen) == 0 {
-		return
-	}
-
-	m.keywordEmojiPool = NewObjectPool[string](PoolConfig{
-		Name:          "keyword_emoji",
-		Size:          config.KeywordEmojiPoolSize,
-		Threshold:     config.KeywordEmojiThreshold,
-		NumWorkers:    config.KeywordEmojiWorkers,
-		CheckInterval: config.KeywordEmojiRefillInterval(),
-		MemorySizer:   stringMemorySizer,
-	}, m.generateKeywordWithEmoji)
-
-	m.keywordEmojiPool.Start()
-}
-
 // generateKeywordWithEmojiFromRaw 从原始关键词生成带 emoji 的版本
 func (m *TemplateFuncsManager) generateKeywordWithEmojiFromRaw(keyword string) string {
 	// 如果 emojiManager 为 nil，直接返回编码后的关键词
@@ -164,42 +146,9 @@ func (m *TemplateFuncsManager) StopPools() {
 	if m.urlPool != nil {
 		m.urlPool.Stop()
 	}
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Stop()
-	}
 	if m.numberPool != nil {
 		m.numberPool.Stop()
 	}
-}
-
-// LoadKeywords 加载关键词
-func (m *TemplateFuncsManager) LoadKeywords(keywords []string) int {
-	// 预编码
-	encoded := make([]string, len(keywords))
-	for i, kw := range keywords {
-		encoded[i] = m.encoder.EncodeText(kw)
-	}
-
-	// 洗牌
-	rand.Shuffle(len(encoded), func(i, j int) {
-		encoded[i], encoded[j] = encoded[j], encoded[i]
-	})
-
-	m.keywords = encoded
-	atomic.StoreInt64(&m.keywordLen, int64(len(encoded)))
-	atomic.StoreInt64(&m.keywordIdx, 0)
-
-	// 存储原始关键词（未编码，用于生成带 emoji 的关键词）
-	rawCopy := make([]string, len(keywords))
-	copy(rawCopy, keywords)
-	rand.Shuffle(len(rawCopy), func(i, j int) {
-		rawCopy[i], rawCopy[j] = rawCopy[j], rawCopy[i]
-	})
-	m.rawKeywords = rawCopy
-	atomic.StoreInt64(&m.rawKeywordLen, int64(len(rawCopy)))
-	atomic.StoreInt64(&m.rawKeywordIdx, 0)
-
-	return len(encoded)
 }
 
 // ========== 模板函数（全部无锁，O(1)） ==========
@@ -341,8 +290,7 @@ func generateRandomURL() string {
 // GetStats returns statistics about loaded data
 func (m *TemplateFuncsManager) GetStats() map[string]interface{} {
 	stats := map[string]interface{}{
-		"keywords_count": atomic.LoadInt64(&m.keywordLen),
-		"keyword_idx":    atomic.LoadInt64(&m.keywordIdx),
+		"keyword_groups": m.GetKeywordStats(),
 		"image_groups":   m.GetImageStats(),
 	}
 
@@ -351,9 +299,6 @@ func (m *TemplateFuncsManager) GetStats() map[string]interface{} {
 	}
 	if m.urlPool != nil {
 		stats["url_pool"] = m.urlPool.Stats()
-	}
-	if m.keywordEmojiPool != nil {
-		stats["keyword_emoji_pool"] = m.keywordEmojiPool.Stats()
 	}
 	if m.numberPool != nil {
 		stats["number_pools"] = m.numberPool.Stats()
@@ -442,19 +387,9 @@ func (m *TemplateFuncsManager) ReloadPools(config *CachePoolConfig) {
 		)
 	}
 
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.UpdateConfig(
-			config.KeywordEmojiPoolSize,
-			config.KeywordEmojiThreshold,
-			config.KeywordEmojiWorkers,
-			config.KeywordEmojiRefillInterval(),
-		)
-	}
-
 	log.Info().
 		Int("cls_size", config.ClsPoolSize).
 		Int("url_size", config.UrlPoolSize).
-		Int("keyword_emoji_size", config.KeywordEmojiPoolSize).
 		Msg("TemplateFuncsManager pools reloaded")
 }
 
@@ -466,14 +401,10 @@ func (m *TemplateFuncsManager) ResizePools(config *PoolSizeConfig) {
 	if config.URLPoolSize > 0 && m.urlPool != nil {
 		m.urlPool.Resize(config.URLPoolSize)
 	}
-	if config.KeywordEmojiPoolSize > 0 && m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Resize(config.KeywordEmojiPoolSize)
-	}
 
 	log.Info().
 		Int("cls", config.ClsPoolSize).
 		Int("url", config.URLPoolSize).
-		Int("keyword_emoji", config.KeywordEmojiPoolSize).
 		Msg("Pools resized")
 }
 
@@ -484,9 +415,6 @@ func (m *TemplateFuncsManager) ClearPools() {
 	}
 	if m.urlPool != nil {
 		m.urlPool.Clear()
-	}
-	if m.keywordEmojiPool != nil {
-		m.keywordEmojiPool.Clear()
 	}
 	log.Info().Msg("All pools cleared")
 }
@@ -500,9 +428,6 @@ func (m *TemplateFuncsManager) GetPoolStats() map[string]interface{} {
 	}
 	if m.urlPool != nil {
 		stats["url"] = m.urlPool.Stats()
-	}
-	if m.keywordEmojiPool != nil {
-		stats["keyword_emoji"] = m.keywordEmojiPool.Stats()
 	}
 
 	return stats
