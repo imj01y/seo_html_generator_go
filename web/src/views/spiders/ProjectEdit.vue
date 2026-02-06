@@ -213,6 +213,7 @@ import MonacoEditor from '@/components/MonacoEditor.vue'
 import LogViewer from '@/components/LogViewer.vue'
 import SpiderGuide from '@/components/SpiderGuide.vue'
 import ScheduleBuilder from '@/components/ScheduleBuilder.vue'
+import { getArticleGroups } from '@/api/articles'
 import {
   getProject,
   createProject,
@@ -256,7 +257,7 @@ const currentCode = ref('')
 const originalCode = ref('')  // 用于检测是否有修改
 
 // 文章分组（用于输出目标选择）
-const articleGroups = ref([{ id: 1, name: '默认文章分组' }])
+const articleGroups = ref<{ id: number; name: string }[]>([])
 
 // 编辑器配置
 const editorOptions = {
@@ -887,7 +888,14 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
 }
 
 // 生命周期
-onMounted(() => {
+onMounted(async () => {
+  // 加载文章分组选项
+  try {
+    const groups = await getArticleGroups()
+    articleGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
+  } catch {
+    articleGroups.value = [{ id: 1, name: '默认文章分组' }]
+  }
   loadProject()
   window.addEventListener('beforeunload', handleBeforeUnload)
 })
