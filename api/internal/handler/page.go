@@ -142,9 +142,9 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 
 	// Get title and content from pool
 	var title, content string
-	title, err = h.poolManager.Pop("titles", articleGroupID)
+	title, err = h.poolManager.Pop("titles", keywordGroupID)
 	if err != nil {
-		log.Warn().Err(err).Int("group", articleGroupID).Msg("Failed to get title from pool")
+		log.Warn().Err(err).Int("group", keywordGroupID).Msg("Failed to get title from pool")
 	}
 	content, err = h.poolManager.Pop("contents", articleGroupID)
 	if err != nil {
