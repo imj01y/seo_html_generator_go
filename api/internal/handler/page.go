@@ -179,6 +179,7 @@ func (h *PageHandler) ServePage(c *gin.Context) {
 		Title:          h.generateTitle(titleKeywords), // 兼容静态用途
 		TitleGenerator: titleGenerator,                 // 动态生成器
 		SiteID:         site.ID,
+		KeywordGroupID: keywordGroupID,
 		ImageGroupID:   imageGroupID,
 		AnalyticsCode:  template.HTML(analyticsCode),
 		BaiduPushJS:    template.HTML(baiduPushJS),
