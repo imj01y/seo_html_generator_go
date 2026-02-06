@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -742,6 +743,7 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		})
 	}
 	m.mu.RUnlock()
+	sort.Slice(contentGroups, func(i, j int) bool { return contentGroups[i].ID < contentGroups[j].ID })
 
 	contentsUsed := int(contentsConsumed)
 	contentsUtil := 0.0

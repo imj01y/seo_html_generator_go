@@ -3,6 +3,7 @@ package core
 
 import (
 	"context"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -325,5 +326,6 @@ func (g *TitleGenerator) GetGroupStats() []PoolGroupInfo {
 			MemoryBytes: pool.memoryBytes.Load(),
 		})
 	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
 	return groups
 }
