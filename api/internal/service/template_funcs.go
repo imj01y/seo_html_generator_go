@@ -16,23 +16,25 @@ type ImageData struct {
 	groups map[int][]string // groupID -> urls
 }
 
+// KeywordData 关键词数据（不可变，通过原子指针替换）
+type KeywordData struct {
+	groups    map[int][]string // groupID -> encoded keywords
+	rawGroups map[int][]string // groupID -> raw keywords
+}
+
 // TemplateFuncsManager 模板函数管理器（高并发版）
 type TemplateFuncsManager struct {
 	// 预生成池
-	clsPool          *ObjectPool[string]
-	urlPool          *ObjectPool[string]
-	keywordEmojiPool *ObjectPool[string] // 带 emoji 的关键词池
-	numberPool       *NumberPool
+	clsPool    *ObjectPool[string]
+	urlPool    *ObjectPool[string]
+	numberPool *NumberPool
 
-	// 关键词（原子计数器访问）
-	keywords   []string
-	keywordIdx int64
-	keywordLen int64
+	// 关键词数据（原子指针，支持无锁读取和热更新）
+	keywordData atomic.Pointer[KeywordData]
 
-	// 原始关键词（未编码，用于生成带 emoji 的关键词）
-	rawKeywords   []string
-	rawKeywordIdx int64
-	rawKeywordLen int64
+	// 分组索引（独立管理，避免数据替换时重置）
+	keywordGroupIdx    sync.Map // groupID -> *atomic.Int64
+	rawKeywordGroupIdx sync.Map // groupID -> *atomic.Int64
 
 	// 图片数据（原子指针，支持无锁读取和热更新）
 	imageData atomic.Pointer[ImageData]
