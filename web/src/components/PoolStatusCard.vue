@@ -12,6 +12,9 @@
           <span class="status-icon">{{ statusIcon }}</span>
           {{ statusText }}
         </span>
+        <el-button size="small" @click="handleReload">
+          重载
+        </el-button>
       </template>
     </div>
 
@@ -55,6 +58,9 @@
               <div class="group-header">
                 <span class="group-name">{{ group.name }}</span>
                 <span class="group-util">{{ (group.utilization || 0).toFixed(0) }}%</span>
+                <el-button size="small" link @click="handleReloadGroup(group.id)">
+                  重载
+                </el-button>
               </div>
               <el-progress
                 :percentage="group.utilization || 0"
