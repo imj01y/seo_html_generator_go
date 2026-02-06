@@ -471,6 +471,26 @@ func (m *PoolManager) ReloadKeywordGroup(ctx context.Context, groupID int) error
 	return m.poolManager.GetKeywordPool().ReloadGroup(ctx, groupID)
 }
 
+// GetKeywordGroupIDs 返回所有关键词分组ID
+func (m *PoolManager) GetKeywordGroupIDs() []int {
+	groups := m.poolManager.GetKeywordPool().GetAllGroups()
+	ids := make([]int, 0, len(groups))
+	for gid := range groups {
+		ids = append(ids, gid)
+	}
+	return ids
+}
+
+// GetKeywords 获取指定分组的所有编码关键词
+func (m *PoolManager) GetKeywords(groupID int) []string {
+	return m.poolManager.GetKeywordPool().GetKeywords(groupID)
+}
+
+// GetAllRawKeywords 获取指定分组的所有原始关键词
+func (m *PoolManager) GetAllRawKeywords(groupID int) []string {
+	return m.poolManager.GetKeywordPool().GetAllRawKeywords(groupID)
+}
+
 // ============================================================
 // Images 方法
 // ============================================================
