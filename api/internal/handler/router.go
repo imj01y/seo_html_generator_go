@@ -713,7 +713,7 @@ func dataStatsHandler(deps *Dependencies) gin.HandlerFunc {
 
 // dataRefreshRequest 数据刷新请求
 type dataRefreshRequest struct {
-	Pool    string `json:"pool" binding:"required,oneof=all keywords images titles contents emojis"`
+	Pool    string `json:"pool" binding:"required,oneof=all keywords images titles contents emojis keyword_emojis"`
 	GroupID *int   `json:"group_id"`
 }
 
@@ -760,6 +760,14 @@ func dataRefreshHandler(deps *Dependencies) gin.HandlerFunc {
 				deps.PoolManager.ReloadContentGroup(ctx, *req.GroupID)
 			} else {
 				deps.PoolManager.RefreshData(ctx, "contents")
+			}
+		case "keyword_emojis":
+			if req.GroupID != nil {
+				if keg := deps.PoolManager.GetKeywordEmojiGenerator(); keg != nil {
+					keg.ReloadGroup(*req.GroupID)
+				}
+			} else {
+				deps.PoolManager.RefreshData(ctx, "keyword_emojis")
 			}
 		case "emojis":
 			deps.PoolManager.ReloadEmojis("data/emojis.json")

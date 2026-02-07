@@ -278,11 +278,6 @@ func (h *PageHandler) logSpiderVisit(
 		spiderType = "unknown"
 	}
 
-	dnsOk := 0
-	if detection.DNSVerified {
-		dnsOk = 1
-	}
-
 	cacheHitInt := 0
 	if cacheHit {
 		cacheHitInt = 1
@@ -298,7 +293,7 @@ func (h *PageHandler) logSpiderVisit(
 		Str("path", path).
 		Msg("Inserting spider log")
 
-	_, err := h.db.ExecContext(ctx, query, spiderType, ip, ua, domain, path, dnsOk, respTime, cacheHitInt, status)
+	_, err := h.db.ExecContext(ctx, query, spiderType, ip, ua, domain, path, 0, respTime, cacheHitInt, status)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to log spider visit")
 	} else {

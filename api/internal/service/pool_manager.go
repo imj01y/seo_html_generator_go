@@ -29,6 +29,9 @@ type PoolManager struct {
 	// 标题生成器
 	titleGenerator *TitleGenerator
 
+	// 关键词表情生成器
+	keywordEmojiGenerator *KeywordEmojiGenerator
+
 	// 复用型池管理器（新架构）
 	poolManager *pool.Manager
 
@@ -145,6 +148,10 @@ func (m *PoolManager) Start(ctx context.Context) error {
 	m.titleGenerator = NewTitleGenerator(m, m.config)
 	m.titleGenerator.Start(keywordGroupIDs)
 
+	// 初始化并启动 KeywordEmojiGenerator
+	m.keywordEmojiGenerator = NewKeywordEmojiGenerator(m, m.config, m.encoder, m.emojiManager)
+	m.keywordEmojiGenerator.Start(keywordGroupIDs)
+
 	// Set initial lastRefresh time
 	m.mu.Lock()
 	m.lastRefresh = time.Now()
@@ -177,6 +184,9 @@ func (m *PoolManager) Stop() {
 	}
 	if m.titleGenerator != nil {
 		m.titleGenerator.Stop()
+	}
+	if m.keywordEmojiGenerator != nil {
+		m.keywordEmojiGenerator.Stop()
 	}
 	if m.poolManager != nil {
 		m.poolManager.Stop()
@@ -364,6 +374,11 @@ func (m *PoolManager) Reload(ctx context.Context) error {
 		m.titleGenerator.Reload(config)
 	}
 
+	// Reload KeywordEmojiGenerator config
+	if m.keywordEmojiGenerator != nil {
+		m.keywordEmojiGenerator.Reload(config)
+	}
+
 	log.Info().
 		Int("title_pool_size", config.TitlePoolSize).
 		Int("title_workers", config.TitleWorkers).
@@ -466,6 +481,10 @@ func (m *PoolManager) ReloadKeywordGroup(ctx context.Context, groupID int) error
 	// 同步 TitleGenerator 分组
 	if m.titleGenerator != nil {
 		m.titleGenerator.SyncGroups(m.GetKeywordGroupIDs())
+	}
+	// 同步 KeywordEmojiGenerator 分组
+	if m.keywordEmojiGenerator != nil {
+		m.keywordEmojiGenerator.SyncGroups(m.GetKeywordGroupIDs())
 	}
 	return nil
 }
@@ -657,7 +676,7 @@ func (m *PoolManager) getContentGroupNames() map[int]string {
 }
 
 // GetDataPoolsStats 返回数据池运行状态统计（与前端展示格式一致）
-// 返回全部 5 个池：标题、正文、关键词、图片、表情
+// 返回全部 6 个池：标题、正文、关键词、图片、关键词表情、表情
 func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 	m.mu.RLock()
 	lastRefresh := m.lastRefresh
@@ -842,7 +861,42 @@ func (m *PoolManager) GetDataPoolsStats() []PoolStatusStats {
 		Groups:      imageGroups,
 	})
 
-	// 5. 表情库（静态数据）
+	// 5. 关键词表情（消费型，对标标题池）
+	var kwEmojiCurrent, kwEmojiMax int
+	var kwEmojiMemory, kwEmojiConsumed int64
+	var kwEmojiGroups []PoolGroupInfo
+	if m.keywordEmojiGenerator != nil {
+		kwEmojiCurrent, kwEmojiMax, kwEmojiMemory, kwEmojiConsumed = m.keywordEmojiGenerator.GetTotalStats()
+		kwEmojiGroups = m.keywordEmojiGenerator.GetGroupStats()
+		// 填充分组名称
+		for i := range kwEmojiGroups {
+			if name, ok := titleGroupNames[kwEmojiGroups[i].ID]; ok {
+				kwEmojiGroups[i].Name = name
+			} else {
+				kwEmojiGroups[i].Name = fmt.Sprintf("分组%d", kwEmojiGroups[i].ID)
+			}
+		}
+	}
+	kwEmojiUsed := int(kwEmojiConsumed)
+	kwEmojiUtil := 0.0
+	if kwEmojiMax > 0 {
+		kwEmojiUtil = float64(kwEmojiCurrent) / float64(kwEmojiMax) * 100
+	}
+	pools = append(pools, PoolStatusStats{
+		Name:        "关键词表情",
+		Size:        kwEmojiMax,
+		Available:   kwEmojiCurrent,
+		Used:        kwEmojiUsed,
+		Utilization: kwEmojiUtil,
+		Status:      status,
+		NumWorkers:  m.config.KeywordEmojiWorkers,
+		LastRefresh: lastRefreshPtr,
+		MemoryBytes: kwEmojiMemory,
+		PoolType:    "consumable",
+		Groups:      kwEmojiGroups,
+	})
+
+	// 6. 表情库（静态数据）
 	emojiCount := m.emojiManager.Count()
 	emojiMemory := m.emojiManager.MemoryBytes()
 	pools = append(pools, PoolStatusStats{
@@ -880,6 +934,11 @@ func (m *PoolManager) GetPoolStatsSimple() SimplePoolStats {
 // GetTitleGenerator 返回 TitleGenerator 实例
 func (m *PoolManager) GetTitleGenerator() *TitleGenerator {
 	return m.titleGenerator
+}
+
+// GetKeywordEmojiGenerator 返回 KeywordEmojiGenerator 实例
+func (m *PoolManager) GetKeywordEmojiGenerator() *KeywordEmojiGenerator {
+	return m.keywordEmojiGenerator
 }
 
 // RefreshContents 重载所有正文缓存池（清空并重新从数据库加载）
@@ -920,6 +979,9 @@ func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
 		if m.titleGenerator != nil {
 			m.titleGenerator.SyncGroups(m.GetKeywordGroupIDs())
 		}
+		if m.keywordEmojiGenerator != nil {
+			m.keywordEmojiGenerator.SyncGroups(m.GetKeywordGroupIDs())
+		}
 	case "images":
 		groupIDs, _ := m.discoverImageGroups(ctx)
 		if err := m.poolManager.GetImagePool().Reload(ctx, groupIDs); err != nil {
@@ -929,6 +991,10 @@ func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
 		if m.titleGenerator != nil {
 			m.titleGenerator.ForceReload()
 		}
+	case "keyword_emojis":
+		if m.keywordEmojiGenerator != nil {
+			m.keywordEmojiGenerator.ForceReload()
+		}
 	case "contents":
 		m.RefreshContents(ctx)
 	case "all":
@@ -937,6 +1003,9 @@ func (m *PoolManager) RefreshData(ctx context.Context, poolType string) error {
 		}
 		if m.titleGenerator != nil {
 			m.titleGenerator.SyncGroups(m.GetKeywordGroupIDs())
+		}
+		if m.keywordEmojiGenerator != nil {
+			m.keywordEmojiGenerator.SyncGroups(m.GetKeywordGroupIDs())
 		}
 		m.RefreshContents(ctx)
 	}

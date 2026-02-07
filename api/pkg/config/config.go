@@ -60,11 +60,8 @@ type CacheConfig struct {
 
 // SpiderDetectorConfig holds spider detector configuration
 type SpiderDetectorConfig struct {
-	Enabled               bool     `yaml:"enabled"`
-	Return404ForNonSpider bool     `yaml:"return_404_for_non_spider"`
-	DNSVerifyEnabled      bool     `yaml:"dns_verify_enabled"`
-	DNSVerifyTypes        []string `yaml:"dns_verify_types"`
-	DNSTimeout            float64  `yaml:"dns_timeout"`
+	Enabled               bool `yaml:"enabled"`
+	Return404ForNonSpider bool `yaml:"return_404_for_non_spider"`
 }
 
 // AuthConfig holds authentication configuration
@@ -151,9 +148,6 @@ func Load(configPath string) (*Config, error) {
 		SpiderDetector: SpiderDetectorConfig{
 			Enabled:               getBool(merged, "spider_detector.enabled", true),
 			Return404ForNonSpider: getBool(merged, "spider_detector.return_404_for_non_spider", true),
-			DNSVerifyEnabled:      getBool(merged, "spider_detector.dns_verify_enabled", false),
-			DNSVerifyTypes:        []string{"baidu", "google", "bing"},
-			DNSTimeout:            getFloat(merged, "spider_detector.dns_timeout", 2.0),
 		},
 		Auth: AuthConfig{
 			SecretKey:                getString(merged, "auth.secret_key", "default-secret-key-change-in-production"),

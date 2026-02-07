@@ -25,28 +25,22 @@ func (h *SpiderDetectorHandler) GetSpiderConfig(c *gin.Context) {
 		return
 	}
 
-	// 获取所有蜘蛛类型
 	types := detector.GetAllSpiderTypes()
 	spiders := make([]gin.H, 0, len(types))
-
 	for _, spiderType := range types {
 		info := detector.GetSpiderInfo(spiderType)
 		if info != nil {
 			spiders = append(spiders, gin.H{
-				"type":        spiderType,
-				"name":        info.Name,
-				"dns_domains": info.DNSDomains,
+				"type": spiderType,
+				"name": info.Name,
 			})
 		}
 	}
 
-	// 获取缓存统计
-	stats := detector.GetStats()
-
 	core.Success(c, gin.H{
 		"spiders": spiders,
 		"enabled": true,
-		"stats":   stats,
+		"stats":   detector.GetStats(),
 	})
 }
 

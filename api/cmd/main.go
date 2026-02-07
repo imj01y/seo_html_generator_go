@@ -194,6 +194,7 @@ func main() {
 		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis for funcsManager")
 	}
 	funcsManager.SetEmojiManager(emojiManager)
+	funcsManager.SetKeywordEmojiGenerator(poolManager.GetKeywordEmojiGenerator())
 
 	// Note: keywords/images are now loaded by PoolManager.Start()
 	// 初始化 TemplateFuncsManager 的关键词数据

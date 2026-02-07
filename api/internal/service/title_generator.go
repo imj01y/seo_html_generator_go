@@ -149,6 +149,11 @@ func (g *TitleGenerator) fillPool(groupID int, pool *TitlePool) {
 func (g *TitleGenerator) refillWorker(groupID int, pool *TitlePool) {
 	defer g.wg.Done()
 
+	// 启动后立即尝试一次填充（不等 ticker）
+	if !g.stopped.Load() && len(g.poolManager.GetRandomKeywords(groupID, 1)) > 0 {
+		g.fillPool(groupID, pool)
+	}
+
 	ticker := time.NewTicker(g.config.TitleRefillInterval())
 	defer ticker.Stop()
 
@@ -184,8 +189,8 @@ func (g *TitleGenerator) Start(groupIDs []int) {
 	for _, groupID := range groupIDs {
 		pool := g.getOrCreatePool(groupID)
 
-		// 初始填充
-		g.fillPool(groupID, pool)
+		// 不做同步初始填充，由 refillWorker 异步完成
+		// Pop 方法有降级逻辑：池空时同步生成一条返回
 
 		// 启动 N 个填充协程
 		for i := 0; i < g.config.TitleWorkers; i++ {

@@ -697,7 +697,8 @@ const handlePoolReload = async (poolName: string) => {
       '图片': 'images',
       '表情': 'emojis',
       '标题': 'titles',
-      '正文': 'contents'
+      '正文': 'contents',
+      '关键词表情': 'keyword_emojis'
     }
     const pool = poolMap[poolName]
     if (pool) {
@@ -718,7 +719,8 @@ const handlePoolReloadGroup = async (poolName: string, groupId: number) => {
       '关键词': 'keywords',
       '图片': 'images',
       '标题': 'titles',
-      '正文': 'contents'
+      '正文': 'contents',
+      '关键词表情': 'keyword_emojis'
     }
     const pool = poolMap[poolName]
     if (pool) {

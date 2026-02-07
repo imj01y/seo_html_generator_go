@@ -85,8 +85,8 @@ func DefaultCachePoolConfig() *CachePoolConfig {
 		UrlWorkers:                   16,
 		UrlRefillIntervalMs:          30,
 		UrlThreshold:                 0.4,
-		KeywordEmojiPoolSize:         800000,
-		KeywordEmojiWorkers:          20,
+		KeywordEmojiPoolSize:         50000,
+		KeywordEmojiWorkers:          4,
 		KeywordEmojiRefillIntervalMs: 30,
 		KeywordEmojiThreshold:        0.4,
 	}

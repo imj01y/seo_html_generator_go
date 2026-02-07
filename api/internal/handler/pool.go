@@ -144,8 +144,8 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	// Validate keyword_emoji config
-	if req.KeywordEmojiPoolSize < 100000 || req.KeywordEmojiPoolSize > 2000000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "keyword_emoji_pool_size must be between 100000 and 2000000"})
+	if req.KeywordEmojiPoolSize < 10000 || req.KeywordEmojiPoolSize > 2000000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "keyword_emoji_pool_size must be between 10000 and 2000000"})
 		return
 	}
 	if req.KeywordEmojiWorkers < 1 || req.KeywordEmojiWorkers > 50 {

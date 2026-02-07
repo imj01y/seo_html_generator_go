@@ -1,405 +1,133 @@
-// Package core contains the core business logic
 package core
 
 import (
+	"strings"
 	"sync"
-	"sync/atomic"
-	"time"
 
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/rs/zerolog/log"
-	"seo-generator/api/internal/model"
+	models "seo-generator/api/internal/model"
 )
 
-// SpiderInfo holds spider configuration (kept for backward compatibility)
+// spiderKeyword 蜘蛛关键词匹配规则
+type spiderKeyword struct {
+	Keyword string // 小写关键词
+	Type    string // 蜘蛛类型标识
+	Name    string // 蜘蛛中文名
+}
+
+// spiderKeywords 硬编码的蜘蛛关键词表（全部小写，用于大小写无关匹配）
+var spiderKeywords = []spiderKeyword{
+	{"baiduspider", "baidu", "百度蜘蛛"},
+	{"baidu-yunguance", "baidu", "百度蜘蛛"},
+	{"googlebot", "google", "谷歌蜘蛛"},
+	{"google-inspectiontool", "google", "谷歌蜘蛛"},
+	{"adsbot-google", "google", "谷歌蜘蛛"},
+	{"mediapartners-google", "google", "谷歌蜘蛛"},
+	{"bingbot", "bing", "必应蜘蛛"},
+	{"msnbot", "bing", "必应蜘蛛"},
+	{"bingpreview", "bing", "必应蜘蛛"},
+	{"sogou", "sogou", "搜狗蜘蛛"},
+	{"360spider", "360", "360蜘蛛"},
+	{"haosoupider", "360", "360蜘蛛"},
+	{"360jk", "360", "360蜘蛛"},
+	{"yisouspider", "shenma", "神马蜘蛛"},
+	{"bytespider", "bytedance", "字节跳动蜘蛛"},
+	{"bytedance", "bytedance", "字节跳动蜘蛛"},
+	{"yandexbot", "yandex", "Yandex蜘蛛"},
+	{"yandeximages", "yandex", "Yandex蜘蛛"},
+	{"yandexmobilebot", "yandex", "Yandex蜘蛛"},
+	{"applebot", "other", "其他蜘蛛"},
+	{"duckduckbot", "other", "其他蜘蛛"},
+	{"facebookexternalhit", "other", "其他蜘蛛"},
+	{"twitterbot", "other", "其他蜘蛛"},
+	{"linkedinbot", "other", "其他蜘蛛"},
+	{"slurp", "other", "其他蜘蛛"},
+	{"ia_archiver", "other", "其他蜘蛛"},
+}
+
+// spiderTypeMap 按 type 去重的蜘蛛信息（用于 GetAllSpiderTypes / GetSpiderInfo）
+var spiderTypeMap map[string]*SpiderInfo
+
+func init() {
+	spiderTypeMap = make(map[string]*SpiderInfo)
+	for _, kw := range spiderKeywords {
+		if _, exists := spiderTypeMap[kw.Type]; !exists {
+			spiderTypeMap[kw.Type] = &SpiderInfo{
+				Type: kw.Type,
+				Name: kw.Name,
+			}
+		}
+	}
+}
+
+// SpiderInfo holds spider information
 type SpiderInfo struct {
-	Type       string
-	Name       string
-	DNSDomains []string
+	Type string
+	Name string
 }
 
-// cacheEntry represents a cached detection result with TTL
-type cacheEntry struct {
-	spiderType string
-	spiderName string // Store spider name to avoid re-querying rules after hot-reload
-	expireAt   time.Time
-}
+// SpiderDetector detects search engine spiders by User-Agent keyword matching
+type SpiderDetector struct{}
 
-// SpiderDetector detects search engine spiders by User-Agent
-type SpiderDetector struct {
-	configLoader *SpiderConfigLoader
-	cache        *lru.Cache[string, *cacheEntry]
-	cacheEnabled bool
-	cacheTTL     time.Duration
-	cacheHits    int64
-	cacheMisses  int64
-	mu           sync.RWMutex
-}
-
-// NewSpiderDetector creates a new spider detector (backward compatible version)
-func NewSpiderDetector() *SpiderDetector {
-	// Try to load from default config path
-	configPath := DefaultSpiderConfigPath()
-	detector, err := NewSpiderDetectorWithConfig(configPath)
-	if err != nil {
-		log.Warn().Err(err).Msg("Failed to load spider config, using fallback hardcoded patterns")
-		return newSpiderDetectorFallback()
-	}
-	return detector
-}
-
-// NewSpiderDetectorWithConfig creates a new spider detector with specified config path
-func NewSpiderDetectorWithConfig(configPath string) (*SpiderDetector, error) {
-	loader, err := NewSpiderConfigLoader(configPath)
-	if err != nil {
-		return nil, err
-	}
-
-	config := loader.GetConfig()
-
-	sd := &SpiderDetector{
-		configLoader: loader,
-		cacheEnabled: config.Cache.Enabled,
-		cacheTTL:     time.Duration(config.Cache.TTLSeconds) * time.Second,
-	}
-
-	// Initialize LRU cache if enabled
-	if config.Cache.Enabled {
-		maxSize := config.Cache.MaxSize
-		if maxSize <= 0 {
-			maxSize = 10000 // default
-		}
-		cache, err := lru.New[string, *cacheEntry](maxSize)
-		if err != nil {
-			return nil, err
-		}
-		sd.cache = cache
-	}
-
-	// Set up hot-reload callback
-	loader.OnChange(func(newConfig *SpiderConfig, rules []*CompiledSpiderRule) {
-		sd.onConfigChange(newConfig)
-	})
-
-	return sd, nil
-}
-
-// onConfigChange handles configuration changes
-func (sd *SpiderDetector) onConfigChange(newConfig *SpiderConfig) {
-	sd.mu.Lock()
-	defer sd.mu.Unlock()
-
-	// Update cache settings
-	sd.cacheEnabled = newConfig.Cache.Enabled
-	sd.cacheTTL = time.Duration(newConfig.Cache.TTLSeconds) * time.Second
-
-	// Clear cache on config change to ensure new rules take effect
-	// Note: We always purge the cache when configuration changes, rather than trying to
-	// compare cache capacity (golang-lru doesn't expose a Cap() method). This ensures
-	// that any changes to spider rules are immediately reflected in detection results.
-	if sd.cache != nil {
-		sd.cache.Purge()
-		log.Info().Msg("Cache purged due to configuration change")
-	}
-}
-
-// StartWatching starts watching for configuration changes
-func (sd *SpiderDetector) StartWatching() error {
-	if sd.configLoader == nil {
-		return nil
-	}
-	return sd.configLoader.WatchChanges()
-}
-
-// StopWatching stops watching for configuration changes
-func (sd *SpiderDetector) StopWatching() {
-	if sd.configLoader != nil {
-		sd.configLoader.Stop()
-	}
-}
-
-// Detect detects if the User-Agent belongs to a spider
+// Detect 检测 User-Agent 是否为蜘蛛
 func (sd *SpiderDetector) Detect(userAgent string) *models.DetectionResult {
 	if userAgent == "" {
-		return &models.DetectionResult{
-			IsSpider:  false,
-			UserAgent: userAgent,
-		}
+		return &models.DetectionResult{IsSpider: false, UserAgent: userAgent}
 	}
 
-	// Check cache first (if enabled)
-	sd.mu.RLock()
-	cacheEnabled := sd.cacheEnabled
-	cache := sd.cache
-	cacheTTL := sd.cacheTTL
-	sd.mu.RUnlock()
-
-	if cacheEnabled && cache != nil {
-		if entry, ok := cache.Get(userAgent); ok {
-			// Check if entry has expired
-			if time.Now().Before(entry.expireAt) {
-				atomic.AddInt64(&sd.cacheHits, 1)
-				if entry.spiderType == "" {
-					return &models.DetectionResult{
-						IsSpider:  false,
-						UserAgent: userAgent,
-					}
-				}
-				// Use cached spiderName directly to avoid nil pointer risk after hot-reload
-				// The cache is purged when configuration changes, so we don't need to re-query rules
-				return &models.DetectionResult{
-					IsSpider:   true,
-					SpiderType: entry.spiderType,
-					SpiderName: entry.spiderName,
-					UserAgent:  userAgent,
-				}
-			}
-			// Entry expired, remove it
-			cache.Remove(userAgent)
-		}
-	}
-
-	atomic.AddInt64(&sd.cacheMisses, 1)
-
-	// Get compiled rules from config loader
-	rules := sd.configLoader.GetCompiledRules()
-
-	// Match against patterns
-	for _, rule := range rules {
-		if !rule.Enabled {
-			continue
-		}
-		for _, pattern := range rule.Patterns {
-			if pattern.MatchString(userAgent) {
-				// Cache the result with spider name to avoid re-querying rules later
-				if cacheEnabled && cache != nil {
-					cache.Add(userAgent, &cacheEntry{
-						spiderType: rule.Type,
-						spiderName: rule.Name,
-						expireAt:   time.Now().Add(cacheTTL),
-					})
-				}
-
-				return &models.DetectionResult{
-					IsSpider:   true,
-					SpiderType: rule.Type,
-					SpiderName: rule.Name,
-					UserAgent:  userAgent,
-				}
+	lowerUA := strings.ToLower(userAgent)
+	for _, kw := range spiderKeywords {
+		if strings.Contains(lowerUA, kw.Keyword) {
+			return &models.DetectionResult{
+				IsSpider:   true,
+				SpiderType: kw.Type,
+				SpiderName: kw.Name,
+				UserAgent:  userAgent,
 			}
 		}
 	}
 
-	// Not a spider, cache negative result
-	if cacheEnabled && cache != nil {
-		cache.Add(userAgent, &cacheEntry{
-			spiderType: "",
-			expireAt:   time.Now().Add(cacheTTL),
-		})
-	}
-
-	return &models.DetectionResult{
-		IsSpider:  false,
-		UserAgent: userAgent,
-	}
+	return &models.DetectionResult{IsSpider: false, UserAgent: userAgent}
 }
 
-// IsSpider is a quick check if the UA is a spider
+// IsSpider 快速判断 UA 是否为蜘蛛
 func (sd *SpiderDetector) IsSpider(userAgent string) bool {
-	result := sd.Detect(userAgent)
-	return result.IsSpider
+	return sd.Detect(userAgent).IsSpider
 }
 
-// GetStats returns cache statistics
-func (sd *SpiderDetector) GetStats() map[string]interface{} {
-	sd.mu.RLock()
-	cache := sd.cache
-	sd.mu.RUnlock()
-
-	cacheSize := 0
-	if cache != nil {
-		cacheSize = cache.Len()
-	}
-
-	return map[string]interface{}{
-		"cache_size":   cacheSize,
-		"cache_hits":   atomic.LoadInt64(&sd.cacheHits),
-		"cache_misses": atomic.LoadInt64(&sd.cacheMisses),
-	}
-}
-
-// GetSpiderInfo returns information about a specific spider type
+// GetSpiderInfo 返回指定蜘蛛类型的信息
 func (sd *SpiderDetector) GetSpiderInfo(spiderType string) *SpiderInfo {
-	if sd.configLoader == nil {
-		return nil
-	}
-	rule := sd.configLoader.GetRuleByType(spiderType)
-	if rule == nil {
-		return nil
-	}
-	return &SpiderInfo{
-		Type:       rule.Type,
-		Name:       rule.Name,
-		DNSDomains: rule.DNSDomains,
-	}
+	return spiderTypeMap[spiderType]
 }
 
-// GetAllSpiderTypes returns all configured spider types
+// GetAllSpiderTypes 返回所有蜘蛛类型
 func (sd *SpiderDetector) GetAllSpiderTypes() []string {
-	if sd.configLoader == nil {
-		return nil
-	}
-	config := sd.configLoader.GetConfig()
-	if config == nil {
-		return nil
-	}
-	types := make([]string, 0, len(config.Spiders))
-	for spiderType := range config.Spiders {
-		types = append(types, spiderType)
+	types := make([]string, 0, len(spiderTypeMap))
+	for t := range spiderTypeMap {
+		types = append(types, t)
 	}
 	return types
 }
 
-// newSpiderDetectorFallback creates a fallback detector with hardcoded patterns
-// This is used when configuration file is not available
-func newSpiderDetectorFallback() *SpiderDetector {
-	sd := &SpiderDetector{
-		cacheEnabled: true,
-		cacheTTL:     time.Hour,
-	}
-
-	// Create a simple in-memory cache
-	cache, _ := lru.New[string, *cacheEntry](10000)
-	sd.cache = cache
-
-	// Create a minimal config loader with hardcoded rules
-	sd.configLoader = &SpiderConfigLoader{
-		config: &SpiderConfig{
-			Cache: SpiderCacheConfig{
-				Enabled:    true,
-				MaxSize:    10000,
-				TTLSeconds: 3600,
-			},
-			Spiders: getDefaultSpiderRules(),
-		},
-		rulesByType: make(map[string]*CompiledSpiderRule),
-	}
-
-	// Compile hardcoded rules
-	rules, rulesByType, _ := sd.configLoader.compileRules(sd.configLoader.config)
-	sd.configLoader.compiledRules = rules
-	sd.configLoader.rulesByType = rulesByType
-
-	log.Info().Msg("Spider detector initialized with fallback hardcoded patterns")
-	return sd
-}
-
-// getDefaultSpiderRules returns the default hardcoded spider rules
-func getDefaultSpiderRules() map[string]SpiderRule {
-	return map[string]SpiderRule{
-		"baidu": {
-			Name:       "百度蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)Baiduspider`, `(?i)Baidu-YunGuanCe`},
-			DNSDomains: []string{"baidu.com", "baidu.jp"},
-		},
-		"google": {
-			Name:       "谷歌蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)Googlebot`, `(?i)Google-InspectionTool`, `(?i)Mediapartners-Google`},
-			DNSDomains: []string{"googlebot.com", "google.com"},
-		},
-		"bing": {
-			Name:       "必应蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)bingbot`, `(?i)msnbot`, `(?i)BingPreview`},
-			DNSDomains: []string{"search.msn.com"},
-		},
-		"sogou": {
-			Name:       "搜狗蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)Sogou\s*(web\s*)?spider`, `(?i)Sogou\s*inst\s*spider`},
-			DNSDomains: []string{"sogou.com"},
-		},
-		"360": {
-			Name:       "360蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)360Spider`, `(?i)HaosouSpider`, `(?i)360JK`},
-			DNSDomains: []string{"360.cn", "so.com"},
-		},
-		"shenma": {
-			Name:       "神马蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)YisouSpider`, `(?i)Yisouspider`},
-			DNSDomains: []string{"sm.cn"},
-		},
-		"toutiao": {
-			Name:       "头条蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)Bytespider`, `(?i)Bytedance`},
-			DNSDomains: []string{"bytedance.com"},
-		},
-		"yandex": {
-			Name:       "Yandex蜘蛛",
-			Enabled:    true,
-			Patterns:   []string{`(?i)YandexBot`, `(?i)YandexImages`, `(?i)YandexMobileBot`},
-			DNSDomains: []string{"yandex.ru", "yandex.com", "yandex.net"},
-		},
+// GetStats 返回统计信息（简化版，无缓存）
+func (sd *SpiderDetector) GetStats() map[string]interface{} {
+	return map[string]interface{}{
+		"mode":           "keyword",
+		"keyword_count":  len(spiderKeywords),
+		"spider_types":   len(spiderTypeMap),
 	}
 }
 
-// Global spider detector instance
+// Global singleton
 var globalSpiderDetector *SpiderDetector
 var spiderDetectorOnce sync.Once
-var spiderDetectorMu sync.RWMutex
-var globalConfigPath string
 
-// SetSpiderConfigPath sets the global config path for spider detector
-// Must be called before GetSpiderDetector() for the first time
-func SetSpiderConfigPath(configPath string) {
-	spiderDetectorMu.Lock()
-	defer spiderDetectorMu.Unlock()
-	globalConfigPath = configPath
-}
-
-// GetSpiderDetector returns the global spider detector instance
+// GetSpiderDetector 返回全局蜘蛛检测器实例
 func GetSpiderDetector() *SpiderDetector {
 	spiderDetectorOnce.Do(func() {
-		spiderDetectorMu.RLock()
-		configPath := globalConfigPath
-		spiderDetectorMu.RUnlock()
-
-		if configPath == "" {
-			configPath = DefaultSpiderConfigPath()
-		}
-
-		var err error
-		globalSpiderDetector, err = NewSpiderDetectorWithConfig(configPath)
-		if err != nil {
-			log.Warn().Err(err).Str("path", configPath).Msg("Failed to load spider config, using fallback")
-			globalSpiderDetector = newSpiderDetectorFallback()
-		}
+		globalSpiderDetector = &SpiderDetector{}
+		log.Info().Int("keywords", len(spiderKeywords)).Msg("Spider detector initialized (keyword mode)")
 	})
 	return globalSpiderDetector
 }
 
-// ResetSpiderDetector resets the global spider detector.
-// WARNING: This function is intended for testing only. It resets the sync.Once
-// by assigning a new zero value, which is safe only when:
-// 1. No concurrent calls to GetSpiderDetector() are in progress
-// 2. The mutex (spiderDetectorMu) is held during the entire reset operation
-//
-// In production code, prefer creating new SpiderDetector instances directly
-// rather than using the global singleton pattern if you need reset capability.
-func ResetSpiderDetector() {
-	spiderDetectorMu.Lock()
-	defer spiderDetectorMu.Unlock()
-
-	if globalSpiderDetector != nil {
-		globalSpiderDetector.StopWatching()
-	}
-	globalSpiderDetector = nil
-	// Reset sync.Once - safe here because we hold the mutex and this is for testing only
-	spiderDetectorOnce = sync.Once{}
-	globalConfigPath = ""
-}

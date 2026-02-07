@@ -60,18 +60,13 @@ func (h *LogHandler) LogSpiderVisit(c *gin.Context) {
 		path = path[:500]
 	}
 
-	dnsOk := 0
-	if detection.DNSVerified {
-		dnsOk = 1
-	}
-
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	query := `INSERT INTO spider_logs (spider_type, ip, ua, domain, path, dns_ok, resp_time, cache_hit, status)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := h.db.ExecContext(ctx, query, detection.SpiderType, ip, ua, domain, path, dnsOk, respTime, cacheHit, 200)
+	_, err := h.db.ExecContext(ctx, query, detection.SpiderType, ip, ua, domain, path, 0, respTime, cacheHit, 200)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to log spider visit")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error"})

@@ -247,12 +247,10 @@ type SpiderLog struct {
 
 // DetectionResult represents the result of spider detection.
 type DetectionResult struct {
-	IsSpider    bool   `json:"is_spider"`
-	SpiderType  string `json:"spider_type"`
-	SpiderName  string `json:"spider_name"`
-	DNSVerified bool   `json:"dns_verified"`
-	IP          string `json:"ip"`
-	UserAgent   string `json:"user_agent"`
+	IsSpider   bool   `json:"is_spider"`
+	SpiderType string `json:"spider_type"`
+	SpiderName string `json:"spider_name"`
+	UserAgent  string `json:"user_agent"`
 }
 
 // RenderContext holds all data needed for template rendering.

@@ -42,8 +42,9 @@ type TemplateFuncsManager struct {
 	// 分组索引（独立管理，避免数据替换时重置）
 	imageGroupIdx sync.Map // groupID -> *atomic.Int64
 
-	encoder      *HTMLEntityEncoder
-	emojiManager *EmojiManager // emoji 管理器引用
+	encoder               *HTMLEntityEncoder
+	emojiManager          *EmojiManager          // emoji 管理器引用
+	keywordEmojiGenerator *KeywordEmojiGenerator // 关键词表情生成器引用
 }
 
 // NewTemplateFuncsManager 创建管理器
@@ -56,6 +57,11 @@ func NewTemplateFuncsManager(encoder *HTMLEntityEncoder) *TemplateFuncsManager {
 // SetEmojiManager 设置 emoji 管理器引用
 func (m *TemplateFuncsManager) SetEmojiManager(em *EmojiManager) {
 	m.emojiManager = em
+}
+
+// SetKeywordEmojiGenerator 设置关键词表情生成器引用
+func (m *TemplateFuncsManager) SetKeywordEmojiGenerator(gen *KeywordEmojiGenerator) {
+	m.keywordEmojiGenerator = gen
 }
 
 // stringMemorySizer 计算字符串内存占用的函数
@@ -194,26 +200,25 @@ func (m *TemplateFuncsManager) RandomKeyword(groupID int) string {
 	return keywords[idx%int64(len(keywords))]
 }
 
-// RandomKeywordEmoji 获取带 emoji 的随机关键词（支持分组，实时生成）
+// RandomKeywordEmoji 获取带 emoji 的随机关键词（支持分组，从对象池消费）
 func (m *TemplateFuncsManager) RandomKeywordEmoji(groupID int) string {
+	if m.keywordEmojiGenerator != nil {
+		return m.keywordEmojiGenerator.Pop(groupID)
+	}
+	// 降级：生成器未初始化时实时生成
 	data := m.keywordData.Load()
 	if data == nil {
 		return ""
 	}
-
 	rawKeywords := data.rawGroups[groupID]
 	if len(rawKeywords) == 0 {
-		// 降级到默认分组
 		rawKeywords = data.rawGroups[1]
 		if len(rawKeywords) == 0 {
 			return ""
 		}
 	}
-
-	// 获取或创建该分组的索引
 	idxPtr, _ := m.rawKeywordGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
 	idx := idxPtr.(*atomic.Int64).Add(1) - 1
-
 	keyword := rawKeywords[idx%int64(len(rawKeywords))]
 	return m.generateKeywordWithEmojiFromRaw(keyword)
 }
