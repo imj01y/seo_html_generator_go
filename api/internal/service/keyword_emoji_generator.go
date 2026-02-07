@@ -141,6 +141,7 @@ func (g *KeywordEmojiGenerator) fillPool(groupID int, pool *KeywordEmojiPool) {
 
 	filled := 0
 	var addedMem int64
+loop:
 	for i := 0; i < need; i++ {
 		item := g.generateKeywordEmoji(groupID)
 		if item == "" {
@@ -151,7 +152,7 @@ func (g *KeywordEmojiGenerator) fillPool(groupID int, pool *KeywordEmojiPool) {
 			filled++
 			addedMem += StringMemorySize(item)
 		default:
-			break
+			break loop
 		}
 	}
 

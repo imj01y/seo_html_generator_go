@@ -115,6 +115,7 @@ func (g *TitleGenerator) fillPool(groupID int, pool *TitlePool) {
 
 	filled := 0
 	var addedMem int64
+loop:
 	for i := 0; i < need; i++ {
 		title := g.generateTitle(groupID)
 		if title == "" {
@@ -127,7 +128,7 @@ func (g *TitleGenerator) fillPool(groupID int, pool *TitlePool) {
 			addedMem += StringMemorySize(title)
 		default:
 			// 池满，停止
-			break
+			break loop
 		}
 	}
 

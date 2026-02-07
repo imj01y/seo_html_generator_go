@@ -39,10 +39,10 @@ func NewNumberPool() *NumberPool {
 		minVal, maxVal := r[0], r[1]
 		cfg := PoolConfig{
 			Name:          "number_" + key,
-			Size:          200000,
-			Threshold:     0.4,
-			NumWorkers:    8,
-			CheckInterval: 30 * time.Millisecond,
+			Size:          10000,
+			Threshold:     0.3,
+			NumWorkers:    2,
+			CheckInterval: 1 * time.Second,
 		}
 
 		// 使用闭包捕获min/max
