@@ -482,7 +482,7 @@ func poolPresetsHandler(deps *Dependencies) gin.HandlerFunc {
 
 		result := make([]presetDetail, 0, len(presets))
 		for key, preset := range presets {
-			poolSizes := core.CalculatePoolSizes(preset, *maxStats)
+			poolSizes := core.CalculatePoolSizes(preset, *maxStats, 0)
 			memoryEstimate := core.EstimateMemoryUsage(poolSizes)
 
 			result = append(result, presetDetail{
@@ -515,7 +515,7 @@ func poolPresetByNameHandler(deps *Dependencies) gin.HandlerFunc {
 		}
 
 		maxStats := deps.TemplateAnalyzer.GetMaxStats()
-		poolSizes := core.CalculatePoolSizes(preset, *maxStats)
+		poolSizes := core.CalculatePoolSizes(preset, *maxStats, 0)
 		memoryEstimate := core.EstimateMemoryUsage(poolSizes)
 
 		if c.Request.Method == http.MethodGet {

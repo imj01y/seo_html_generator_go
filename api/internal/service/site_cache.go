@@ -141,16 +141,43 @@ func (sc *SiteCache) InvalidateAll() {
 	sc.mu.Unlock()
 }
 
+// siteMemorySize 计算单个 Site 的内存占用
+func siteMemorySize(site *models.Site) int64 {
+	if site == nil {
+		return 0
+	}
+	// 结构体固定开销（int/NullInt64/time.Time等）
+	const fixedOverhead = 240
+	size := int64(fixedOverhead)
+	size += int64(len(site.Domain))
+	size += int64(len(site.Name))
+	size += int64(len(site.Template))
+	if site.ICPNumber.Valid {
+		size += int64(len(site.ICPNumber.String))
+	}
+	if site.BaiduToken.Valid {
+		size += int64(len(site.BaiduToken.String))
+	}
+	if site.Analytics.Valid {
+		size += int64(len(site.Analytics.String))
+	}
+	return size
+}
+
 // GetStats returns cache statistics
 func (sc *SiteCache) GetStats() map[string]interface{} {
 	count := 0
+	var memoryBytes int64
 	sc.cache.Range(func(key, value interface{}) bool {
 		count++
+		if site, ok := value.(*models.Site); ok && site != nil {
+			memoryBytes += siteMemorySize(site)
+		}
 		return true
 	})
 
 	return map[string]interface{}{
-		"item_count": count,
-		"mode":       "permanent",
+		"item_count":   count,
+		"memory_bytes": memoryBytes,
 	}
 }

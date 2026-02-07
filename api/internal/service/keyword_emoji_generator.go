@@ -265,6 +265,46 @@ func (g *KeywordEmojiGenerator) Reload(config *CachePoolConfig) {
 	}
 }
 
+// ResizePool 调整池大小（快速配置热更新使用）
+func (g *KeywordEmojiGenerator) ResizePool(newSize int) {
+	g.mu.Lock()
+	oldSize := g.config.KeywordEmojiPoolSize
+	if newSize == oldSize {
+		g.mu.Unlock()
+		return
+	}
+	// 复制配置并更新池大小
+	newConfig := *g.config
+	newConfig.KeywordEmojiPoolSize = newSize
+	g.config = &newConfig
+	g.mu.Unlock()
+
+	// channel 大小变更需要重建池
+	groupIDs := g.poolManager.GetKeywordGroupIDs()
+	if len(groupIDs) == 0 {
+		groupIDs = []int{1}
+	}
+
+	log.Info().
+		Int("old_size", oldSize).
+		Int("new_size", newSize).
+		Ints("group_ids", groupIDs).
+		Msg("Keyword emoji pool resized, restarting workers")
+
+	g.stopped.Store(true)
+	g.cancel()
+	g.wg.Wait()
+
+	g.stopped.Store(false)
+	g.ctx, g.cancel = context.WithCancel(context.Background())
+
+	g.mu.Lock()
+	g.pools = make(map[int]*KeywordEmojiPool)
+	g.mu.Unlock()
+
+	g.Start(groupIDs)
+}
+
 // ForceReload 强制重载所有分组
 func (g *KeywordEmojiGenerator) ForceReload() {
 	groupIDs := g.poolManager.GetKeywordGroupIDs()

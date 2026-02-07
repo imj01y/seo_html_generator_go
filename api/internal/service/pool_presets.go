@@ -39,9 +39,12 @@ const (
 	AvgNumberSize       = 8
 )
 
-// CalculatePoolSizes 根据预设和模板统计计算池大小
-func CalculatePoolSizes(preset PoolPreset, maxStats TemplateFuncStats) *PoolSizeConfig {
-	multiplier := preset.Concurrency * DefaultBufferSeconds
+// CalculatePoolSizes 根据预设、缓冲秒数和模板统计计算池大小
+func CalculatePoolSizes(preset PoolPreset, maxStats TemplateFuncStats, bufferSeconds int) *PoolSizeConfig {
+	if bufferSeconds <= 0 {
+		bufferSeconds = DefaultBufferSeconds
+	}
+	multiplier := preset.Concurrency * bufferSeconds
 
 	return &PoolSizeConfig{
 		ClsPoolSize:          maxStats.Cls * multiplier,

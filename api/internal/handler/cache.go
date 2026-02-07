@@ -277,10 +277,12 @@ func (h *CacheHandler) ReloadTemplate(c *gin.Context) {
 	})
 }
 
-// GetCacheStats 获取HTML缓存统计
+// GetCacheStats 获取所有缓存统计
 // GET /api/cache/stats
 func (h *CacheHandler) GetCacheStats(c *gin.Context) {
 	stats := h.htmlCache.GetStats()
+	stats["site_cache"] = h.siteCache.GetStats()
+	stats["template_cache"] = h.templateCache.GetStats()
 	c.JSON(http.StatusOK, stats)
 }
 

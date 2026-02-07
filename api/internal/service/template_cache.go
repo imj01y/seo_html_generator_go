@@ -241,17 +241,38 @@ func (tc *TemplateCache) InvalidateAll() {
 	tc.mu.Unlock()
 }
 
+// templateMemorySize 计算单个 Template 的内存占用
+func templateMemorySize(tmpl *models.Template) int64 {
+	if tmpl == nil {
+		return 0
+	}
+	// 结构体固定开销（int/time.Time等）
+	const fixedOverhead = 160
+	size := int64(fixedOverhead)
+	size += int64(len(tmpl.Name))
+	size += int64(len(tmpl.DisplayName))
+	size += int64(len(tmpl.Content))
+	if tmpl.Description.Valid {
+		size += int64(len(tmpl.Description.String))
+	}
+	return size
+}
+
 // GetStats returns cache statistics
 func (tc *TemplateCache) GetStats() map[string]interface{} {
 	count := 0
+	var memoryBytes int64
 	tc.cache.Range(func(key, value interface{}) bool {
 		count++
+		if tmpl, ok := value.(*models.Template); ok && tmpl != nil {
+			memoryBytes += templateMemorySize(tmpl)
+		}
 		return true
 	})
 
 	return map[string]interface{}{
-		"item_count": count,
-		"mode":       "permanent",
+		"item_count":   count,
+		"memory_bytes": memoryBytes,
 	}
 }
 

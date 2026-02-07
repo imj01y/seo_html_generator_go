@@ -30,6 +30,8 @@ interface CacheStats {
   initialized: boolean
   scanning: boolean
   last_scan_at: string | null
+  site_cache: { item_count: number; memory_bytes: number }
+  template_cache: { item_count: number; memory_bytes: number }
 }
 
 interface RecalculateResponse {
@@ -89,7 +91,9 @@ export async function getCacheStats(): Promise<CacheStats> {
     html_cache_memory_mb: htmlCacheStats.total_size_mb || 0,
     initialized: htmlCacheStats.initialized ?? false,
     scanning: htmlCacheStats.scanning ?? false,
-    last_scan_at: htmlCacheStats.last_scan_at || null
+    last_scan_at: htmlCacheStats.last_scan_at || null,
+    site_cache: htmlCacheStats.site_cache || { item_count: 0, memory_bytes: 0 },
+    template_cache: htmlCacheStats.template_cache || { item_count: 0, memory_bytes: 0 }
   }
 }
 

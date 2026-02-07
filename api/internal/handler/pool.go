@@ -72,8 +72,8 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	// Validate title config
-	if req.TitlePoolSize < 100000 || req.TitlePoolSize > 2000000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "title_pool_size must be between 100000 and 2000000"})
+	if req.TitlePoolSize < 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title_pool_size must be >= 1000"})
 		return
 	}
 	if req.TitleWorkers < 1 || req.TitleWorkers > 50 {
@@ -90,8 +90,8 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	// Validate content config
-	if req.ContentPoolSize < 100000 || req.ContentPoolSize > 2000000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "content_pool_size must be between 100000 and 2000000"})
+	if req.ContentPoolSize < 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "content_pool_size must be >= 1000"})
 		return
 	}
 	if req.ContentWorkers < 1 || req.ContentWorkers > 50 {
@@ -108,8 +108,8 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	// Validate cls config
-	if req.ClsPoolSize < 100000 || req.ClsPoolSize > 2000000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "cls_pool_size must be between 100000 and 2000000"})
+	if req.ClsPoolSize < 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "cls_pool_size must be >= 1000"})
 		return
 	}
 	if req.ClsWorkers < 1 || req.ClsWorkers > 50 {
@@ -126,8 +126,8 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	// Validate url config
-	if req.UrlPoolSize < 100000 || req.UrlPoolSize > 2000000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "url_pool_size must be between 100000 and 2000000"})
+	if req.UrlPoolSize < 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "url_pool_size must be >= 1000"})
 		return
 	}
 	if req.UrlWorkers < 1 || req.UrlWorkers > 50 {
@@ -144,8 +144,8 @@ func (h *PoolHandler) UpdateConfig(c *gin.Context) {
 	}
 
 	// Validate keyword_emoji config
-	if req.KeywordEmojiPoolSize < 10000 || req.KeywordEmojiPoolSize > 2000000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "keyword_emoji_pool_size must be between 10000 and 2000000"})
+	if req.KeywordEmojiPoolSize < 1000 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "keyword_emoji_pool_size must be >= 1000"})
 		return
 	}
 	if req.KeywordEmojiWorkers < 1 || req.KeywordEmojiWorkers > 50 {

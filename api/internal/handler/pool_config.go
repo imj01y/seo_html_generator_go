@@ -73,7 +73,7 @@ func (h *PoolConfigHandler) GetConfig(c *gin.Context) {
 	if !ok {
 		presetConfig = core.PoolPreset{Concurrency: concurrency}
 	}
-	sizes := core.CalculatePoolSizes(presetConfig, *maxStats)
+	sizes := core.CalculatePoolSizes(presetConfig, *maxStats, buffer)
 
 	// 计算内存预估
 	memoryBytes := core.EstimateMemoryUsage(sizes)
@@ -185,7 +185,15 @@ func (h *PoolConfigHandler) UpdateConfig(c *gin.Context) {
 	if !ok {
 		presetConfig = core.PoolPreset{Concurrency: concurrency}
 	}
-	sizes := core.CalculatePoolSizes(presetConfig, *maxStats)
+	sizes := core.CalculatePoolSizes(presetConfig, *maxStats, req.BufferSeconds)
+
+	// 同步池大小到 pool_config 表（高级配置 + 重启后生效）
+	if _, err := h.db.ExecContext(c.Request.Context(),
+		`UPDATE pool_config SET cls_pool_size = ?, url_pool_size = ?, keyword_emoji_pool_size = ? WHERE id = 1`,
+		sizes.ClsPoolSize, sizes.URLPoolSize, sizes.KeywordEmojiPoolSize,
+	); err != nil {
+		log.Error().Err(err).Msg("Failed to sync pool sizes to pool_config")
+	}
 
 	// 发布 Redis 消息通知热更新
 	if h.redis != nil {

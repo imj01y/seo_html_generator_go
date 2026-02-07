@@ -8,12 +8,12 @@
     </div>
 
     <div class="main-tabs-container">
+      <span v-if="totalCacheMemory > 0" class="total-memory-label">
+        总缓存内存: {{ formatMemorySize(totalCacheMemory) }}
+      </span>
       <el-tabs v-model="mainTab" class="main-tabs">
         <!-- 运行状态 -->
         <el-tab-pane label="运行状态" name="status">
-          <div v-if="totalCacheMemory > 0" class="total-memory-bar">
-            总缓存内存: {{ formatMemorySize(totalCacheMemory) }}
-          </div>
           <el-row :gutter="16" class="status-cards">
             <!-- 复用型缓存卡片 -->
             <el-col :xs="24" :lg="8">
@@ -56,14 +56,13 @@
               </div>
             </el-col>
 
-            <!-- HTML缓存卡片 -->
+            <!-- 其他缓存卡片 -->
             <el-col :xs="24" :lg="8">
               <div class="status-card" v-loading="cacheLoading">
                 <div class="card-header">
                   <span class="card-title">
-                    HTML缓存
+                    其他缓存
                     <el-tag v-if="cacheStats.scanning" size="small" type="warning" style="margin-left: 8px;">统计中...</el-tag>
-                    <el-tag v-else-if="!cacheStats.initialized" size="small" type="info" style="margin-left: 8px;">初始化中</el-tag>
                   </span>
                   <div class="card-actions">
                     <el-button size="small" type="primary" plain @click="handleRecalculate" :loading="recalculateLoading" :disabled="cacheStats.scanning">
@@ -76,6 +75,7 @@
                 </div>
                 <div class="card-content">
                   <div class="cache-info">
+                    <div class="cache-section-title">HTML 缓存</div>
                     <div class="cache-stat">
                       <span class="stat-label">缓存页数</span>
                       <span class="stat-value">{{ cacheStats.html_cache_entries || 0 }} 页</span>
@@ -84,6 +84,27 @@
                       <span class="stat-label">占用空间</span>
                       <span class="stat-value">{{ formatMemoryMB(cacheStats.html_cache_memory_mb || 0) }}</span>
                     </div>
+
+                    <div class="cache-section-title">站点缓存</div>
+                    <div class="cache-stat">
+                      <span class="stat-label">站点数</span>
+                      <span class="stat-value">{{ cacheStats.site_cache.item_count }} 个</span>
+                    </div>
+                    <div class="cache-stat">
+                      <span class="stat-label">占用空间</span>
+                      <span class="stat-value">{{ formatMemorySize(cacheStats.site_cache.memory_bytes) }}</span>
+                    </div>
+
+                    <div class="cache-section-title">模板缓存</div>
+                    <div class="cache-stat">
+                      <span class="stat-label">模板数</span>
+                      <span class="stat-value">{{ cacheStats.template_cache.item_count }} 个</span>
+                    </div>
+                    <div class="cache-stat">
+                      <span class="stat-label">占用空间</span>
+                      <span class="stat-value">{{ formatMemorySize(cacheStats.template_cache.memory_bytes) }}</span>
+                    </div>
+
                   </div>
                 </div>
               </div>
@@ -259,9 +280,8 @@
                       <el-form-item label="缓存大小">
                         <el-input-number
                           v-model="currentPoolSize"
-                          :min="100000"
-                          :max="2000000"
-                          :step="100000"
+                          :min="1000"
+                          :step="10000"
                         />
                         <span class="form-tip">条</span>
                       </el-form-item>
@@ -348,7 +368,9 @@ const cacheStats = reactive({
   html_cache_memory_mb: 0,
   initialized: false,
   scanning: false,
-  last_scan_at: null as string | null
+  last_scan_at: null as string | null,
+  site_cache: { item_count: 0, memory_bytes: 0 },
+  template_cache: { item_count: 0, memory_bytes: 0 }
 })
 
 // formatMemoryMB 从 @/utils/format 导入
@@ -362,6 +384,8 @@ const loadCacheStats = async () => {
     cacheStats.initialized = stats.initialized ?? false
     cacheStats.scanning = stats.scanning ?? false
     cacheStats.last_scan_at = stats.last_scan_at || null
+    cacheStats.site_cache = stats.site_cache || { item_count: 0, memory_bytes: 0 }
+    cacheStats.template_cache = stats.template_cache || { item_count: 0, memory_bytes: 0 }
   } finally {
     cacheLoading.value = false
   }
@@ -641,7 +665,9 @@ const totalCacheMemory = computed(() => {
   const poolBytes = [...dataPoolStats.value, ...objectPoolStats.value]
     .reduce((sum, p) => sum + (p.memory_bytes || 0), 0)
   const htmlBytes = (cacheStats.html_cache_memory_mb || 0) * 1024 * 1024
-  return poolBytes + htmlBytes
+  const siteBytes = cacheStats.site_cache.memory_bytes || 0
+  const templateBytes = cacheStats.template_cache.memory_bytes || 0
+  return poolBytes + htmlBytes + siteBytes + templateBytes
 })
 
 // ========== WebSocket 连接管理 ==========
@@ -702,6 +728,12 @@ watch(mainTab, (newTab) => {
     connectPoolStatusWs()
   } else {
     disconnectPoolStatusWs()
+  }
+  if (newTab === 'dataPool') {
+    loadCachePoolConfig()
+  }
+  if (newTab === 'quickConfig') {
+    loadConfig()
   }
 })
 
@@ -807,22 +839,21 @@ onUnmounted(() => {
     border-radius: 8px;
     padding: 20px;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.05);
+    position: relative;
+  }
+
+  .total-memory-label {
+    position: absolute;
+    right: 20px;
+    top: 26px;
+    font-size: 14px;
+    color: #909399;
   }
 
   .main-tabs {
     :deep(.el-tabs__header) {
       margin-bottom: 20px;
     }
-  }
-
-  .total-memory-bar {
-    margin-bottom: 16px;
-    padding: 10px 16px;
-    background-color: #f0f5ff;
-    border-radius: 6px;
-    font-size: 14px;
-    color: #303133;
-    font-weight: 500;
   }
 
   // 运行状态三卡片
@@ -870,8 +901,20 @@ onUnmounted(() => {
     }
   }
 
-  // HTML 缓存信息
+  // 缓存信息
   .cache-info {
+    .cache-section-title {
+      font-size: 13px;
+      font-weight: 500;
+      color: #909399;
+      margin-bottom: 6px;
+      margin-top: 12px;
+
+      &:first-child {
+        margin-top: 0;
+      }
+    }
+
     .cache-stat {
       display: flex;
       justify-content: space-between;
@@ -890,8 +933,7 @@ onUnmounted(() => {
       }
 
       .stat-value {
-        font-size: 16px;
-        font-weight: 600;
+        font-size: 14px;
         color: #303133;
       }
     }

@@ -388,10 +388,14 @@ func (m *TemplateFuncsManager) ResizePools(config *PoolSizeConfig) {
 	if config.URLPoolSize > 0 && m.urlPool != nil {
 		m.urlPool.Resize(config.URLPoolSize)
 	}
+	if config.KeywordEmojiPoolSize > 0 && m.keywordEmojiGenerator != nil {
+		m.keywordEmojiGenerator.ResizePool(config.KeywordEmojiPoolSize)
+	}
 
 	log.Info().
 		Int("cls", config.ClsPoolSize).
 		Int("url", config.URLPoolSize).
+		Int("keyword_emoji", config.KeywordEmojiPoolSize).
 		Msg("Pools resized")
 }
 
