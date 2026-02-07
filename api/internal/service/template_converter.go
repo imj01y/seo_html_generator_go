@@ -29,7 +29,7 @@ func NewTemplateConverter() *TemplateConverter {
 		// Function calls without arguments
 		{`\{\{\s*random_keyword\s*\(\s*\)\s*\}\}`, `{{$.RandomKeyword}}`},
 		{`\{\{\s*random_hotspot\s*\(\s*\)\s*\}\}`, `{{$.RandomKeyword}}`},
-		{`\{\{\s*keyword_with_emoji\s*\(\s*\)\s*\}\}`, `{{$.RandomKeyword}}`},
+		{`\{\{\s*keyword_with_emoji\s*\(\s*\)\s*\}\}`, `{{$.RandomKeywordEmoji}}`},
 		{`\{\{\s*random_keyword_emoji\s*\(\s*\)\s*\}\}`, `{{$.RandomKeywordEmoji}}`},
 		{`\{\{\s*random_url\s*\(\s*\)\s*\}\}`, `{{$.RandomURL}}`},
 		{`\{\{\s*random_image\s*\(\s*\)\s*\}\}`, `{{$.RandomImage}}`},

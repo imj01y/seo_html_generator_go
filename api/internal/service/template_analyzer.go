@@ -145,7 +145,7 @@ type TemplateAnalyzer struct {
 var defaultFuncPatterns = map[string]string{
 	"cls":                 `\{\{\s*cls\s*\([^)]*\)\s*\}\}`,
 	"random_url":          `\{\{\s*random_url\s*\(\s*\)\s*\}\}`,
-	"keyword_with_emoji":  `\{\{\s*keyword_with_emoji\s*\(\s*\)\s*\}\}`,
+	"keyword_with_emoji":  `\{\{\s*(keyword_with_emoji|random_keyword_emoji)\s*\(\s*\)\s*\}\}`,
 	"random_keyword":      `\{\{\s*random_keyword\s*\(\s*\)\s*\}\}`,
 	"random_image":        `\{\{\s*random_image\s*\(\s*\)\s*\}\}`,
 	"random_title":        `\{\{\s*random_title\s*\(\s*\)\s*\}\}`,

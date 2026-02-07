@@ -197,8 +197,6 @@ func (h *PoolConfigHandler) UpdateConfig(c *gin.Context) {
 				"cls_pool_size":           sizes.ClsPoolSize,
 				"url_pool_size":           sizes.URLPoolSize,
 				"keyword_emoji_pool_size": sizes.KeywordEmojiPoolSize,
-				"keyword_pool_size":       maxStats.RandomKeyword * concurrency * req.BufferSeconds,
-				"image_pool_size":         maxStats.RandomImage * concurrency * req.BufferSeconds,
 			},
 		}
 		msgBytes, _ := json.Marshal(reloadMsg)

@@ -31,8 +31,6 @@ export interface PoolSizes {
   ClsPoolSize: number
   URLPoolSize: number
   KeywordEmojiPoolSize: number
-  KeywordPoolSize: number
-  ImagePoolSize: number
 }
 
 export interface MemoryEstimate {

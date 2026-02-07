@@ -11,6 +11,9 @@
       <el-tabs v-model="mainTab" class="main-tabs">
         <!-- 运行状态 -->
         <el-tab-pane label="运行状态" name="status">
+          <div v-if="totalCacheMemory > 0" class="total-memory-bar">
+            总缓存内存: {{ formatMemorySize(totalCacheMemory) }}
+          </div>
           <el-row :gutter="16" class="status-cards">
             <!-- 复用型缓存卡片 -->
             <el-col :xs="24" :lg="8">
@@ -96,7 +99,18 @@
               <div class="config-card" v-loading="configLoading">
                 <div class="card-header">
                   <span class="card-title">配置</span>
-                  <span class="memory-estimate">预估内存: {{ memoryEstimate.human }}</span>
+                  <span class="memory-estimate">
+                    预估内存: {{ memoryEstimate.human }}
+                    <el-tooltip placement="top" :show-after="100">
+                      <template #content>
+                        <div style="line-height: 1.8">
+                          <div>预估内存 = (CSS类名池 × 20B + 内链池 × 100B + 关键词表情池 × 60B) × 1.2</div>
+                          <div style="margin-top: 4px; color: #a0a0a0; font-size: 12px">1.2 为 20% 额外开销系数</div>
+                        </div>
+                      </template>
+                      <el-icon class="formula-tip"><QuestionFilled /></el-icon>
+                    </el-tooltip>
+                  </span>
                 </div>
                 <div class="card-content">
                   <div class="config-content">
@@ -182,15 +196,27 @@
                     </div>
 
                     <div class="detail-block">
-                      <div class="block-title">池大小预估</div>
+                      <div class="block-title">
+                        池大小预估
+                        <el-tooltip
+                          placement="top"
+                          :show-after="100"
+                        >
+                          <template #content>
+                            <div style="line-height: 1.8">
+                              <div>池大小 = 单页调用次数 × 并发数 × 缓冲时间(秒)</div>
+                              <div style="margin-top: 4px; color: #a0a0a0; font-size: 12px">
+                                单页调用次数来自模板分析
+                              </div>
+                            </div>
+                          </template>
+                          <el-icon class="formula-tip"><QuestionFilled /></el-icon>
+                        </el-tooltip>
+                      </div>
                       <div class="block-items">
                         <div class="block-item">
-                          <span class="item-label">关键词</span>
-                          <span class="item-value">{{ formatNumber(poolSizes.KeywordPoolSize) }}</span>
-                        </div>
-                        <div class="block-item">
-                          <span class="item-label">图片</span>
-                          <span class="item-value">{{ formatNumber(poolSizes.ImagePoolSize) }}</span>
+                          <span class="item-label">关键词表情</span>
+                          <span class="item-value">{{ formatNumber(poolSizes.KeywordEmojiPoolSize) }}</span>
                         </div>
                         <div class="block-item">
                           <span class="item-label">CSS 类名</span>
@@ -291,6 +317,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, watch, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { QuestionFilled } from '@element-plus/icons-vue'
 import PoolStatusCard from '@/components/PoolStatusCard.vue'
 import { clearCache, getCacheStats, recalculateCacheStats } from '@/api/settings'
 import { formatMemoryMB } from '@/utils/format'
@@ -398,9 +425,7 @@ const templateStats = reactive<TemplateStats>({
 const poolSizes = reactive<PoolSizes>({
   ClsPoolSize: 0,
   URLPoolSize: 0,
-  KeywordEmojiPoolSize: 0,
-  KeywordPoolSize: 0,
-  ImagePoolSize: 0
+  KeywordEmojiPoolSize: 0
 })
 
 const memoryEstimate = reactive<MemoryEstimate>({
@@ -429,17 +454,14 @@ const calculateEstimate = () => {
     : (presets.value.find(p => p.key === configForm.preset)?.concurrency || 200)
   const buffer = configForm.buffer_seconds
 
-  poolSizes.KeywordPoolSize = templateStats.max_keyword * concurrency * buffer
-  poolSizes.ImagePoolSize = templateStats.max_image * concurrency * buffer
   poolSizes.ClsPoolSize = templateStats.max_cls * concurrency * buffer
   poolSizes.URLPoolSize = templateStats.max_url * concurrency * buffer
   poolSizes.KeywordEmojiPoolSize = templateStats.max_keyword_emoji * concurrency * buffer
 
-  const keywordBytes = poolSizes.KeywordPoolSize * 50
-  const imageBytes = poolSizes.ImagePoolSize * 150
   const clsBytes = poolSizes.ClsPoolSize * 20
   const urlBytes = poolSizes.URLPoolSize * 100
-  const totalBytes = (keywordBytes + imageBytes + clsBytes + urlBytes) * 1.2
+  const keywordEmojiBytes = poolSizes.KeywordEmojiPoolSize * 60
+  const totalBytes = (clsBytes + urlBytes + keywordEmojiBytes) * 1.2
 
   memoryEstimate.bytes = totalBytes
   memoryEstimate.human = formatMemorySize(totalBytes)
@@ -453,8 +475,7 @@ const loadConfig = async () => {
     configForm.concurrency = res.config.concurrency
     configForm.buffer_seconds = res.config.buffer_seconds
     Object.assign(templateStats, res.template_stats)
-    Object.assign(poolSizes, res.calculated)
-    Object.assign(memoryEstimate, res.memory)
+    calculateEstimate()
   } catch (e) {
     ElMessage.error((e as Error).message || '加载配置失败')
   } finally {
@@ -614,6 +635,14 @@ const consumablePoolStats = computed(() => [
   ...dataPoolStats.value.filter(p => p.pool_type === 'consumable'),
   ...objectPoolStats.value
 ])
+
+// 总缓存内存（字节）
+const totalCacheMemory = computed(() => {
+  const poolBytes = [...dataPoolStats.value, ...objectPoolStats.value]
+    .reduce((sum, p) => sum + (p.memory_bytes || 0), 0)
+  const htmlBytes = (cacheStats.html_cache_memory_mb || 0) * 1024 * 1024
+  return poolBytes + htmlBytes
+})
 
 // ========== WebSocket 连接管理 ==========
 let poolStatusWs: WebSocket | null = null
@@ -784,6 +813,16 @@ onUnmounted(() => {
     :deep(.el-tabs__header) {
       margin-bottom: 20px;
     }
+  }
+
+  .total-memory-bar {
+    margin-bottom: 16px;
+    padding: 10px 16px;
+    background-color: #f0f5ff;
+    border-radius: 6px;
+    font-size: 14px;
+    color: #303133;
+    font-weight: 500;
   }
 
   // 运行状态三卡片
@@ -989,6 +1028,14 @@ onUnmounted(() => {
           font-weight: normal;
           color: #909399;
           font-size: 12px;
+        }
+
+        .formula-tip {
+          margin-left: 4px;
+          color: #909399;
+          font-size: 14px;
+          cursor: pointer;
+          vertical-align: middle;
         }
       }
 
