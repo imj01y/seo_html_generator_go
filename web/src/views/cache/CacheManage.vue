@@ -267,17 +267,19 @@
                         />
                         <span class="form-tip">(0.1-0.9)</span>
                       </el-form-item>
+                      <div class="card-footer">
+                        <el-button type="primary" :loading="cachePoolSaveLoading" @click="handleSaveCachePool">
+                          保存配置
+                        </el-button>
+                        <div v-if="configUpdatedAt" class="config-updated-at">
+                          上次保存时间：{{ configUpdatedAt }}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </el-col>
 
               </el-row>
-
-              <div class="form-actions">
-                <el-button type="primary" :loading="cachePoolSaveLoading" @click="handleSaveCachePool">
-                  保存配置
-                </el-button>
-              </div>
             </el-form>
           </div>
         </el-tab-pane>
@@ -486,6 +488,8 @@ const handleSaveConfig = async () => {
 const cachePoolLoading = ref(false)
 const cachePoolSaveLoading = ref(false)
 
+const configUpdatedAt = ref('')
+
 // 消费型缓存选择
 const poolOptions = [
   { label: '标题', value: 'title' },
@@ -498,30 +502,30 @@ const selectedPool = ref('title')
 
 const cachePoolForm = reactive<CachePoolConfig>({
   // 标题池
-  title_pool_size: 800000,
-  title_workers: 20,
-  title_refill_interval_ms: 30,
-  title_threshold: 0.4,
+  title_pool_size: 100000,
+  title_workers: 4,
+  title_refill_interval_ms: 200,
+  title_threshold: 0.3,
   // 正文池
   content_pool_size: 500000,
   content_workers: 10,
   content_refill_interval_ms: 50,
   content_threshold: 0.4,
   // cls类名池
-  cls_pool_size: 800000,
-  cls_workers: 20,
-  cls_refill_interval_ms: 30,
-  cls_threshold: 0.4,
+  cls_pool_size: 100000,
+  cls_workers: 4,
+  cls_refill_interval_ms: 200,
+  cls_threshold: 0.3,
   // url池
-  url_pool_size: 500000,
-  url_workers: 16,
-  url_refill_interval_ms: 30,
-  url_threshold: 0.4,
+  url_pool_size: 100000,
+  url_workers: 4,
+  url_refill_interval_ms: 200,
+  url_threshold: 0.3,
   // 关键词表情池
-  keyword_emoji_pool_size: 800000,
-  keyword_emoji_workers: 20,
-  keyword_emoji_refill_interval_ms: 30,
-  keyword_emoji_threshold: 0.4
+  keyword_emoji_pool_size: 50000,
+  keyword_emoji_workers: 2,
+  keyword_emoji_refill_interval_ms: 200,
+  keyword_emoji_threshold: 0.3
 })
 
 // 当前选中池的配置（为每个字段创建独立的 computed）
@@ -547,30 +551,34 @@ const loadCachePoolConfig = async () => {
   try {
     const config = await getCachePoolConfig()
     // 标题池
-    cachePoolForm.title_pool_size = config.title_pool_size || 800000
-    cachePoolForm.title_workers = config.title_workers || 20
-    cachePoolForm.title_refill_interval_ms = config.title_refill_interval_ms || 30
-    cachePoolForm.title_threshold = config.title_threshold || 0.4
+    cachePoolForm.title_pool_size = config.title_pool_size || 100000
+    cachePoolForm.title_workers = config.title_workers || 4
+    cachePoolForm.title_refill_interval_ms = config.title_refill_interval_ms || 200
+    cachePoolForm.title_threshold = config.title_threshold || 0.3
     // 正文池
     cachePoolForm.content_pool_size = config.content_pool_size || 500000
     cachePoolForm.content_workers = config.content_workers || 10
     cachePoolForm.content_refill_interval_ms = config.content_refill_interval_ms || 50
     cachePoolForm.content_threshold = config.content_threshold || 0.4
     // cls类名池
-    cachePoolForm.cls_pool_size = config.cls_pool_size || 800000
-    cachePoolForm.cls_workers = config.cls_workers || 20
-    cachePoolForm.cls_refill_interval_ms = config.cls_refill_interval_ms || 30
-    cachePoolForm.cls_threshold = config.cls_threshold || 0.4
+    cachePoolForm.cls_pool_size = config.cls_pool_size || 100000
+    cachePoolForm.cls_workers = config.cls_workers || 4
+    cachePoolForm.cls_refill_interval_ms = config.cls_refill_interval_ms || 200
+    cachePoolForm.cls_threshold = config.cls_threshold || 0.3
     // url池
-    cachePoolForm.url_pool_size = config.url_pool_size || 500000
-    cachePoolForm.url_workers = config.url_workers || 16
-    cachePoolForm.url_refill_interval_ms = config.url_refill_interval_ms || 30
-    cachePoolForm.url_threshold = config.url_threshold || 0.4
+    cachePoolForm.url_pool_size = config.url_pool_size || 100000
+    cachePoolForm.url_workers = config.url_workers || 4
+    cachePoolForm.url_refill_interval_ms = config.url_refill_interval_ms || 200
+    cachePoolForm.url_threshold = config.url_threshold || 0.3
     // 关键词表情池
-    cachePoolForm.keyword_emoji_pool_size = config.keyword_emoji_pool_size || 800000
-    cachePoolForm.keyword_emoji_workers = config.keyword_emoji_workers || 20
-    cachePoolForm.keyword_emoji_refill_interval_ms = config.keyword_emoji_refill_interval_ms || 30
-    cachePoolForm.keyword_emoji_threshold = config.keyword_emoji_threshold || 0.4
+    cachePoolForm.keyword_emoji_pool_size = config.keyword_emoji_pool_size || 50000
+    cachePoolForm.keyword_emoji_workers = config.keyword_emoji_workers || 2
+    cachePoolForm.keyword_emoji_refill_interval_ms = config.keyword_emoji_refill_interval_ms || 200
+    cachePoolForm.keyword_emoji_threshold = config.keyword_emoji_threshold || 0.3
+    // 上次保存时间
+    if (config.updated_at) {
+      configUpdatedAt.value = new Date(config.updated_at).toLocaleString('zh-CN')
+    }
   } catch (e) {
     console.error('Failed to load cache pool config:', e)
   } finally {
@@ -583,6 +591,7 @@ const handleSaveCachePool = async () => {
   try {
     await updateCachePoolConfig(cachePoolForm)
     ElMessage.success('数据池配置已保存')
+    await loadCachePoolConfig()
   } catch (e) {
     ElMessage.error((e as Error).message || '保存失败')
   } finally {
@@ -938,9 +947,19 @@ onUnmounted(() => {
       font-size: 12px;
     }
 
-    .form-actions {
-      margin-top: 24px;
+    .card-footer {
+      margin-top: 8px;
+      position: relative;
       text-align: center;
+    }
+
+    .config-updated-at {
+      position: absolute;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #909399;
+      font-size: 13px;
     }
 
     :deep(.el-form-item) {
