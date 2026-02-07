@@ -30,6 +30,7 @@ web/dist/
 # Runtime data (内容不入库，但保留目录结构)
 data/*
 !data/.gitkeep
+!data/emojis.json
 !data/cache/.gitkeep
 !data/logs/.gitkeep
 !data/logs/nginx/.gitkeep
