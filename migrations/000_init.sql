@@ -224,36 +224,36 @@ CREATE TABLE IF NOT EXISTS system_settings (
 CREATE TABLE IF NOT EXISTS pool_config (
     id INT AUTO_INCREMENT PRIMARY KEY,
     -- 标题池配置
-    title_pool_size INT NOT NULL DEFAULT 800000 COMMENT '标题池大小',
-    title_workers INT NOT NULL DEFAULT 20 COMMENT '标题池工作线程数',
-    title_refill_interval_ms INT NOT NULL DEFAULT 30 COMMENT '标题池补充间隔(毫秒)',
-    title_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.40 COMMENT '标题池补充阈值(0-1)',
+    title_pool_size INT NOT NULL DEFAULT 100000 COMMENT '标题池大小',
+    title_workers INT NOT NULL DEFAULT 4 COMMENT '标题池工作线程数',
+    title_refill_interval_ms INT NOT NULL DEFAULT 200 COMMENT '标题池补充间隔(毫秒)',
+    title_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT '标题池补充阈值(0-1)',
     -- 正文池配置
     content_pool_size INT NOT NULL DEFAULT 500000 COMMENT '正文池大小',
     content_workers INT NOT NULL DEFAULT 10 COMMENT '正文池工作线程数',
     content_refill_interval_ms INT NOT NULL DEFAULT 50 COMMENT '正文池补充间隔(毫秒)',
     content_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.40 COMMENT '正文池补充阈值(0-1)',
     -- cls类名池配置
-    cls_pool_size INT NOT NULL DEFAULT 800000 COMMENT 'cls池大小',
-    cls_workers INT NOT NULL DEFAULT 20 COMMENT 'cls池工作线程数',
-    cls_refill_interval_ms INT NOT NULL DEFAULT 30 COMMENT 'cls池补充间隔(毫秒)',
-    cls_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.40 COMMENT 'cls池补充阈值(0-1)',
+    cls_pool_size INT NOT NULL DEFAULT 100000 COMMENT 'cls池大小',
+    cls_workers INT NOT NULL DEFAULT 4 COMMENT 'cls池工作线程数',
+    cls_refill_interval_ms INT NOT NULL DEFAULT 200 COMMENT 'cls池补充间隔(毫秒)',
+    cls_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT 'cls池补充阈值(0-1)',
     -- url池配置
-    url_pool_size INT NOT NULL DEFAULT 500000 COMMENT 'url池大小',
-    url_workers INT NOT NULL DEFAULT 16 COMMENT 'url池工作线程数',
-    url_refill_interval_ms INT NOT NULL DEFAULT 30 COMMENT 'url池补充间隔(毫秒)',
-    url_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.40 COMMENT 'url池补充阈值(0-1)',
+    url_pool_size INT NOT NULL DEFAULT 100000 COMMENT 'url池大小',
+    url_workers INT NOT NULL DEFAULT 4 COMMENT 'url池工作线程数',
+    url_refill_interval_ms INT NOT NULL DEFAULT 200 COMMENT 'url池补充间隔(毫秒)',
+    url_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT 'url池补充阈值(0-1)',
     -- 关键词表情池配置
     keyword_emoji_pool_size INT NOT NULL DEFAULT 50000 COMMENT '关键词表情池大小',
-    keyword_emoji_workers INT NOT NULL DEFAULT 4 COMMENT '关键词表情池工作线程数',
-    keyword_emoji_refill_interval_ms INT NOT NULL DEFAULT 30 COMMENT '关键词表情池补充间隔(毫秒)',
-    keyword_emoji_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.40 COMMENT '关键词表情池补充阈值(0-1)',
+    keyword_emoji_workers INT NOT NULL DEFAULT 2 COMMENT '关键词表情池工作线程数',
+    keyword_emoji_refill_interval_ms INT NOT NULL DEFAULT 200 COMMENT '关键词表情池补充间隔(毫秒)',
+    keyword_emoji_threshold DECIMAL(3,2) NOT NULL DEFAULT 0.30 COMMENT '关键词表情池补充阈值(0-1)',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='缓存池配置表';
 
 -- 默认缓存池配置
 INSERT INTO pool_config (id, title_pool_size, title_workers, title_refill_interval_ms, title_threshold, content_pool_size, content_workers, content_refill_interval_ms, content_threshold, cls_pool_size, cls_workers, cls_refill_interval_ms, cls_threshold, url_pool_size, url_workers, url_refill_interval_ms, url_threshold, keyword_emoji_pool_size, keyword_emoji_workers, keyword_emoji_refill_interval_ms, keyword_emoji_threshold) VALUES
-(1, 800000, 20, 30, 0.40, 500000, 10, 50, 0.40, 800000, 20, 30, 0.40, 500000, 16, 30, 0.40, 50000, 4, 30, 0.40)
+(1, 100000, 4, 200, 0.30, 500000, 10, 50, 0.40, 100000, 4, 200, 0.30, 100000, 4, 200, 0.30, 50000, 2, 200, 0.30)
 ON DUPLICATE KEY UPDATE id = id;
 
 -- ============================================
