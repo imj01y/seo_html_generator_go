@@ -121,6 +121,15 @@ func main() {
 
 	// Initialize pool manager for titles and contents (in-memory cache)
 	poolManager := core.NewPoolManager(db)
+
+	// Load emojis BEFORE Start() so KeywordEmojiGenerator workers have emoji data
+	emojisPath := filepath.Join(projectRoot, "data", "emojis.json")
+	if err := poolManager.LoadEmojis(emojisPath); err != nil {
+		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis")
+	} else {
+		log.Info().Int("count", poolManager.GetEmojiCount()).Msg("Emojis loaded to PoolManager")
+	}
+
 	poolCtx := context.Background()
 	if err := poolManager.Start(poolCtx); err != nil {
 		log.Fatal().Err(err).Msg("Failed to start PoolManager")
@@ -180,15 +189,7 @@ func main() {
 		log.Warn().Err(err).Msg("Failed to start scheduler (tables may not exist)")
 	}
 
-	// Load emojis from data/emojis.json into PoolManager
-	emojisPath := filepath.Join(projectRoot, "data", "emojis.json")
-	if err := poolManager.LoadEmojis(emojisPath); err != nil {
-		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis")
-	} else {
-		log.Info().Int("count", poolManager.GetEmojiCount()).Msg("Emojis loaded to PoolManager")
-	}
-
-	// Also create a separate emojiManager for funcsManager (used in template rendering)
+	// Create a separate emojiManager for funcsManager (used in template rendering fallback)
 	emojiManager := core.NewEmojiManager()
 	if err := emojiManager.LoadFromFile(emojisPath); err != nil {
 		log.Warn().Err(err).Str("path", emojisPath).Msg("Failed to load emojis for funcsManager")
