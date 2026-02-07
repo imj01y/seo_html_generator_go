@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // ErrPoolEmpty is returned when the pool is empty
@@ -40,6 +41,7 @@ type MemoryPool struct {
 	memoryBytes   atomic.Int64          // 内存占用追踪
 	consumedCount atomic.Int64          // 被消费的数量（Pop 计数）
 	loadedIDs     map[int64]struct{}    // 已加载的 ID 集合，用于去重
+	exhaustedUntil time.Time            // 数据耗尽时的冷却截止时间，避免空转查询
 }
 
 // NewMemoryPool creates a new memory pool
@@ -120,6 +122,7 @@ func (p *MemoryPool) Clear() {
 	p.items = p.items[:0]
 	p.loadedIDs = make(map[int64]struct{})
 	p.memoryBytes.Store(0)
+	p.exhaustedUntil = time.Time{} // 重置冷却，允许立即重新加载
 }
 
 // Resize changes the max size of the pool
@@ -166,4 +169,19 @@ func (p *MemoryPool) MemoryBytes() int64 {
 // ConsumedCount returns the number of items consumed (popped) from the pool
 func (p *MemoryPool) ConsumedCount() int64 {
 	return p.consumedCount.Load()
+}
+
+// MarkExhausted sets a cooldown period to avoid repeated useless DB queries
+// when there's no new data available
+func (p *MemoryPool) MarkExhausted(cooldown time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.exhaustedUntil = time.Now().Add(cooldown)
+}
+
+// IsExhausted returns true if the pool is in cooldown (no new data expected)
+func (p *MemoryPool) IsExhausted() bool {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return time.Now().Before(p.exhaustedUntil)
 }

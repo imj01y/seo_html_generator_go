@@ -293,7 +293,7 @@ func (m *PoolManager) checkAndRefillAll() {
 	threshold := int(float64(poolSize) * thresholdRatio)
 
 	for _, pool := range contentPools {
-		if pool.Len() < threshold {
+		if pool.Len() < threshold && !pool.IsExhausted() {
 			m.refillPool(pool)
 		}
 	}
@@ -340,13 +340,18 @@ func (m *PoolManager) refillPool(memPool *MemoryPool) {
 				Int("added", added).
 				Int("total", memPool.Len()).
 				Msg("Pool refilled")
+		} else {
+			// DB 有数据但全部已加载过，进入冷却避免空转
+			memPool.MarkExhausted(30 * time.Second)
 		}
 	} else {
+		// DB 无数据，进入冷却避免空转
+		memPool.MarkExhausted(30 * time.Second)
 		log.Debug().
 			Str("type", poolType).
 			Int("group", groupID).
 			Int("need", need).
-			Msg("No items to refill")
+			Msg("No items to refill, cooling down 30s")
 	}
 }
 
