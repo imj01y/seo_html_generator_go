@@ -514,6 +514,16 @@ func (m *PoolManager) GetAllRawKeywords(groupID int) []string {
 	return m.poolManager.GetKeywordPool().GetAllRawKeywords(groupID)
 }
 
+// GetRandomRawKeyword 获取指定分组的一个随机原始关键词（零分配）
+func (m *PoolManager) GetRandomRawKeyword(groupID int) string {
+	return m.poolManager.GetKeywordPool().GetRandomRawKeyword(groupID)
+}
+
+// HasRawKeywords 检查指定分组是否有原始关键词（零分配）
+func (m *PoolManager) HasRawKeywords(groupID int) bool {
+	return m.poolManager.GetKeywordPool().HasRawKeywords(groupID)
+}
+
 // ============================================================
 // Images 方法
 // ============================================================

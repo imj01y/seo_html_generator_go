@@ -1,8 +1,8 @@
 package core
 
 import (
-	"fmt"
 	"math/rand/v2"
+	"strconv"
 	"strings"
 )
 
@@ -33,13 +33,17 @@ func (e *HTMLEntityEncoder) EncodeText(text string) string {
 			// ASCII character, keep as-is
 			sb.WriteRune(r)
 		} else {
-			// Non-ASCII character, encode
+			// Non-ASCII character, encode (strconv 比 fmt.Sprintf 快 5-10 倍)
 			if rand.Float64() < e.mixRatio {
 				// Hex encoding: &#x数字;
-				sb.WriteString(fmt.Sprintf("&#x%x;", r))
+				sb.WriteString("&#x")
+				sb.WriteString(strconv.FormatInt(int64(r), 16))
+				sb.WriteByte(';')
 			} else {
 				// Decimal encoding: &#数字;
-				sb.WriteString(fmt.Sprintf("&#%d;", r))
+				sb.WriteString("&#")
+				sb.WriteString(strconv.FormatInt(int64(r), 10))
+				sb.WriteByte(';')
 			}
 		}
 	}

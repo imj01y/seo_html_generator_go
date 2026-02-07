@@ -52,13 +52,11 @@ func NewKeywordEmojiGenerator(pm *PoolManager, config *CachePoolConfig, encoder 
 // generateKeywordEmoji 生成单个关键词表情组合
 // 从原始关键词中随机插入 1-2 个 emoji，然后 HTML 编码
 func (g *KeywordEmojiGenerator) generateKeywordEmoji(groupID int) string {
-	// 获取该分组全部原始关键词
-	rawKeywords := g.poolManager.GetAllRawKeywords(groupID)
-	if len(rawKeywords) == 0 {
+	// 获取一个随机原始关键词（零分配，不复制全量切片）
+	keyword := g.poolManager.GetRandomRawKeyword(groupID)
+	if keyword == "" {
 		return ""
 	}
-
-	keyword := rawKeywords[rand.IntN(len(rawKeywords))]
 
 	// 复用 generateKeywordWithEmojiFromRaw 的逻辑
 	if g.emojiManager == nil || g.encoder == nil {
@@ -174,7 +172,7 @@ func (g *KeywordEmojiGenerator) refillWorker(groupID int, pool *KeywordEmojiPool
 	defer g.wg.Done()
 
 	// 启动后立即尝试一次填充（不等 ticker）
-	if !g.stopped.Load() && len(g.poolManager.GetAllRawKeywords(groupID)) > 0 {
+	if !g.stopped.Load() && g.poolManager.HasRawKeywords(groupID) {
 		g.fillPool(groupID, pool)
 	}
 
@@ -190,7 +188,7 @@ func (g *KeywordEmojiGenerator) refillWorker(groupID int, pool *KeywordEmojiPool
 				return
 			}
 			// 预检查：关键词池为空时跳过
-			if len(g.poolManager.GetAllRawKeywords(groupID)) == 0 {
+			if !g.poolManager.HasRawKeywords(groupID) {
 				continue
 			}
 			// 低于阈值时触发补充

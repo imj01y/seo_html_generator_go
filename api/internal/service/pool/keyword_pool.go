@@ -340,6 +340,34 @@ func (p *KeywordPool) GetAllRawKeywords(groupID int) []string {
 	return result
 }
 
+// GetRandomRawKeyword 返回指定分组的一个随机原始关键词（零分配）
+func (p *KeywordPool) GetRandomRawKeyword(groupID int) string {
+	p.mu.RLock()
+	items := p.rawData[groupID]
+	if len(items) == 0 {
+		items = p.rawData[1]
+	}
+	if len(items) == 0 {
+		p.mu.RUnlock()
+		return ""
+	}
+	kw := items[rand.IntN(len(items))]
+	p.mu.RUnlock()
+	return kw
+}
+
+// HasRawKeywords 检查指定分组是否有原始关键词（零分配）
+func (p *KeywordPool) HasRawKeywords(groupID int) bool {
+	p.mu.RLock()
+	items := p.rawData[groupID]
+	if len(items) == 0 {
+		items = p.rawData[1]
+	}
+	has := len(items) > 0
+	p.mu.RUnlock()
+	return has
+}
+
 // getRandomItems 从切片中随机选取指定数量的元素(Fisher-Yates 部分洗牌)
 func getRandomItems(items []string, count int) []string {
 	n := len(items)
