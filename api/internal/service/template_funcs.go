@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -32,15 +31,8 @@ type TemplateFuncsManager struct {
 	// 关键词数据（原子指针，支持无锁读取和热更新）
 	keywordData atomic.Pointer[KeywordData]
 
-	// 分组索引（独立管理，避免数据替换时重置）
-	keywordGroupIdx    sync.Map // groupID -> *atomic.Int64
-	rawKeywordGroupIdx sync.Map // groupID -> *atomic.Int64
-
 	// 图片数据（原子指针，支持无锁读取和热更新）
 	imageData atomic.Pointer[ImageData]
-
-	// 分组索引（独立管理，避免数据替换时重置）
-	imageGroupIdx sync.Map // groupID -> *atomic.Int64
 
 	encoder               *HTMLEntityEncoder
 	emojiManager          *EmojiManager          // emoji 管理器引用
@@ -193,11 +185,7 @@ func (m *TemplateFuncsManager) RandomKeyword(groupID int) string {
 		}
 	}
 
-	// 获取或创建该分组的索引
-	idxPtr, _ := m.keywordGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
-	idx := idxPtr.(*atomic.Int64).Add(1) - 1
-
-	return keywords[idx%int64(len(keywords))]
+	return keywords[rand.IntN(len(keywords))]
 }
 
 // RandomKeywordEmoji 获取带 emoji 的随机关键词（支持分组，从对象池消费）
@@ -217,9 +205,7 @@ func (m *TemplateFuncsManager) RandomKeywordEmoji(groupID int) string {
 			return ""
 		}
 	}
-	idxPtr, _ := m.rawKeywordGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
-	idx := idxPtr.(*atomic.Int64).Add(1) - 1
-	keyword := rawKeywords[idx%int64(len(rawKeywords))]
+	keyword := rawKeywords[rand.IntN(len(rawKeywords))]
 	return m.generateKeywordWithEmojiFromRaw(keyword)
 }
 
@@ -239,11 +225,7 @@ func (m *TemplateFuncsManager) RandomImage(groupID int) string {
 		}
 	}
 
-	// 获取或创建该分组的索引
-	idxPtr, _ := m.imageGroupIdx.LoadOrStore(groupID, &atomic.Int64{})
-	idx := idxPtr.(*atomic.Int64).Add(1) - 1
-
-	return urls[idx%int64(len(urls))]
+	return urls[rand.IntN(len(urls))]
 }
 
 // RandomNumber 获取随机数
