@@ -109,7 +109,7 @@ const loadTrendChart = async () => {
 
     trendChart = echarts.init(trendChartRef.value)
 
-    const dates = dailyStats.map(d => d.date)
+    const dates = dailyStats.map(d => d.date.slice(0, 10))
     const totals = dailyStats.map(d => d.total)
 
     const series: echarts.SeriesOption[] = [
