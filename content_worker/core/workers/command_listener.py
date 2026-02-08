@@ -67,11 +67,22 @@ class CommandListener:
             return 0
 
     async def _batch_insert_images(self, urls: list, group_id: int) -> int:
-        """批量插入图片URL到数据库（INSERT IGNORE 去重）"""
+        """批量插入图片URL到数据库（Redis Set 预过滤 + INSERT IGNORE 兜底）"""
         if not urls:
             return 0
 
         try:
+            # Redis Set 预过滤
+            redis_key = f"dedup:images:{group_id}"
+            pipe = self.rdb.pipeline()
+            for url in urls:
+                pipe.sismember(redis_key, url)
+            results = await pipe.execute()
+
+            new_urls = [url for url, exists in zip(urls, results) if not exists]
+            if not new_urls:
+                return 0
+
             db_pool = get_db_pool()
             if not db_pool:
                 return 0
@@ -80,10 +91,16 @@ class CommandListener:
                 async with conn.cursor() as cursor:
                     await cursor.executemany(
                         "INSERT IGNORE INTO images (group_id, url, status) VALUES (%s, %s, 1)",
-                        [(group_id, url) for url in urls]
+                        [(group_id, url) for url in new_urls]
                     )
                     await conn.commit()
-                    return cursor.rowcount
+                    inserted = cursor.rowcount
+
+            # 入库成功后加入 Redis Set
+            if new_urls:
+                await self.rdb.sadd(redis_key, *new_urls)
+
+            return inserted
         except Exception as e:
             logger.error(f"批量插入图片失败: {e}")
             return 0
@@ -271,7 +288,7 @@ class CommandListener:
         logger.info("正在加载项目...")
 
         row = await fetch_one(
-            "SELECT id, name, entry_file, config, concurrency, output_group_id FROM spider_projects WHERE id = %s",
+            "SELECT id, name, entry_file, config, concurrency, crawl_type, output_group_id FROM spider_projects WHERE id = %s",
             (project_id,)
         )
         if not row:
@@ -292,6 +309,7 @@ class CommandListener:
             "config": config,
             "modules": modules,
             "concurrency": row.get('concurrency', 3),
+            "crawl_type": row.get('crawl_type', 'article'),
             "group_id": row['output_group_id'],
         }
 
@@ -321,7 +339,7 @@ class CommandListener:
                 break
 
             # 处理数据项
-            count = await self._process_item(item, project["group_id"], project["id"])
+            count = await self._process_item(item, project["group_id"], project["id"], project["crawl_type"])
             items_count += count
 
             if items_count > 0 and items_count % 10 == 0:
@@ -329,9 +347,14 @@ class CommandListener:
 
         return items_count
 
-    async def _process_item(self, item: dict, group_id: int, project_id: int) -> int:
+    async def _process_item(self, item: dict, group_id: int, project_id: int, crawl_type: str = 'article') -> int:
         """处理单个数据项（路由到 keywords/images/article）"""
         item_type = item.get('type', 'article')
+
+        # 校验 yield type 与项目 crawl_type 一致
+        if item_type != crawl_type:
+            logger.warning(f"数据类型不匹配: yield type='{item_type}', 项目配置 crawl_type='{crawl_type}'，已跳过")
+            return 0
 
         try:
             if item_type == 'keywords':
@@ -416,6 +439,7 @@ class CommandListener:
                     max_items=max_items,
                 )
 
+                crawl_type = project["crawl_type"]
                 items_count = 0
                 async for item in runner.run():
                     # 检查停止信号
@@ -424,18 +448,41 @@ class CommandListener:
                         logger.info("测试已停止")
                         break
 
-                    if not item.get('title') or not item.get('content'):
-                        logger.warning("数据缺少必填字段(title 或 content)，已跳过")
+                    item_type = item.get('type', 'article')
+
+                    # 校验类型匹配
+                    if item_type != crawl_type:
+                        logger.warning(f"数据类型不匹配: yield type='{item_type}', 项目配置 crawl_type='{crawl_type}'，已跳过")
                         continue
+
+                    # 按类型验证必填字段
+                    if item_type == 'keywords':
+                        if not item.get('keywords'):
+                            logger.warning("关键词数据为空，已跳过")
+                            continue
+                    elif item_type == 'images':
+                        if not item.get('urls'):
+                            logger.warning("图片URL为空，已跳过")
+                            continue
+                    else:
+                        if not item.get('title') or not item.get('content'):
+                            logger.warning("数据缺少必填字段(title 或 content)，已跳过")
+                            continue
 
                     items_count += 1
 
                     # 输出数据预览
-                    title = item.get('title', '(无标题)')[:50]
-                    if max_items > 0:
-                        logger.info(f"[{items_count}/{max_items}] {title}")
+                    if item_type == 'keywords':
+                        label = f"关键词 x{len(item['keywords'])}"
+                    elif item_type == 'images':
+                        label = f"图片 x{len(item['urls'])}"
                     else:
-                        logger.info(f"[{items_count}] {title}")
+                        label = item.get('title', '(无标题)')[:50]
+
+                    if max_items > 0:
+                        logger.info(f"[{items_count}/{max_items}] {label}")
+                    else:
+                        logger.info(f"[{items_count}] {label}")
 
                     # 发送数据项供前端展示
                     await ctx.item(item)

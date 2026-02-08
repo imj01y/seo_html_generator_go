@@ -65,10 +65,31 @@
                 @change="onFormChange"
               />
             </el-form-item>
-            <el-form-item label="输出分组">
-              <el-select v-model="form.output_group_id" style="width: 100%" @change="onFormChange">
+            <el-form-item label="抓取类型" required>
+              <el-select
+                v-model="form.crawl_type"
+                placeholder="请选择抓取类型"
+                style="width: 100%"
+                @change="onCrawlTypeChange"
+              >
                 <el-option
-                  v-for="group in articleGroups"
+                  v-for="opt in crawlTypeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="输出分组" required>
+              <el-select
+                v-model="form.output_group_id"
+                placeholder="请先选择抓取类型"
+                style="width: 100%"
+                :disabled="!form.crawl_type"
+                @change="onFormChange"
+              >
+                <el-option
+                  v-for="group in outputGroups"
                   :key="group.id"
                   :label="group.name"
                   :value="group.id"
@@ -214,6 +235,8 @@ import LogViewer from '@/components/LogViewer.vue'
 import SpiderGuide from '@/components/SpiderGuide.vue'
 import ScheduleBuilder from '@/components/ScheduleBuilder.vue'
 import { getArticleGroups } from '@/api/articles'
+import { getKeywordGroups } from '@/api/keywords'
+import { getImageGroups } from '@/api/images'
 import {
   getProject,
   createProject,
@@ -245,7 +268,8 @@ const form = reactive({
   description: '',
   entry_file: 'spider.py',
   concurrency: 3,
-  output_group_id: 1,
+  crawl_type: '' as string,
+  output_group_id: null as number | null,
   schedule: '',
   enabled: 1
 })
@@ -256,8 +280,39 @@ const currentFile = ref<ProjectFile | null>(null)
 const currentCode = ref('')
 const originalCode = ref('')  // 用于检测是否有修改
 
-// 文章分组（用于输出目标选择）
-const articleGroups = ref<{ id: number; name: string }[]>([])
+// 输出分组（根据抓取类型联动加载）
+const outputGroups = ref<{ id: number; name: string }[]>([])
+
+const crawlTypeOptions = [
+  { value: 'article', label: '文章' },
+  { value: 'keywords', label: '关键词' },
+  { value: 'images', label: '图片' },
+]
+
+async function onCrawlTypeChange() {
+  form.output_group_id = null
+  outputGroups.value = []
+  onFormChange()
+  await loadGroupsByType(form.crawl_type)
+}
+
+async function loadGroupsByType(type: string) {
+  if (!type) return
+  try {
+    if (type === 'article') {
+      const groups = await getArticleGroups()
+      outputGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
+    } else if (type === 'keywords') {
+      const groups = await getKeywordGroups()
+      outputGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
+    } else if (type === 'images') {
+      const groups = await getImageGroups()
+      outputGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
+    }
+  } catch {
+    outputGroups.value = []
+  }
+}
 
 // 编辑器配置
 const editorOptions = {
@@ -387,6 +442,7 @@ async function saveContentSilently() {
       description: form.description,
       entry_file: form.entry_file,
       concurrency: form.concurrency,
+      crawl_type: form.crawl_type,
       output_group_id: form.output_group_id,
       schedule: form.schedule
     })
@@ -489,9 +545,13 @@ async function loadProject() {
     form.description = project.description || ''
     form.entry_file = project.entry_file
     form.concurrency = project.concurrency
+    form.crawl_type = project.crawl_type || 'article'
     form.output_group_id = project.output_group_id
     form.schedule = project.schedule || ''
     form.enabled = project.enabled
+
+    // 根据 crawl_type 加载对应分组列表
+    await loadGroupsByType(form.crawl_type)
 
     // 加载文件列表
     files.value = await getProjectFiles(projectId.value)
@@ -650,6 +710,14 @@ async function handleSave() {
     ElMessage.warning('请输入项目名称')
     return
   }
+  if (!form.crawl_type) {
+    ElMessage.warning('请选择抓取类型')
+    return
+  }
+  if (!form.output_group_id) {
+    ElMessage.warning('请选择输出分组')
+    return
+  }
 
   // 确保当前文件的内容已更新
   if (currentFile.value) {
@@ -678,6 +746,7 @@ async function handleSave() {
         description: form.description,
         entry_file: form.entry_file,
         concurrency: form.concurrency,
+        crawl_type: form.crawl_type,
         output_group_id: form.output_group_id,
         schedule: form.schedule
       })
@@ -889,13 +958,6 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
 
 // 生命周期
 onMounted(async () => {
-  // 加载文章分组选项
-  try {
-    const groups = await getArticleGroups()
-    articleGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
-  } catch {
-    articleGroups.value = [{ id: 1, name: '默认文章分组' }]
-  }
   loadProject()
   window.addEventListener('beforeunload', handleBeforeUnload)
 })

@@ -22,6 +22,7 @@ export interface SpiderProject {
   start_url?: string
   config?: Record<string, unknown>
   concurrency: number
+  crawl_type: 'article' | 'keywords' | 'images'
   output_group_id: number
   schedule?: string
   enabled: number
@@ -56,6 +57,7 @@ export interface ProjectCreate {
   start_url?: string
   config?: Record<string, unknown>
   concurrency?: number
+  crawl_type?: 'article' | 'keywords' | 'images'
   output_group_id?: number
   schedule?: string
   enabled?: number
@@ -70,6 +72,7 @@ export interface ProjectUpdate {
   start_url?: string
   config?: Record<string, unknown>
   concurrency?: number
+  crawl_type?: 'article' | 'keywords' | 'images'
   output_group_id?: number
   schedule?: string
   enabled?: number

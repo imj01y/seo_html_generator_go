@@ -1566,3 +1566,7 @@ INSERT INTO scheduled_tasks (name, task_type, cron_expr, params, enabled) VALUES
 ('刷新模板缓存', 'refresh_template', '0 */30 * * * *', '{}', 1),
 ('清理过期缓存', 'clear_cache', '0 0 3 * * *', '{"max_age_hours": 24}', 1)
 ON DUPLICATE KEY UPDATE name = name;
+
+-- 2026-02-08: 爬虫项目增加抓取类型字段
+ALTER TABLE spider_projects
+ADD COLUMN crawl_type VARCHAR(20) NOT NULL DEFAULT 'article' COMMENT '抓取类型: article/keywords/images' AFTER concurrency;

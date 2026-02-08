@@ -109,7 +109,7 @@ func (h *SpiderProjectsHandler) List(c *gin.Context) {
 	offset := (page - 1) * pageSize
 	dataSQL := `
 		SELECT id, name, description, entry_file, entry_function, start_url,
-		       config, concurrency, output_group_id, schedule, enabled, status,
+		       config, concurrency, crawl_type, output_group_id, schedule, enabled, status,
 		       last_run_at, last_run_duration, last_run_items, last_error,
 		       total_runs, total_items, created_at, updated_at
 		FROM spider_projects
@@ -155,7 +155,7 @@ func (h *SpiderProjectsHandler) Get(c *gin.Context) {
 	var project models.SpiderProject
 	err = sqlxDB.Get(&project, `
 		SELECT id, name, description, entry_file, entry_function, start_url,
-		       config, concurrency, output_group_id, schedule, enabled, status,
+		       config, concurrency, crawl_type, output_group_id, schedule, enabled, status,
 		       last_run_at, last_run_duration, last_run_items, last_error,
 		       total_runs, total_items, created_at, updated_at
 		FROM spider_projects WHERE id = ?
@@ -197,6 +197,9 @@ func (h *SpiderProjectsHandler) Create(c *gin.Context) {
 	if req.Concurrency == 0 {
 		req.Concurrency = 3
 	}
+	if req.CrawlType == "" {
+		req.CrawlType = "article"
+	}
 	if req.OutputGroupID == 0 {
 		req.OutputGroupID = 1
 	}
@@ -219,10 +222,10 @@ func (h *SpiderProjectsHandler) Create(c *gin.Context) {
 	result, err := tx.Exec(`
 		INSERT INTO spider_projects
 		(name, description, entry_file, entry_function, start_url, config,
-		 concurrency, output_group_id, schedule, enabled)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		 concurrency, crawl_type, output_group_id, schedule, enabled)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, req.Name, req.Description, req.EntryFile, req.EntryFunction,
-		req.StartURL, configJSON, req.Concurrency, req.OutputGroupID,
+		req.StartURL, configJSON, req.Concurrency, req.CrawlType, req.OutputGroupID,
 		req.Schedule, req.Enabled)
 
 	if err != nil {
@@ -348,6 +351,10 @@ func (h *SpiderProjectsHandler) Update(c *gin.Context) {
 	if req.Concurrency != nil {
 		updates = append(updates, "concurrency = ?")
 		args = append(args, *req.Concurrency)
+	}
+	if req.CrawlType != nil {
+		updates = append(updates, "crawl_type = ?")
+		args = append(args, *req.CrawlType)
 	}
 	if req.OutputGroupID != nil {
 		updates = append(updates, "output_group_id = ?")

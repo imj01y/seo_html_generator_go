@@ -16,6 +16,7 @@ type SpiderProject struct {
 	Config          *string         `db:"config" json:"-"`
 	ConfigParsed    json.RawMessage `json:"config"`
 	Concurrency     int             `db:"concurrency" json:"concurrency"`
+	CrawlType       string          `db:"crawl_type" json:"crawl_type"`
 	OutputGroupID   int             `db:"output_group_id" json:"output_group_id"`
 	Schedule        *string         `db:"schedule" json:"schedule"`
 	Enabled         int             `db:"enabled" json:"enabled"`
@@ -50,6 +51,7 @@ type SpiderProjectCreate struct {
 	StartURL      *string                `json:"start_url"`
 	Config        map[string]interface{} `json:"config"`
 	Concurrency   int                    `json:"concurrency"`
+	CrawlType     string                 `json:"crawl_type"`
 	OutputGroupID int                    `json:"output_group_id"`
 	Schedule      *string                `json:"schedule"`
 	Enabled       int                    `json:"enabled"`
@@ -65,6 +67,7 @@ type SpiderProjectUpdate struct {
 	StartURL      *string                `json:"start_url"`
 	Config        map[string]interface{} `json:"config"`
 	Concurrency   *int                   `json:"concurrency"`
+	CrawlType     *string                `json:"crawl_type"`
 	OutputGroupID *int                   `json:"output_group_id"`
 	Schedule      *string                `json:"schedule"`
 	Enabled       *int                   `json:"enabled"`

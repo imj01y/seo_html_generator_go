@@ -201,10 +201,34 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="输出分组" prop="output_group_id">
-              <el-select v-model="configForm.output_group_id" style="width: 100%">
+            <el-form-item label="抓取类型" required>
+              <el-select
+                v-model="configForm.crawl_type"
+                placeholder="请选择抓取类型"
+                style="width: 100%"
+                @change="onCrawlTypeChange"
+              >
                 <el-option
-                  v-for="group in articleGroups"
+                  v-for="opt in crawlTypeOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="20">
+          <el-col :span="12">
+            <el-form-item label="输出分组" required>
+              <el-select
+                v-model="configForm.output_group_id"
+                placeholder="请先选择抓取类型"
+                style="width: 100%"
+                :disabled="!configForm.crawl_type"
+              >
+                <el-option
+                  v-for="group in outputGroups"
                   :key="group.id"
                   :label="group.name"
                   :value="group.id"
@@ -246,6 +270,8 @@ import {
   type ProjectFile
 } from '@/api/spiderProjects'
 import { getArticleGroups } from '@/api/articles'
+import { getKeywordGroups } from '@/api/keywords'
+import { getImageGroups } from '@/api/images'
 import LogViewer from '@/components/LogViewer.vue'
 import ScheduleBuilder from '@/components/ScheduleBuilder.vue'
 
@@ -296,21 +322,42 @@ const configForm = ref({
   description: '',
   entry_file: '',
   concurrency: 3,
-  output_group_id: 1,
+  crawl_type: '' as string,
+  output_group_id: null as number | null,
   schedule: ''
 })
 
-// 文章分组
-const articleGroups = ref<{ id: number; name: string }[]>([])
+// 输出分组
+const outputGroups = ref<{ id: number; name: string }[]>([])
 
-// 加载文章分组
-async function loadArticleGroups() {
+const crawlTypeOptions = [
+  { value: 'article', label: '文章' },
+  { value: 'keywords', label: '关键词' },
+  { value: 'images', label: '图片' },
+]
+
+async function loadGroupsByType(type: string) {
+  if (!type) return
   try {
-    const res = await getArticleGroups()
-    articleGroups.value = res || []
+    if (type === 'article') {
+      const groups = await getArticleGroups()
+      outputGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
+    } else if (type === 'keywords') {
+      const groups = await getKeywordGroups()
+      outputGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
+    } else if (type === 'images') {
+      const groups = await getImageGroups()
+      outputGroups.value = groups.map(g => ({ id: g.id, name: g.name }))
+    }
   } catch {
-    articleGroups.value = [{ id: 1, name: '默认文章分组' }]
+    outputGroups.value = []
   }
+}
+
+async function onCrawlTypeChange() {
+  configForm.value.output_group_id = null
+  outputGroups.value = []
+  await loadGroupsByType(configForm.value.crawl_type)
 }
 
 // 计算统计数据
@@ -374,9 +421,11 @@ async function handleConfig(row: SpiderProject) {
     description: row.description || '',
     entry_file: row.entry_file,
     concurrency: row.concurrency,
+    crawl_type: row.crawl_type || 'article',
     output_group_id: row.output_group_id,
     schedule: row.schedule || ''
   }
+  await loadGroupsByType(configForm.value.crawl_type)
 
   // 加载文件列表
   try {
@@ -396,6 +445,14 @@ async function handleSaveConfig() {
     ElMessage.warning('请输入项目名称')
     return
   }
+  if (!configForm.value.crawl_type) {
+    ElMessage.warning('请选择抓取类型')
+    return
+  }
+  if (!configForm.value.output_group_id) {
+    ElMessage.warning('请选择输出分组')
+    return
+  }
 
   configSaving.value = true
   try {
@@ -404,6 +461,7 @@ async function handleSaveConfig() {
       description: configForm.value.description || undefined,
       entry_file: configForm.value.entry_file,
       concurrency: configForm.value.concurrency,
+      crawl_type: configForm.value.crawl_type,
       output_group_id: configForm.value.output_group_id,
       schedule: configForm.value.schedule || undefined
     })
@@ -614,7 +672,6 @@ function formatNumber(num: number) {
 // 生命周期
 onMounted(() => {
   fetchProjects()
-  loadArticleGroups()
 })
 
 onUnmounted(() => {
