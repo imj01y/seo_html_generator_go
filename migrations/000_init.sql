@@ -1384,9 +1384,10 @@ CREATE TABLE IF NOT EXISTS spider_projects (
     -- 运行配置
     config JSON COMMENT '配置参数 {proxy, timeout, headers, custom...}',
     concurrency INT NOT NULL DEFAULT 3 COMMENT '并发数量',
+    crawl_type VARCHAR(20) NOT NULL DEFAULT 'article' COMMENT '抓取类型: article/keywords/images',
 
     -- 输出目标
-    output_group_id INT DEFAULT 1 COMMENT '数据写入的文章分组ID',
+    output_group_id INT DEFAULT 1 COMMENT '数据写入的分组ID',
 
     -- 调度配置
     schedule VARCHAR(50) DEFAULT NULL COMMENT 'Cron表达式',
@@ -1566,7 +1567,3 @@ INSERT INTO scheduled_tasks (name, task_type, cron_expr, params, enabled) VALUES
 ('刷新模板缓存', 'refresh_template', '0 */30 * * * *', '{}', 1),
 ('清理过期缓存', 'clear_cache', '0 0 3 * * *', '{"max_age_hours": 24}', 1)
 ON DUPLICATE KEY UPDATE name = name;
-
--- 2026-02-08: 爬虫项目增加抓取类型字段
-ALTER TABLE spider_projects
-ADD COLUMN crawl_type VARCHAR(20) NOT NULL DEFAULT 'article' COMMENT '抓取类型: article/keywords/images' AFTER concurrency;
