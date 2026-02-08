@@ -73,6 +73,11 @@ func (r *FastRenderer) Render(cacheKey string, data *RenderData) (string, bool) 
 
 	ct := cached.(*CompiledFastTemplate)
 
+	// 请求级缓存：NowFunc 只计算一次，避免 ~1200 次重复调用
+	if data != nil && data.Now == "" {
+		data.Now = NowFunc()
+	}
+
 	// 从对象池获取 buffer
 	buf := bufferPool.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -122,6 +127,9 @@ func resolvePlaceholder(p Placeholder, data *RenderData, fm *TemplateFuncsManage
 	case PlaceholderNumber:
 		return formatInt(fm.RandomNumber(p.MinMax[0], p.MinMax[1]))
 	case PlaceholderNow:
+		if data != nil && data.Now != "" {
+			return data.Now
+		}
 		return NowFunc()
 	case PlaceholderContent:
 		if data != nil && data.Content != "" {

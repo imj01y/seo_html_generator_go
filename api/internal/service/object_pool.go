@@ -8,11 +8,17 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// poolSnapshot 不可变的池数据快照（用于无锁读取）
+type poolSnapshot[T any] struct {
+	data []T
+	size int64
+}
+
 // ObjectPool 高性能对象池（生产者消费者模式）
+// Get() 完全无锁，通过 atomic.Pointer 读取池快照
 type ObjectPool[T any] struct {
-	name string // 池名称（用于日志）
-	pool []T    // 环形缓冲区
-	size int64  // 池子容量
+	name     string                          // 池名称（用于日志）
+	snapshot atomic.Pointer[poolSnapshot[T]] // 无锁快照（替代 pool+size+RLock）
 
 	// 原子计数器
 	head int64 // 消费位置
@@ -41,8 +47,8 @@ type ObjectPool[T any] struct {
 	// 内存追踪（仅用于 string 类型）
 	memoryBytes atomic.Int64
 
-	// 用于 Resize 的互斥锁
-	mu sync.RWMutex
+	// 仅用于 Resize/Clear/UpdateConfig 等低频操作的互斥锁
+	mu sync.Mutex
 
 	// ticker 用于 refillLoop，提升为字段以支持动态更新间隔
 	ticker *time.Ticker
@@ -60,10 +66,8 @@ type PoolConfig struct {
 
 // NewObjectPool 创建对象池
 func NewObjectPool[T any](cfg PoolConfig, generator func() T) *ObjectPool[T] {
-	return &ObjectPool[T]{
+	p := &ObjectPool[T]{
 		name:          cfg.Name,
-		pool:          make([]T, cfg.Size),
-		size:          int64(cfg.Size),
 		threshold:     cfg.Threshold,
 		numWorkers:    cfg.NumWorkers,
 		checkInterval: cfg.CheckInterval,
@@ -71,11 +75,19 @@ func NewObjectPool[T any](cfg PoolConfig, generator func() T) *ObjectPool[T] {
 		memorySizer:   cfg.MemorySizer,
 		stopCh:        make(chan struct{}),
 	}
+	// 初始化快照
+	snap := &poolSnapshot[T]{
+		data: make([]T, cfg.Size),
+		size: int64(cfg.Size),
+	}
+	p.snapshot.Store(snap)
+	return p
 }
 
 // Start 启动池子
 func (p *ObjectPool[T]) Start() {
-	log.Info().Str("pool", p.name).Int64("size", p.size).Msg("Starting object pool")
+	snap := p.snapshot.Load()
+	log.Info().Str("pool", p.name).Int64("size", snap.size).Msg("Starting object pool")
 
 	// 多协程并行预填充
 	p.prefillParallel()
@@ -89,8 +101,9 @@ func (p *ObjectPool[T]) Start() {
 
 // prefillParallel 并行预填充
 func (p *ObjectPool[T]) prefillParallel() {
+	snap := p.snapshot.Load()
+	size := int(snap.size)
 	var wg sync.WaitGroup
-	size := int(p.size)
 	batchPerWorker := size / p.numWorkers
 	remainder := size % p.numWorkers
 
@@ -111,7 +124,7 @@ func (p *ObjectPool[T]) prefillParallel() {
 			var localMem int64
 			for i := 0; i < batch; i++ {
 				item := p.generator()
-				p.pool[start+i] = item
+				snap.data[start+i] = item
 				if p.memorySizer != nil {
 					localMem += p.memorySizer(item)
 				}
@@ -121,8 +134,8 @@ func (p *ObjectPool[T]) prefillParallel() {
 	}
 
 	wg.Wait()
-	atomic.StoreInt64(&p.tail, p.size)
-	atomic.AddInt64(&p.totalGenerated, p.size)
+	atomic.StoreInt64(&p.tail, snap.size)
+	atomic.AddInt64(&p.totalGenerated, snap.size)
 	p.lastRefresh.Store(time.Now().UnixNano())
 
 	// 汇总内存统计
@@ -135,23 +148,18 @@ func (p *ObjectPool[T]) prefillParallel() {
 	}
 }
 
-// Get 获取对象（加读锁保护，防止 Resize 期间数据竞争）
+// Get 获取对象（完全无锁）
 func (p *ObjectPool[T]) Get() T {
-	p.mu.RLock()
-	pool := p.pool
-	size := p.size
-	p.mu.RUnlock()
+	snap := p.snapshot.Load() // atomic load, 无锁
 
 	idx := atomic.AddInt64(&p.head, 1) - 1
 	atomic.AddInt64(&p.totalConsumed, 1)
-	return pool[idx%size]
+	return snap.data[idx%snap.size]
 }
 
 // Available 当前可用数量
 func (p *ObjectPool[T]) Available() int64 {
-	p.mu.RLock()
-	size := p.size
-	p.mu.RUnlock()
+	snap := p.snapshot.Load()
 
 	tail := atomic.LoadInt64(&p.tail)
 	head := atomic.LoadInt64(&p.head)
@@ -159,8 +167,8 @@ func (p *ObjectPool[T]) Available() int64 {
 	if avail < 0 {
 		avail = 0
 	}
-	if avail > size {
-		avail = size
+	if avail > snap.size {
+		avail = snap.size
 	}
 	return avail
 }
@@ -186,16 +194,14 @@ func (p *ObjectPool[T]) refillLoop() {
 
 // checkAndRefill 检查并补充
 func (p *ObjectPool[T]) checkAndRefill() {
-	p.mu.RLock()
-	size := p.size
-	p.mu.RUnlock()
+	snap := p.snapshot.Load()
 
 	available := p.Available()
-	thresholdCount := int64(float64(size) * p.threshold)
+	thresholdCount := int64(float64(snap.size) * p.threshold)
 
 	if available < thresholdCount {
 		// 补充到满
-		need := size - available
+		need := snap.size - available
 		p.refillToFull(int(need))
 		p.refillCount.Add(1)
 		p.lastRefresh.Store(time.Now().UnixNano())
@@ -226,14 +232,11 @@ func (p *ObjectPool[T]) refillToFull(need int) {
 				items[i] = p.generator()
 			}
 
-			p.mu.RLock()
-			pool := p.pool
-			currentSize := p.size
-			p.mu.RUnlock()
+			snap := p.snapshot.Load()
 
 			for _, item := range items {
 				idx := atomic.AddInt64(&p.tail, 1) - 1
-				pool[idx%currentSize] = item
+				snap.data[idx%snap.size] = item
 			}
 
 			atomic.AddInt64(&p.totalGenerated, int64(batch))
@@ -256,12 +259,10 @@ func (p *ObjectPool[T]) Stop() {
 
 // Stats 返回统计信息
 func (p *ObjectPool[T]) Stats() map[string]interface{} {
-	p.mu.RLock()
-	size := p.size
-	p.mu.RUnlock()
+	snap := p.snapshot.Load()
 
 	available := p.Available()
-	used := size - available
+	used := snap.size - available
 
 	// 计算状态
 	status := "running"
@@ -279,12 +280,12 @@ func (p *ObjectPool[T]) Stats() map[string]interface{} {
 
 	return map[string]interface{}{
 		"name":            p.name,
-		"size":            size,
+		"size":            snap.size,
 		"available":       available,
 		"used":            used,
 		"total_generated": atomic.LoadInt64(&p.totalGenerated),
 		"total_consumed":  atomic.LoadInt64(&p.totalConsumed),
-		"utilization":     float64(available) / float64(size) * 100,
+		"utilization":     float64(available) / float64(snap.size) * 100,
 		"status":          status,
 		"refill_count":    p.refillCount.Load(),
 		"num_workers":     p.numWorkers,
@@ -329,7 +330,8 @@ func (p *ObjectPool[T]) UpdateConfig(size int, threshold float64, numWorkers int
 	}
 
 	// 4. 检查是否需要调整大小
-	needResize := size > 0 && int64(size) != p.size
+	snap := p.snapshot.Load()
+	needResize := size > 0 && int64(size) != snap.size
 	p.mu.Unlock()
 
 	// 5. 调整池大小（Resize 有自己的锁）
@@ -356,12 +358,12 @@ func (p *ObjectPool[T]) Resize(newSize int) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	oldSize := p.size
-	if int64(newSize) == oldSize {
+	oldSnap := p.snapshot.Load()
+	if int64(newSize) == oldSnap.size {
 		return
 	}
 
-	log.Info().Str("pool", p.name).Int64("oldSize", oldSize).Int("newSize", newSize).Msg("Resizing pool")
+	log.Info().Str("pool", p.name).Int64("oldSize", oldSnap.size).Int("newSize", newSize).Msg("Resizing pool")
 
 	// 创建新的池
 	newPool := make([]T, newSize)
@@ -373,8 +375,8 @@ func (p *ObjectPool[T]) Resize(newSize int) {
 	if available < 0 {
 		available = 0
 	}
-	if available > oldSize {
-		available = oldSize
+	if available > oldSnap.size {
+		available = oldSnap.size
 	}
 
 	// 复制现有数据到新池
@@ -384,13 +386,17 @@ func (p *ObjectPool[T]) Resize(newSize int) {
 	}
 
 	for i := int64(0); i < copyCount; i++ {
-		srcIdx := (head + i) % oldSize
-		newPool[i] = p.pool[srcIdx]
+		srcIdx := (head + i) % oldSnap.size
+		newPool[i] = oldSnap.data[srcIdx]
 	}
 
-	// 更新池
-	p.pool = newPool
-	p.size = int64(newSize)
+	// 原子交换快照
+	newSnap := &poolSnapshot[T]{
+		data: newPool,
+		size: int64(newSize),
+	}
+	p.snapshot.Store(newSnap)
+
 	atomic.StoreInt64(&p.head, 0)
 	atomic.StoreInt64(&p.tail, copyCount)
 
@@ -399,9 +405,7 @@ func (p *ObjectPool[T]) Resize(newSize int) {
 
 // Capacity 返回容量
 func (p *ObjectPool[T]) Capacity() int64 {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.size
+	return p.snapshot.Load().size
 }
 
 // Count 返回当前数量（同 Available）
@@ -411,13 +415,10 @@ func (p *ObjectPool[T]) Count() int64 {
 
 // UsagePercent 返回使用率百分比
 func (p *ObjectPool[T]) UsagePercent() float64 {
-	p.mu.RLock()
-	size := p.size
-	p.mu.RUnlock()
-
+	snap := p.snapshot.Load()
 	available := p.Available()
-	if size == 0 {
+	if snap.size == 0 {
 		return 0
 	}
-	return float64(available) / float64(size) * 100
+	return float64(available) / float64(snap.size) * 100
 }

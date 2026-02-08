@@ -210,21 +210,31 @@ func (m *PoolManager) discoverGroups(ctx context.Context) ([]int, error) {
 }
 
 // getOrCreatePool gets or creates a pool for the given type and group
+// 使用 RLock 优先策略：读多写少场景下避免排他锁竞争
 func (m *PoolManager) getOrCreatePool(poolType string, groupID int) *MemoryPool {
+	// 快速路径：RLock 查找（绝大多数调用走这里）
+	m.mu.RLock()
+	pools := m.contents
+	if pool, exists := pools[groupID]; exists {
+		m.mu.RUnlock()
+		return pool
+	}
+	m.mu.RUnlock()
+
+	// 慢速路径：Lock 创建（仅首次）
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// 只处理 contents 类型，titles 已改用 TitleGenerator
-	pools := m.contents
+	// 双重检查
+	pools = m.contents
 	maxSize := m.config.ContentPoolSize
-
-	pool, exists := pools[groupID]
-	if !exists {
-		pool = NewMemoryPool(groupID, poolType, maxSize)
-		pools[groupID] = pool
-		log.Debug().Str("type", poolType).Int("group", groupID).Msg("Created new pool")
+	if pool, exists := pools[groupID]; exists {
+		return pool
 	}
 
+	pool := NewMemoryPool(groupID, poolType, maxSize)
+	pools[groupID] = pool
+	log.Debug().Str("type", poolType).Int("group", groupID).Msg("Created new pool")
 	return pool
 }
 

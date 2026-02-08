@@ -97,10 +97,21 @@ func (g *KeywordEmojiGenerator) generateKeywordEmoji(groupID int) string {
 }
 
 // getOrCreatePool 获取或创建指定 groupID 的池
+// 使用 RLock 优先策略：读多写少场景下避免排他锁竞争
 func (g *KeywordEmojiGenerator) getOrCreatePool(groupID int) *KeywordEmojiPool {
+	// 快速路径：RLock 查找（绝大多数调用走这里）
+	g.mu.RLock()
+	if pool, exists := g.pools[groupID]; exists {
+		g.mu.RUnlock()
+		return pool
+	}
+	g.mu.RUnlock()
+
+	// 慢速路径：Lock 创建（仅首次）
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	// 双重检查
 	if pool, exists := g.pools[groupID]; exists {
 		return pool
 	}
